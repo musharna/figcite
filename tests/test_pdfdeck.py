@@ -175,3 +175,43 @@ def test_credits_paginate_without_losing_entries(tmp_path):
     for i in (1, 15, 30):
         assert f"10.9999/test.{i}" in text, f"entry {i} was lost in pagination"
     assert "no recorded source" in text
+
+
+def test_recovery_is_encoding_robust_but_geometry_fragile(tmp_path):
+    """Characterises the real envelope, measured on 14 real figures.
+
+    Robust: downsampling (to 64px wide), JPEG down to quality 10, CMYK roundtrip
+    -- i.e. everything a PDF exporter does, including Affinity's most aggressive
+    'PDF for web' preset at 72 DPI.
+
+    Fragile: any GEOMETRIC change -- crop, rotate, flip -- which moves every
+    cell of the difference hash. Crucially it fails SAFE: a cropped figure
+    reports no match rather than matching the wrong one.
+    """
+    import io
+    from PIL import Image
+    from figcite.provenance import dhash_bytes, hamming
+
+    a = Image.open(_figure(tmp_path / "geo-a.png", seed=3, size=(900, 600)))
+    b = Image.open(_figure(tmp_path / "geo-b.png", seed=77, size=(900, 600)))
+
+    def dh(im, q=70, fmt="JPEG"):
+        buf = io.BytesIO()
+        im.convert("RGB").save(buf, fmt, quality=q)
+        return dhash_bytes(buf.getvalue())
+
+    d_a, d_b = dh(a, 95, "PNG"), dh(b, 95, "PNG")
+    assert hamming(d_a, d_b) > 6, "fixture figures are too similar to discriminate"
+
+    # encoding transforms: still recovered
+    tiny = a.resize((64, 43), Image.Resampling.LANCZOS)
+    assert hamming(dh(tiny), d_a) <= 6, "downsample to 64px broke recovery"
+    assert hamming(dh(a, q=10), d_a) <= 6, "JPEG q10 broke recovery"
+    assert hamming(dh(a.convert("CMYK").convert("RGB")), d_a) <= 6, "CMYK roundtrip broke recovery"
+
+    # geometric transforms: NOT recovered, and must not mis-attribute
+    cropped = a.crop((90, 60, 810, 540))          # 10% off each edge
+    d_crop = dh(cropped)
+    assert hamming(d_crop, d_a) > 6, "fixture invalid: crop was supposed to break the hash"
+    assert hamming(d_crop, d_b) > 6, \
+        "a cropped figure matched a DIFFERENT figure -- failure must be safe, not wrong"

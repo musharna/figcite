@@ -144,10 +144,35 @@ In Affinity specifically, keep placed images **linked** rather than embedded. Th
 Resource Manager then shows every image's path, the files keep their own metadata
 and sidecars, and provenance never depends on hashing at all.
 
-Not verified against a real Affinity export -- the PDF round-trip above was
-produced with PyMuPDF. Affinity's own exporter has its own DPI and compression
-settings, and aggressive downsampling could in principle push the hash past
-threshold.
+### How much export mangling survives
+
+Measured on 14 real project figures across 14 export conditions -- 300/150/96/72
+DPI downsampling x JPEG quality 95/75/50, plus CMYK roundtrips. Affinity's most
+aggressive preset ("PDF for web") downsamples anything above 108 DPI to 72.
+
+| Transform | Recovered | False matches |
+|---|---|---|
+| Any downsample tested, down to 64px wide | 14/14 | 0 |
+| JPEG quality down to 10 | 14/14 | 0 |
+| CMYK roundtrip (print export) | 14/14 | 0 |
+| Crop 10% off each edge | **0/14** | 0 |
+| Rotate 90 deg / horizontal flip | **0/14** | 0 |
+
+Worst self-distance under any encoding transform was 5; the nearest pair of
+*different* figures sat 15 apart (median 26). The threshold of 6 therefore has
+roughly 3x headroom -- it is measured, not guessed.
+
+So compression and resolution are not the risk. **Geometry is**: cropping,
+rotating or flipping an image inside the design app moves every cell of the
+difference hash and recovery fails. It fails *safe* -- a cropped figure reports
+no match rather than matching the wrong source -- but the provenance is lost.
+
+That is another reason to keep images **linked** in Affinity: a link points at
+the original file no matter how the placed copy is cropped or rotated.
+
+Still not verified against a real Affinity export -- the PDF round-trip was
+produced with PyMuPDF, so what is characterised above is the class of
+transformation an exporter applies, not Affinity's binary itself.
 
 ## Nothing is ever lost
 
