@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Iterator, Optional
 
-from .provenance import Record, hamming
+from .provenance import Record, embed, hamming
 
 DATA_DIR = Path(os.environ.get("FIGCITE_HOME", Path.home() / ".local" / "share" / "figcite"))
 MANIFEST = DATA_DIR / "manifest.jsonl"
@@ -63,3 +63,24 @@ def find_similar(dh: str, max_distance: int = 6) -> Optional[tuple[Record, int]]
     if best is not None and best_d <= max_distance:
         return best, best_d
     return None
+
+
+def finalize_into_library(src, rec: Record, out=None) -> Path:
+    """Embed the record into the image and register it. Returns the final path.
+
+    Shared by `figcite tag/grab/confirm` and by the watcher's auto-confirm path
+    so there is exactly one definition of "tagged and filed".
+    """
+    import re as _re
+    from pathlib import Path as _P
+    src = _P(src)
+    _ensure()
+    if out:
+        dest = _P(out)
+    else:
+        base = _re.sub(r"[^A-Za-z0-9._-]+", "-", rec.doi or rec.short_cite or src.stem).strip("-")[:60]
+        stamp = (rec.captured_local or "")[:19].replace(":", "").replace("-", "")
+        dest = LIBRARY / f"{base or 'image'}--{stamp or 'na'}{src.suffix.lower() or '.png'}"
+    rec2 = embed(src, dest, rec)
+    put(rec2)
+    return dest

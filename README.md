@@ -35,7 +35,9 @@ pins that behaviour so the policy can be revisited if CrossRef ever improves.
 ```bash
 # 1. Snip / screenshot to clipboard  (Win+Shift+S)
 figcite watch                     # leave running; catches every image you copy
-figcite pending                   # see what it caught + any candidate sources
+                                  # snips from a browser or a local PDF are
+                                  # GROUNDED and filed automatically -- no step
+figcite pending                   # only what could NOT be grounded lands here
 figcite confirm 0 --doi 10.3390/horticulturae6040087
 figcite confirm 0 --pick 1        # or accept a listed candidate
 
@@ -65,6 +67,47 @@ figcite apply  deck.pptx -o deck.cited.pptx  # alt-text + captions + credits + m
 
 `apply` is idempotent — re-running replaces its own captions and credits slide
 rather than stacking a second copy.
+
+## Browser snips are grounded automatically
+
+The watcher records the foreground window title at snip time. For a browser that
+title joins exactly onto a row in the browser's own history, giving the URL of
+the page that was on screen; the DOI then comes from that URL. Because the URL
+is the address of the document rather than an inference about which paper was
+meant, it can be auto-confirmed and filed with no interaction.
+
+Four resolution paths, tried in order, each verified against CrossRef:
+
+1. **The DOI is in the URL** (`/doi/10.1111/nph.71477`) -- offline, instant.
+   Publisher tails like `/full`, `.pdf`, `/abstract` and `v2` are stripped.
+2. **A known publisher URL pattern** (`nature.com/articles/s41598-…` → `10.1038/…`).
+3. **A publisher article ID**: Elsevier/Cell PII, resolved through CrossRef's
+   `alternative-id` filter. This matters because ScienceDirect, OUP and Wiley
+   return **403** to an automated page fetch -- the CrossRef route works anyway.
+   Cell Press punctuates the PII (`S1674-2052(18)30156-4`) and Elsevier does not;
+   both normalise to the same identifier.
+4. **PubMed/PMC identifiers**, via NCBI (`esummary` for a PMID, the ID converter
+   for a PMCID).
+5. Failing all of those, the page's own `<meta name="citation_doi">` -- which
+   only works on publishers that serve bots (Nature and PLOS do; OUP, Wiley and
+   bioRxiv do not).
+
+Measured against a real 82-page reading history: **61% auto-grounded without any
+publisher page fetch** (34% from the URL alone, 27% via publisher/PubMed IDs).
+Several of the remainder are journal homepages and GEO accession pages that
+legitimately have no DOI.
+
+**Only an exact, unambiguous title match grounds a capture.** If the title is not
+in history, figcite falls back to the visit nearest the capture time -- and that
+is a guess about which tab was showing, so it stays unconfirmed and goes to
+`figcite pending`. Private-browsing windows leave no history and always land
+there too.
+
+**A failed lookup is never reported as an absence of provenance.** CrossRef
+allows one request per second; a loop that trips that limit used to return
+"no DOI" for perfectly resolvable papers. Lookups are now throttled, and a
+failure surfaces as `LOOKUP FAILED … retry` rather than silently filing the
+image as unsourced.
 
 ## What `apply` writes
 

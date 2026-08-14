@@ -24,6 +24,39 @@ MAILTO = os.environ.get("FIGCITE_MAILTO", "advertisingemailhaha@gmail.com")
 UA = f"figcite/0.1 (https://github.com/; mailto:{MAILTO})"
 TIMEOUT = 25
 
+class LookupUnavailable(RuntimeError):
+    """The lookup could not be performed. NOT the same as 'no such record'.
+
+    Collapsing these two into None is how a rate-limited request silently
+    becomes an image with no recorded source.
+    """
+
+
+# CrossRef advertises x-rate-limit-limit=1 per 1s. A tight loop over a reading
+# list blows straight through it and every 429 would read as "no DOI".
+_MIN_INTERVAL = float(os.environ.get("FIGCITE_CROSSREF_MIN_INTERVAL", "1.05"))
+_last_call = 0.0
+
+
+def throttled_get(url: str, **kw):
+    global _last_call
+    wait = _MIN_INTERVAL - (time.monotonic() - _last_call)
+    if wait > 0:
+        time.sleep(wait)
+    r = requests.get(url, **kw)
+    _last_call = time.monotonic()
+    if r.status_code == 429:
+        delay = 2.0
+        try:
+            delay = float(r.headers.get("retry-after", 2))
+        except ValueError:
+            pass
+        time.sleep(min(max(delay, 1.0), 15.0))
+        r = requests.get(url, **kw)
+        _last_call = time.monotonic()
+    return r
+
+
 DOI_RE = re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Za-z0-9<>\[\]]+", re.I)
 
 
@@ -63,8 +96,8 @@ def fetch_work(doi: str, *, use_cache: bool = True) -> Optional[dict[str, Any]]:
         except Exception:
             pass
     try:
-        r = requests.get(f"https://api.crossref.org/works/{doi}",
-                         headers={"User-Agent": UA}, timeout=TIMEOUT)
+        r = throttled_get(f"https://api.crossref.org/works/{doi}",
+                          headers={"User-Agent": UA}, timeout=TIMEOUT)
     except Exception as e:
         raise RuntimeError(f"CrossRef request failed for {doi}: {e}") from e
     if r.status_code == 404:
@@ -79,9 +112,9 @@ def fetch_work(doi: str, *, use_cache: bool = True) -> Optional[dict[str, Any]]:
 def search_bibliographic(query: str, rows: int = 5) -> list[dict[str, Any]]:
     """Title/citation search. Results are CANDIDATES, never answers."""
     try:
-        r = requests.get("https://api.crossref.org/works",
-                         params={"query.bibliographic": query, "rows": rows},
-                         headers={"User-Agent": UA}, timeout=TIMEOUT)
+        r = throttled_get("https://api.crossref.org/works",
+                          params={"query.bibliographic": query, "rows": rows},
+                          headers={"User-Agent": UA}, timeout=TIMEOUT)
         r.raise_for_status()
     except Exception as e:
         raise RuntimeError(f"CrossRef search failed: {e}") from e

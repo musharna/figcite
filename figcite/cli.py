@@ -120,7 +120,8 @@ def cmd_images(a) -> int:
 
 def cmd_watch(a) -> int:
     from .clipboard import watch
-    return watch(max_hours=a.hours, poll_ms=a.poll_ms)
+    return watch(max_hours=a.hours, poll_ms=a.poll_ms,
+                 auto_confirm=not a.no_auto_confirm)
 
 
 def cmd_pending(a) -> int:
@@ -289,6 +290,8 @@ def build_parser() -> argparse.ArgumentParser:
     w = sub.add_parser("watch", help="watch the Windows clipboard for snipped images")
     w.add_argument("--hours", type=float, default=8.0)
     w.add_argument("--poll-ms", type=int, default=800)
+    w.add_argument("--no-auto-confirm", action="store_true",
+                   help="leave even GROUNDED captures pending instead of filing them")
     w.set_defaults(func=cmd_watch)
 
     pe = sub.add_parser("pending", help="list captured-but-unconfirmed clipboard images")
