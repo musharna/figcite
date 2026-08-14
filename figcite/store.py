@@ -84,3 +84,20 @@ def finalize_into_library(src, rec: Record, out=None) -> Path:
     rec2 = embed(src, dest, rec)
     put(rec2)
     return dest
+
+
+def register_existing(path, rec: Record) -> Record:
+    """Record provenance for a file WITHOUT rewriting it.
+
+    Retro-fitting an existing deck must not modify figures that live in someone
+    else's project tree. The file is hashed as-is and the record is stored under
+    those hashes, so a deck containing that exact image still matches by sha256,
+    and a re-encoded copy still matches perceptually.
+    """
+    from pathlib import Path as _P
+    from .provenance import dhash_bytes, sha256_bytes
+    blob = _P(path).read_bytes()
+    rec.sha256 = sha256_bytes(blob)
+    rec.dhash = dhash_bytes(blob)
+    put(rec)
+    return rec

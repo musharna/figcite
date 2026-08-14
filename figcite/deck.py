@@ -266,6 +266,7 @@ def apply(
     *,
     captions: bool = True,
     credits: bool = True,
+    caption_own_work: bool = False,
     manifest_path: Optional[str | Path] = None,
     allow_unconfirmed: bool = False,
     min_inches: float = 1.0,
@@ -277,6 +278,7 @@ def apply(
     removed = _drop_existing_figcite_shapes(prs)
 
     numbering: dict[str, int] = {}
+    entry_counts: dict[int, int] = {}
     entries: list[str] = []
     rows: list[dict] = []
     missing: list[int] = []
@@ -309,7 +311,9 @@ def apply(
                 )
                 continue
 
-            key = rec.doi or rec.sha256 or rec.citation
+            # Dedupe by what the credit will SAY. Keying on the per-image hash
+            # gave a real deck 15 separate entries all reading "This work".
+            key = rec.doi or rec.citation or rec.short_cite or rec.sha256
             if key not in numbering:
                 numbering[key] = next_n
                 next_n += 1
@@ -332,13 +336,15 @@ def apply(
                     )
                 entries.append(line)
             n = numbering[key]
+            entry_counts[n] = entry_counts.get(n, 0) + 1
 
             alt = rec.display()
             if rec.license_url:
                 alt += f" License: {rec.license_url} ({rec.reuse})"
             set_alt_text(pic, alt, f"figcite [{n}]")
 
-            if captions:
+            own_work = rec.source_kind == "generated"
+            if captions and not (own_work and not caption_own_work):
                 if rec.confirmed or allow_unconfirmed:
                     cap = f"[{n}] {rec.short_cite or rec.citation[:60]}"
                     if rec.doi:
@@ -357,6 +363,15 @@ def apply(
                 }
             )
 
+    entries = [
+        e
+        + (
+            f"  ({entry_counts.get(i + 1, 1)} figures)"
+            if entry_counts.get(i + 1, 1) > 1
+            else ""
+        )
+        for i, e in enumerate(entries)
+    ]
     missing_note = ""
     if missing:
         uniq = sorted(set(missing))

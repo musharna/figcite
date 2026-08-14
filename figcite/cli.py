@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -227,6 +228,39 @@ def cmd_confirm(a) -> int:
     return 0
 
 
+def cmd_register(a) -> int:
+    """Record provenance for an image already on disk, leaving the file untouched."""
+    src = Path(a.image)
+    if not src.exists():
+        print(f"no such image: {src}", file=sys.stderr)
+        return 2
+    detail = {"original_file": str(src.resolve())}
+    if a.this_work:
+        u, loc = now_stamps()
+        commit = None
+        try:
+            r = subprocess.run(["git", "-C", str(src.parent), "rev-parse", "HEAD"],
+                               capture_output=True, text=True, timeout=10)
+            if r.returncode == 0:
+                commit = r.stdout.strip()
+        except Exception:
+            pass
+        detail["git_commit"] = commit
+        rec = Record(citation=a.cite or "This work", short_cite=a.cite or "This work",
+                     source_kind="generated", source_detail=detail,
+                     captured_utc=u, captured_local=loc, confirmed=True,
+                     note=a.note or "")
+    else:
+        rec = _record_for(a.doi, a.cite, a.url, confirmed=True,
+                          kind=a.source_kind, detail=detail,
+                          adapted_from=a.adapted_from, note=a.note or "")
+    rec = store.register_existing(src, rec)
+    print(f"registered (file unmodified): {src}")
+    print(f"  {rec.display()}")
+    print(f"  sha256 {rec.sha256[:16]}  dhash {rec.dhash}")
+    return 0
+
+
 def cmd_resolve(a) -> int:
     rec = record_from_doi(a.doi, confirmed=True)
     print(rec.citation)
@@ -289,7 +323,8 @@ def cmd_apply(a) -> int:
         man = a.manifest if a.manifest else (None if a.no_manifest
                                              else str(Path(out).with_suffix("")))
         rep = pdf_apply(a.pptx, out, captions=not a.no_captions,
-                        credits=not a.no_credits, manifest_path=man,
+                        credits=not a.no_credits, caption_own_work=a.caption_own_work,
+                        manifest_path=man,
                         allow_unconfirmed=a.allow_unconfirmed, min_inches=a.min_inches)
         print(f"wrote {rep['out']}")
         print(f"  {rep['pictures']} image(s), {rep['cited']} credited, "
@@ -306,6 +341,7 @@ def cmd_apply(a) -> int:
         man = str(Path(out).with_suffix(""))
     rep = apply(a.pptx, out,
                 captions=not a.no_captions, credits=not a.no_credits,
+                caption_own_work=a.caption_own_work,
                 manifest_path=man, allow_unconfirmed=a.allow_unconfirmed,
                 min_inches=a.min_inches)
     print(f"wrote {rep['out']}")
@@ -376,6 +412,19 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("-o", "--out")
     c.set_defaults(func=cmd_confirm)
 
+    rg = sub.add_parser("register",
+                        help="record provenance for an existing image WITHOUT modifying it")
+    rg.add_argument("image")
+    rg.add_argument("--doi")
+    rg.add_argument("--cite")
+    rg.add_argument("--url")
+    rg.add_argument("--this-work", action="store_true",
+                    help="your own figure; records the producing git commit")
+    rg.add_argument("--adapted-from")
+    rg.add_argument("--source-kind", default="download")
+    rg.add_argument("--note", default="")
+    rg.set_defaults(func=cmd_register)
+
     r = sub.add_parser("resolve", help="show the citation + license for a DOI")
     r.add_argument("doi")
     r.set_defaults(func=cmd_resolve)
@@ -395,6 +444,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("-o", "--out")
     ap.add_argument("--no-captions", action="store_true")
     ap.add_argument("--no-credits", action="store_true")
+    ap.add_argument("--caption-own-work", action="store_true",
+                    help="also caption figures you generated (off: captions are for "
+                         "other people's figures)")
     ap.add_argument("--manifest", help="path stem for the .csv/.json manifest")
     ap.add_argument("--no-manifest", action="store_true")
     ap.add_argument("--allow-unconfirmed", action="store_true",

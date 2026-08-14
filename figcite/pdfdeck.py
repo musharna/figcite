@@ -106,12 +106,14 @@ def audit(pdf_path: str | Path, min_inches: float = 1.0) -> dict:
 
 def apply(pdf_path: str | Path, out_path: str | Path, *,
           captions: bool = True, credits: bool = True,
+          caption_own_work: bool = False,
           manifest_path: Optional[str | Path] = None,
           allow_unconfirmed: bool = False, min_inches: float = 1.0) -> dict:
     """Stamp captions + a credits page onto an exported PDF."""
     doc = fitz.open(str(pdf_path))
     manifest = store.all_records()
     numbering: dict[str, int] = {}
+    entry_counts: dict[int, int] = {}
     entries: list[str] = []
     rows: list[dict] = []
     missing: list[int] = []
@@ -132,17 +134,24 @@ def apply(pdf_path: str | Path, out_path: str | Path, *,
                 rows.append({"page": im["page"], "matched_by": how, "n": None, "record": None})
                 continue
 
-            key = rec.doi or rec.sha256 or rec.citation
+            # Dedupe by what the credit will SAY. Keying on the per-image hash
+            # gave a real deck 15 separate entries all reading "This work".
+            key = rec.doi or rec.citation or rec.short_cite or rec.sha256
             if key not in numbering:
                 numbering[key] = next_n
                 next_n += 1
                 entries.append(_credit_line(numbering[key], rec, allow_unconfirmed))
             n = numbering[key]
+            entry_counts[n] = entry_counts.get(n, 0) + 1
 
-            if captions and r is not None:
+            own_work = rec.source_kind == "generated"
+            if captions and r is not None and not (own_work and not caption_own_work):
                 _caption(page, r, _caption_text(n, rec, allow_unconfirmed))
             rows.append({"page": im["page"], "matched_by": how, "n": n, "record": rec})
 
+        entries = [e + (f"  ({entry_counts.get(i + 1, 1)} figures)"
+                        if entry_counts.get(i + 1, 1) > 1 else "")
+                   for i, e in enumerate(entries)]
         note = ""
         if missing:
             uniq = sorted(set(missing))

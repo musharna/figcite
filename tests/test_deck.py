@@ -237,3 +237,63 @@ def test_pictures_in_layout_placeholders_are_found(tmp_path):
         f"picture in a layout placeholder was not found ({len(found)} found); "
         "shape_type reports PLACEHOLDER, not PICTURE")
     assert found[0].image.blob, "placeholder picture exposed no image bytes"
+
+
+def _own_work(tmp_path, name, seed, cite="This work"):
+    raw = _make_image(tmp_path / f"raw-{name}", seed)
+    rec = Record(citation=cite, short_cite=cite, source_kind="generated", confirmed=True)
+    out = tmp_path / name
+    rec = embed(raw, out, rec)
+    store.put(rec)
+    return out
+
+
+def test_identical_citations_collapse_to_one_credit(tmp_path):
+    """A real 15-figure deck produced 15 credit lines all reading 'This work'.
+
+    Numbering keyed on the per-image hash, which is unique per figure. It must
+    key on what the credit will SAY.
+    """
+    imgs = [_own_work(tmp_path, f"ow{i}.png", 40 + i) for i in range(4)]
+    deck = _deck_with(tmp_path, imgs[:2])          # 2 per slide keeps layout sane
+    out = tmp_path / "own.pptx"
+    rep = apply(deck, out, captions=True, credits=True)
+    assert rep["cited"] == 1, f"expected one collapsed credit, got {rep['entries']}"
+    assert "(2 figures)" in rep["entries"][0], rep["entries"][0]
+
+    # positive control: genuinely different sources still get separate entries,
+    # so this cannot pass by collapsing everything into one.
+    other, _ = _tagged(tmp_path, "ext.png", color=123)
+    deck2 = _deck_with(tmp_path, [imgs[2], other], name="mixed.pptx")
+    rep2 = apply(deck2, tmp_path / "mixed.cited.pptx", captions=True, credits=True)
+    assert rep2["cited"] == 2, rep2["entries"]
+
+
+def test_own_work_is_not_captioned_by_default(tmp_path):
+    """Captions attribute OTHER people's figures; your own plots get alt text only."""
+    own = _own_work(tmp_path, "mine.png", 77)
+    deck = _deck_with(tmp_path, [own])
+
+    quiet = tmp_path / "quiet.pptx"
+    apply(deck, quiet, captions=True, credits=True)
+    names = [sh.name for s in Presentation(str(quiet)).slides for sh in s.shapes]
+    assert not any(n.startswith("figcite-caption") for n in names), \
+        "own-work figure was captioned by default"
+    pics = [p for s in Presentation(str(quiet)).slides for p, _ in iter_pictures(s)]
+    assert "This work" in get_alt_text(pics[0]), "alt text should still carry provenance"
+
+    # positive control 1: the flag turns them on
+    loud = tmp_path / "loud.pptx"
+    apply(deck, loud, captions=True, credits=True, caption_own_work=True)
+    names = [sh.name for s in Presentation(str(loud)).slides for sh in s.shapes]
+    assert any(n.startswith("figcite-caption") for n in names), \
+        "--caption-own-work did nothing"
+
+    # positive control 2: someone else's figure IS captioned by default
+    ext, _ = _tagged(tmp_path, "theirs.png", color=201)
+    deck2 = _deck_with(tmp_path, [ext], name="theirs.pptx")
+    out2 = tmp_path / "theirs.cited.pptx"
+    apply(deck2, out2, captions=True, credits=True)
+    names2 = [sh.name for s in Presentation(str(out2)).slides for sh in s.shapes]
+    assert any(n.startswith("figcite-caption") for n in names2), \
+        "an external figure lost its caption"
