@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "figcite"
+version = "0.1.0"
+description = "Keep DOI/citation provenance attached to images from capture through to your slides"
+requires-python = ">=3.10"
+dependencies = [
+    "pillow>=10",
+    "python-pptx>=0.6.21",
+    "PyMuPDF>=1.23",
+    "requests>=2.28",
+]
+
+[project.scripts]
+figcite = "figcite.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["figcite*"]
+
+[tool.setuptools.package-data]
+figcite = ["*.ps1"]

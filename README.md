@@ -1,0 +1,118 @@
+# figcite
+
+Keep DOI/citation provenance attached to an image from the moment you capture it
+through to the slide it lands on — and out the other side as a credits slide and
+a manifest.
+
+## Why this exists
+
+Provenance can ride along in three places, and they fail differently:
+
+| Layer | Survives | Dies when |
+|---|---|---|
+| 1. Embedded in the image bytes (PNG `tEXt`/XMP, JPEG EXIF) | *Insert → Picture* | clipboard paste, "Compress Pictures" — anything that re-encodes |
+| 2. Shape alt-text in the `.pptx` | edits, save/reopen, export to tagged PDF | someone deletes and re-inserts the picture |
+| 3. Central manifest keyed by sha256 **and** perceptual dhash | everything above failing | the image is heavily cropped or redrawn |
+
+`figcite` writes all three. Matching a slide image back to its source tries them
+in that order; a dhash match is reported as fuzzy and treated as unconfirmed.
+
+## The rule that shapes the design
+
+**A guessed citation never reaches a slide.** DOIs read out of the PDF you
+cropped from are grounded and get marked confirmed. DOIs inferred from a window
+title are not, and stay behind `figcite pending` until you pick one.
+
+This isn't hypothetical caution. Asking CrossRef for the exact title
+*"Array programming with NumPy"* returns a **review of** that paper as the top
+hit, not the paper — score 37.2, ahead of everything else. A tool that
+auto-accepted the top hit would have put the wrong citation on a slide with full
+confidence. `tests/test_live.py::test_crossref_title_search_is_untrustworthy_by_design`
+pins that behaviour so the policy can be revisited if CrossRef ever improves.
+
+## The four ways an image arrives
+
+```bash
+# 1. Snip / screenshot to clipboard  (Win+Shift+S)
+figcite watch                     # leave running; catches every image you copy
+figcite pending                   # see what it caught + any candidate sources
+figcite confirm 0 --doi 10.3390/horticulturae6040087
+figcite confirm 0 --pick 1        # or accept a listed candidate
+
+# 2. A figure inside a paper PDF  -- DOI is read from the PDF itself
+figcite images paper.pdf --page 3                    # list embedded figures + bboxes
+figcite grab paper.pdf --page 3 --image-index 0 -o fig.png
+figcite grab paper.pdf --page 3 --rect 84,126,505,730 --dpi 300 -o fig.png
+figcite grab paper.pdf --page 3 --rect 0.1,0.1,0.9,0.5 --frac   # fractions of the page
+
+# 3. Your own generated plots
+python -c "
+import figcite.mplhook as fc
+fc.savefig(fig, 'out.png', cite='This work', dataset='rnaseq_v3')  # stamps git commit too
+"
+
+# 4. A file you downloaded
+figcite tag downloaded.png --doi 10.1111/mec.12953
+figcite tag screenshot.png --url https://example.org/page --cite "Example Org, 2026"
+```
+
+Insert the **tagged** file into your deck (not the original), then:
+
+```bash
+figcite audit  deck.pptx                     # coverage report, changes nothing
+figcite apply  deck.pptx -o deck.cited.pptx  # alt-text + captions + credits + manifest
+```
+
+`apply` is idempotent — re-running replaces its own captions and credits slide
+rather than stacking a second copy.
+
+## What `apply` writes
+
+- **Alt-text** on every picture: full citation, DOI, license, reuse verdict.
+- **A small grey caption** under each picture: `[1] Shiragaki et al. 2020 · doi:…`
+  (`--no-captions` to skip).
+- **A numbered "Image credits" slide** at the end, paginated at 8 entries per
+  slide (`--no-credits` to skip).
+- **`deck.cited.csv` / `.json`** — one row per picture, including the ones with
+  no source.
+
+Images with no recorded provenance are **named on the credits slide**, not
+silently dropped: `⚠ 1 image(s) on slide(s) 2 have no recorded source.` Pictures
+under 1 inch in both dimensions are treated as decorative and exempt
+(`--min-inches`).
+
+## Licensing
+
+Every record carries the publisher's license URL from CrossRef and a
+conservative reuse verdict: `public-domain`, `reuse-ok-attribution-required`,
+`reuse-ok-share-alike-attribution-required`, `noncommercial-only`,
+`restricted-no-derivatives`, `publisher-terms-check-required`, or
+`unknown-ask-publisher`. Nothing is assumed reusable by default. CrossRef's
+retraction flag is checked too, and a retracted source is labelled as such.
+
+Use `--adapted-from <DOI>` when the figure you cropped was itself reproduced
+from an earlier paper — the PDF's own DOI cannot tell you that.
+
+## Tests
+
+```bash
+python3 -m pytest tests/ -q -m "not live"   # 11 tests, no network
+python3 -m pytest tests/ -q -m live         # real CrossRef, real PDF, real clipboard
+```
+
+The live tests drive the actual system boundaries. The clipboard test overwrites
+your clipboard with a small test bitmap while it runs.
+
+## Known limits
+
+- **Clipboard paste strips layer 1.** If you paste rather than insert, the image
+  bytes are re-encoded and only the dhash fallback can recover the source.
+  Insert the tagged file from disk when you can.
+- **JPEG can't hold the structured record** — only the human-readable citation
+  goes into EXIF; the rest lives in the sidecar and manifest.
+- **Verified against python-pptx, not Microsoft PowerPoint.** The `.pptx` written
+  here round-trips correctly through python-pptx and unzips as expected; driving
+  real PowerPoint via COM was not run.
+- The watcher deliberately ignores whatever is already on the clipboard when it
+  starts, because the focused window at that moment is not where the image came
+  from. `-CaptureExisting` opts in.
