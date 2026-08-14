@@ -124,6 +124,54 @@ silently dropped: `⚠ 1 image(s) on slide(s) 2 have no recorded source.` Pictur
 under 1 inch in both dimensions are treated as decorative and exempt
 (`--min-inches`).
 
+## PDF output: Affinity, Illustrator, InDesign, Slides, LaTeX
+
+`audit` and `apply` take a `.pdf` as well as a `.pptx`, so anything that exports
+PDF is covered without parsing a proprietary document format:
+
+```bash
+figcite audit  board.pdf                     # coverage report, changes nothing
+figcite apply  board.pdf -o board.cited.pdf  # captions + credits page + manifest
+```
+
+Measured behaviour of a PDF export: it **strips embedded image metadata** and
+**re-encodes the pixels**, so layers 1 and 2 are both gone. The perceptual hash
+survives -- on two real figures from one paper, the exported copy matched the
+correct figure at hamming 0 and the other at 23. Recovery therefore runs entirely
+through layer 3, which is why the manifest matters more here than anywhere else.
+
+In Affinity specifically, keep placed images **linked** rather than embedded. The
+Resource Manager then shows every image's path, the files keep their own metadata
+and sidecars, and provenance never depends on hashing at all.
+
+Not verified against a real Affinity export -- the PDF round-trip above was
+produced with PyMuPDF. Affinity's own exporter has its own DPI and compression
+settings, and aggressive downsampling could in principle push the hash past
+threshold.
+
+## Nothing is ever lost
+
+Every clipboard capture is filed, whether or not a citation could be established:
+
+- **Grounded** (a DOI from the page's URL, or from the PDF the snip came from) ->
+  filed confirmed, with the full citation and license.
+- **Everything else** -> filed *unconfirmed*, carrying what was actually observed:
+  which app was in front, what the window title said, what URL was open, and when.
+
+That second case is the point of the design. A screenshot with no resolvable DOI
+still knows it came from Firefox showing a particular page at a particular minute,
+and an audit reports that instead of "no source recorded". It is a trail, not a
+citation, and it is stored as unconfirmed so nothing downstream can print it as
+one -- credits show the capture context and withhold the guess.
+
+`figcite pending` lists those filed-but-unresolved captures so you can attach a
+DOI later:
+
+```bash
+figcite pending
+figcite confirm m0 --doi 10.1111/nph.71477
+```
+
 ## Licensing
 
 Every record carries the publisher's license URL from CrossRef and a

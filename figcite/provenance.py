@@ -77,9 +77,39 @@ class Record:
     def doi_url(self) -> Optional[str]:
         return f"https://doi.org/{self.doi}" if self.doi else None
 
+    def context_line(self) -> str:
+        """Where this image was captured from, regardless of whether a DOI resolved.
+
+        This is an observation -- what app was in front, what the window said,
+        when -- so it is safe to show even when no citation could be established.
+        "At least some track" is the point: a capture with no DOI still knows it
+        came from Firefox showing a particular page at a particular minute.
+        """
+        d = self.source_detail or {}
+        cap = d.get("clipboard_capture") or {}
+        bits = []
+        app = cap.get("process") or d.get("app")
+        if app:
+            bits.append(f"captured from {app}")
+        title = (cap.get("title") or "").strip()
+        if title:
+            bits.append(f'window: "{title[:70]}"')
+        url = d.get("url") or self.url
+        if url and not (self.doi and url.endswith(self.doi)):
+            bits.append(url[:90])
+        if d.get("pdf"):
+            bits.append(f"pdf: {d['pdf']}")
+        when = cap.get("captured_local") or self.captured_local
+        if when:
+            bits.append(when[:19].replace("T", " "))
+        return " — ".join(bits)
+
     def display(self) -> str:
         """One-line human form, honest about unconfirmed guesses."""
-        base = self.citation or self.short_cite or self.url or "(no citation)"
+        base = self.citation or self.short_cite or self.url or ""
+        if not base:
+            ctx = self.context_line()
+            base = f"no citation resolved ({ctx})" if ctx else "(no citation)"
         if self.doi and self.doi not in base:
             base = f"{base} https://doi.org/{self.doi}"
         if self.adapted_from:

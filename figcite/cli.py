@@ -126,6 +126,18 @@ def cmd_watch(a) -> int:
 
 def cmd_pending(a) -> int:
     from .clipboard import list_pending
+    from . import store
+
+    unconfirmed = [r for r in store.all_records().values()
+                   if not r.confirmed and r.source_kind == "clipboard"]
+    if unconfirmed:
+        print(f"{len(unconfirmed)} filed capture(s) with context but no citation:")
+        for i, r in enumerate(unconfirmed):
+            print(f"[m{i}] {r.context_line()[:100]}")
+            if r.note:
+                print(f"      why: {r.note[:96]}")
+            print(f"      resolve: figcite confirm m{i} --doi 10.x/y")
+        print()
     items = list_pending()
     if not items:
         print("nothing pending (run `figcite watch`, then snip something)")
@@ -153,10 +165,32 @@ def cmd_pending(a) -> int:
 
 def cmd_confirm(a) -> int:
     from .clipboard import list_pending
+    from . import store
+
+    if isinstance(a.index, str) and a.index.startswith("m"):
+        recs = [r for r in store.all_records().values()
+                if not r.confirmed and r.source_kind == "clipboard"]
+        try:
+            target = recs[int(a.index[1:])]
+        except (ValueError, IndexError):
+            print(f"no filed capture {a.index} (have {len(recs)})", file=sys.stderr)
+            return 2
+        if not a.doi:
+            print("need --doi to resolve a filed capture", file=sys.stderr)
+            return 2
+        rec = record_from_doi(a.doi, confirmed=True, source_kind="clipboard",
+                              source_detail=target.source_detail)
+        rec.sha256, rec.dhash = target.sha256, target.dhash
+        rec.captured_utc, rec.captured_local = target.captured_utc, target.captured_local
+        store.put(rec)
+        print(f"resolved {a.index}: {rec.display()}")
+        print("  (the image file itself is unchanged; the manifest now carries the citation)")
+        return 0
+
     items = list_pending()
     try:
-        it = items[a.index]
-    except (IndexError, TypeError):
+        it = items[int(a.index)]
+    except (IndexError, TypeError, ValueError):
         print(f"no pending item {a.index} (have {len(items)})", file=sys.stderr)
         return 2
     png = Path(it["png"])
@@ -213,7 +247,26 @@ def cmd_search(a) -> int:
     return 0
 
 
+def _is_pdf(path) -> bool:
+    return str(path).lower().endswith(".pdf")
+
+
 def cmd_audit(a) -> int:
+    if _is_pdf(a.pptx):
+        from .pdfdeck import audit as pdf_audit
+        rep = pdf_audit(a.pptx, min_inches=a.min_inches)
+        print(f"{rep['file']}: {rep['pictures']} image(s), {rep['tagged']} with provenance, "
+              f"{rep['unconfirmed']} unconfirmed, {rep['untagged_substantive']} substantive "
+              f"but unsourced")
+        for r in rep["rows"]:
+            rec = r["record"]
+            if rec is None:
+                print(f"  page {r['page']:>3}  NO SOURCE   [{r['matched_by']}]")
+            else:
+                mark = "ok " if rec.confirmed else "UNC"
+                label = rec.short_cite or rec.doi or rec.context_line()[:60] or "(context only)"
+                print(f"  page {r['page']:>3}  {mark} {label}  [{r['matched_by']}]")
+        return 0
     from .deck import audit
     rep = audit(a.pptx, min_inches=a.min_inches)
     print(f"{rep['pptx']}: {rep['pictures']} picture(s), {rep['tagged']} with provenance, "
@@ -230,6 +283,22 @@ def cmd_audit(a) -> int:
 
 
 def cmd_apply(a) -> int:
+    if _is_pdf(a.pptx):
+        from .pdfdeck import apply as pdf_apply
+        out = a.out or str(Path(a.pptx).with_suffix("")) + ".cited.pdf"
+        man = a.manifest if a.manifest else (None if a.no_manifest
+                                             else str(Path(out).with_suffix("")))
+        rep = pdf_apply(a.pptx, out, captions=not a.no_captions,
+                        credits=not a.no_credits, manifest_path=man,
+                        allow_unconfirmed=a.allow_unconfirmed, min_inches=a.min_inches)
+        print(f"wrote {rep['out']}")
+        print(f"  {rep['pictures']} image(s), {rep['cited']} credited, "
+              f"{rep['unsourced']} unsourced")
+        if rep["manifest"]:
+            print(f"  manifest: {rep['manifest']['csv']}")
+        for e in rep["entries"]:
+            print(f"  {e}")
+        return 0
     from .deck import apply
     out = a.out or str(Path(a.pptx).with_suffix("")) + ".cited.pptx"
     man = a.manifest
@@ -298,7 +367,7 @@ def build_parser() -> argparse.ArgumentParser:
     pe.set_defaults(func=cmd_pending)
 
     c = sub.add_parser("confirm", help="attach a DOI to a pending capture")
-    c.add_argument("index", type=int)
+    c.add_argument("index")
     c.add_argument("--doi")
     c.add_argument("--pick", type=int, help="accept candidate N from `figcite pending`")
     c.add_argument("--cite")

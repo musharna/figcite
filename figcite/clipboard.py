@@ -352,32 +352,50 @@ def list_pending() -> list[dict]:
 
 
 def auto_finalize(png: str | os.PathLike, pending: dict) -> Optional[Path]:
-    """File a capture whose source is GROUNDED, with no human step.
+    """File EVERY capture. Grounded ones get a citation; the rest get a trail.
 
-    Only runs when the DOI came from evidence -- the address of the page that was
-    on screen, or the DOI printed in the PDF the snip came from -- never from a
-    title guess. That distinction is the whole reason this can be automatic.
+    The point of filing an ungrounded capture is that a screenshot with no DOI
+    still knows which app was in front, what the window said, what URL was open
+    and when. That is a real record -- it just is not a citation, and it is
+    stored as unconfirmed so nothing downstream can print it as one.
+
+    Leaving these loose in the staging folder meant that pasting one into a deck
+    produced "no source recorded", discarding context that had already been
+    collected.
     """
     from . import store
     from .crossref import record_from_doi
+    from .provenance import Record, now_stamps
 
     inf = pending.get("inference", {})
-    if not (inf.get("grounded") and inf.get("doi")):
-        return None
+    cap = pending.get("capture", {})
     png = Path(png)
-    try:
-        rec = record_from_doi(
-            inf["doi"], confirmed=True, source_kind="clipboard",
-            source_detail={"clipboard_capture": pending.get("capture", {}),
-                           "inference_kind": inf.get("kind", ""),
-                           "url": inf.get("url"),
-                           "doi_evidence": inf.get("doi_evidence", "")})
-    except Exception as e:
-        print(f"    (auto-confirm failed, left pending: {e})", flush=True)
-        return None
+    detail = {
+        "clipboard_capture": cap,
+        "inference_kind": inf.get("kind", ""),
+        "url": inf.get("url"),
+        "pdf": inf.get("pdf"),
+        "doi_evidence": inf.get("doi_evidence", ""),
+    }
+
+    if inf.get("grounded") and inf.get("doi"):
+        try:
+            rec = record_from_doi(inf["doi"], confirmed=True, source_kind="clipboard",
+                                  source_detail=detail)
+        except Exception as e:
+            print(f"    (citation lookup failed, filing with context only: {e})", flush=True)
+            rec = _context_record(detail, inf, note=f"citation lookup failed: {e}")
+    else:
+        rec = _context_record(detail, inf)
+
     dest = store.finalize_into_library(png, rec)
-    print(f"    AUTO-TAGGED -> {dest.name}", flush=True)
-    print(f"      {rec.short_cite or rec.doi} | {rec.reuse}", flush=True)
+    if rec.confirmed:
+        print(f"    AUTO-TAGGED -> {dest.name}", flush=True)
+        print(f"      {rec.short_cite or rec.doi} | {rec.reuse}", flush=True)
+    else:
+        print(f"    filed unconfirmed -> {dest.name}", flush=True)
+        print(f"      {rec.context_line()[:110]}", flush=True)
+        print("      (resolve later with `figcite pending`)", flush=True)
     for suffix in (".pending.json", ".capture.json"):
         q = Path(str(png)[:-4] + suffix)
         if q.exists():
@@ -385,3 +403,19 @@ def auto_finalize(png: str | os.PathLike, pending: dict) -> Optional[Path]:
     if png.exists() and png != dest:
         png.unlink()
     return dest
+
+
+def _context_record(detail: dict, inf: dict, note: str = ""):
+    """A record that carries the capture context but claims no citation."""
+    from .provenance import Record, now_stamps
+    u, loc = now_stamps()
+    cap = detail.get("clipboard_capture") or {}
+    return Record(
+        url=inf.get("url"),
+        source_kind="clipboard",
+        source_detail=detail,
+        captured_utc=u,
+        captured_local=cap.get("captured_local") or loc,
+        confirmed=False,
+        note=(note or inf.get("doi_evidence", ""))[:400],
+    )
