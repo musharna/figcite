@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import argparse
-import json
-import os
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -12,7 +9,7 @@ from typing import Optional
 
 from . import store
 from .crossref import normalize_doi, record_from_doi, search_bibliographic
-from .provenance import Record, dhash_bytes, embed, now_stamps, sha256_bytes
+from .provenance import Record, embed, now_stamps
 
 
 def _slug(s: str, n: int = 60) -> str:
@@ -43,17 +40,32 @@ def _finalize(src: Path, rec: Record, out: Optional[str], quiet: bool = False) -
     return dest
 
 
-def _record_for(doi: Optional[str], cite: Optional[str], url: Optional[str],
-                confirmed: bool, kind: str, detail: dict,
-                adapted_from: Optional[str] = None, note: str = "") -> Record:
+def _record_for(
+    doi: Optional[str],
+    cite: Optional[str],
+    url: Optional[str],
+    confirmed: bool,
+    kind: str,
+    detail: dict,
+    adapted_from: Optional[str] = None,
+    note: str = "",
+) -> Record:
     if doi:
-        rec = record_from_doi(doi, confirmed=confirmed, source_kind=kind, source_detail=detail)
+        rec = record_from_doi(
+            doi, confirmed=confirmed, source_kind=kind, source_detail=detail
+        )
     else:
         u, loc = now_stamps()
-        rec = Record(citation=cite or "", short_cite=(cite or "")[:40], url=url,
-                     source_kind=kind, source_detail=detail,
-                     captured_utc=u, captured_local=loc,
-                     confirmed=bool(cite or url))
+        rec = Record(
+            citation=cite or "",
+            short_cite=(cite or "")[:40],
+            url=url,
+            source_kind=kind,
+            source_detail=detail,
+            captured_utc=u,
+            captured_local=loc,
+            confirmed=bool(cite or url),
+        )
     if adapted_from:
         rec.adapted_from = normalize_doi(adapted_from)
     if note:
@@ -63,6 +75,7 @@ def _record_for(doi: Optional[str], cite: Optional[str], url: Optional[str],
 
 # ---------------------------------------------------------------- commands
 
+
 def cmd_tag(a) -> int:
     src = Path(a.image)
     if not src.exists():
@@ -71,15 +84,23 @@ def cmd_tag(a) -> int:
     if not (a.doi or a.cite or a.url):
         print("need at least one of --doi, --cite, --url", file=sys.stderr)
         return 2
-    rec = _record_for(a.doi, a.cite, a.url, confirmed=True,
-                      kind=a.source_kind, detail={"original_file": str(src.resolve())},
-                      adapted_from=a.adapted_from, note=a.note or "")
+    rec = _record_for(
+        a.doi,
+        a.cite,
+        a.url,
+        confirmed=True,
+        kind=a.source_kind,
+        detail={"original_file": str(src.resolve())},
+        adapted_from=a.adapted_from,
+        note=a.note or "",
+    )
     _finalize(src, rec, a.out)
     return 0
 
 
 def cmd_grab(a) -> int:
     from .pdfgrab import crop, discover_doi
+
     pdf = Path(a.pdf)
     if not pdf.exists():
         print(f"no such pdf: {pdf}", file=sys.stderr)
@@ -93,8 +114,9 @@ def cmd_grab(a) -> int:
         rect = tuple(parts)  # type: ignore[assignment]
     tmp = Path(a.out) if a.out else Path(store.DATA_DIR) / "tmp-crop.png"
     tmp.parent.mkdir(parents=True, exist_ok=True)
-    detail = crop(pdf, a.page, tmp, rect=rect, frac=a.frac, dpi=a.dpi,
-                  image_index=a.image_index)
+    detail = crop(
+        pdf, a.page, tmp, rect=rect, frac=a.frac, dpi=a.dpi, image_index=a.image_index
+    )
 
     doi, where = (a.doi, "given on the command line") if a.doi else discover_doi(pdf)
     if not doi:
@@ -103,8 +125,16 @@ def cmd_grab(a) -> int:
         print("re-run with --doi 10.xxxx/yyyy to attach a citation")
         return 1
     detail["doi_evidence"] = where
-    rec = _record_for(doi, None, None, confirmed=True, kind="pdf-crop", detail=detail,
-                      adapted_from=a.adapted_from, note=a.note or "")
+    rec = _record_for(
+        doi,
+        None,
+        None,
+        confirmed=True,
+        kind="pdf-crop",
+        detail=detail,
+        adapted_from=a.adapted_from,
+        note=a.note or "",
+    )
     print(f"DOI {doi}  (found in {where})")
     dest = _finalize(tmp, rec, a.out)
     if not a.out and tmp.exists() and tmp != dest:
@@ -114,6 +144,7 @@ def cmd_grab(a) -> int:
 
 def cmd_images(a) -> int:
     from .pdfgrab import list_images
+
     for im in list_images(a.pdf, a.page):
         print(f"  [{im['index']}] bbox={im['bbox']}  {im['width']}x{im['height']}px")
     return 0
@@ -121,16 +152,96 @@ def cmd_images(a) -> int:
 
 def cmd_watch(a) -> int:
     from .clipboard import watch
-    return watch(max_hours=a.hours, poll_ms=a.poll_ms,
-                 auto_confirm=not a.no_auto_confirm)
+
+    return watch(
+        max_hours=a.hours, poll_ms=a.poll_ms, auto_confirm=not a.no_auto_confirm
+    )
+
+
+def cmd_autostart_install(a) -> int:
+    from . import autostart
+
+    res = autostart.install(hours=a.hours, start_now=not a.no_start)
+    if not res["ok"]:
+        print("error: could not write the startup launcher", file=sys.stderr)
+        return 1
+    print("installed — the clipboard watcher will start at every logon")
+    print(f"  launcher : {res['vbs']}")
+    print(f"  log      : {res['log']}")
+    print(
+        f"  restarts automatically if it exits (own deadline {res['hours']:g}h,"
+        f" retry {autostart.RESTART_SECONDS}s)"
+    )
+    if res["started"]:
+        print("  started now; verify with `figcite autostart status`")
+    elif not a.no_start:
+        print("  already running; left it alone")
+    print("remove with: figcite autostart uninstall")
+    return 0
+
+
+def cmd_autostart_status(a) -> int:
+    from . import autostart
+    from datetime import datetime
+
+    st = autostart.status()
+    if not st["installed"]:
+        print("autostart: NOT installed  (figcite autostart install)")
+    else:
+        print(f"autostart: installed   {st['launcher']}")
+    # The load-bearing line: the polling process itself. A launcher sitting in
+    # Startup is an intention; only this says the clipboard is being read.
+    if st["watching"]:
+        for p in st["processes"]:
+            print(f"WATCHING   clipboard poller pid={p['pid']} since {p['started']}")
+    else:
+        print("NOT WATCHING — no clipboard poller process is running")
+    if st["supervisors"]:
+        print(
+            f"supervisor {len(st['supervisors'])} restart loop(s) alive "
+            f"(pid {', '.join(p['pid'] for p in st['supervisors'])})"
+        )
+    elif st["installed"]:
+        print(
+            "supervisor NOT running — starts at next logon, or `figcite "
+            "autostart install` to start it now"
+        )
+    if st["log_mtime"]:
+        age = (datetime.now().timestamp() - st["log_mtime"]) / 60.0
+        print(
+            f"log        {st['log']}  (last write {age:.0f} min ago, "
+            f"{st['sessions']} session(s))"
+        )
+    print(f"staged     {st['staged_pngs']} un-processed png(s)")
+    print(f"filed      {st['clipboard_records']} clipboard capture(s) in the manifest")
+    if st["log_tail"]:
+        print("--- log tail ---")
+        for line in st["log_tail"]:
+            print(f"  {line}")
+    return 0 if st["watching"] else 1
+
+
+def cmd_autostart_uninstall(a) -> int:
+    from . import autostart
+
+    res = autostart.uninstall()
+    print(
+        "launcher removed" if res["removed_launcher"] else "no launcher was installed"
+    )
+    print("watcher stopped" if res["ok"] else f"warning: {res['stderr']}")
+    print("captures and the manifest were left untouched")
+    return 0 if res["ok"] else 1
 
 
 def cmd_pending(a) -> int:
     from .clipboard import list_pending
     from . import store
 
-    unconfirmed = [r for r in store.all_records().values()
-                   if not r.confirmed and r.source_kind == "clipboard"]
+    unconfirmed = [
+        r
+        for r in store.all_records().values()
+        if not r.confirmed and r.source_kind == "clipboard"
+    ]
     if unconfirmed:
         print(f"{len(unconfirmed)} filed capture(s) with context but no citation:")
         for i, r in enumerate(unconfirmed):
@@ -147,19 +258,21 @@ def cmd_pending(a) -> int:
         png = Path(it["png"])
         cap = it.get("capture", {})
         inf = it.get("inference", {})
-        print(f"[{i}] {png.name}  {cap.get('width','?')}x{cap.get('height','?')}")
+        print(f"[{i}] {png.name}  {cap.get('width', '?')}x{cap.get('height', '?')}")
         if cap.get("title"):
-            print(f"     window: {cap.get('process','?')} — {cap['title'][:90]}")
+            print(f"     window: {cap.get('process', '?')} — {cap['title'][:90]}")
         if inf.get("doi"):
-            print(f"     DOI: {inf['doi']}   (from {inf.get('doi_evidence','')})")
+            print(f"     DOI: {inf['doi']}   (from {inf.get('doi_evidence', '')})")
             print(f"     confirm: figcite confirm {i}")
         elif inf.get("candidates"):
             for ci, c in enumerate(inf["candidates"]):
                 print(f"     cand {ci}: score {c['score']:>5}  {c['doi']}")
-                print(f"               {c['title'][:80]} ({c.get('container','')} {c.get('year','')}) [{c.get('type','')}]")
+                print(
+                    f"               {c['title'][:80]} ({c.get('container', '')} {c.get('year', '')}) [{c.get('type', '')}]"
+                )
             print(f"     confirm: figcite confirm {i} --pick <n>   (or --doi 10.x/y)")
         else:
-            print(f"     no source inferred: {inf.get('doi_evidence','')}")
+            print(f"     no source inferred: {inf.get('doi_evidence', '')}")
             print(f"     confirm: figcite confirm {i} --doi 10.x/y")
     return 0
 
@@ -169,8 +282,11 @@ def cmd_confirm(a) -> int:
     from . import store
 
     if isinstance(a.index, str) and a.index.startswith("m"):
-        recs = [r for r in store.all_records().values()
-                if not r.confirmed and r.source_kind == "clipboard"]
+        recs = [
+            r
+            for r in store.all_records().values()
+            if not r.confirmed and r.source_kind == "clipboard"
+        ]
         try:
             target = recs[int(a.index[1:])]
         except (ValueError, IndexError):
@@ -179,13 +295,22 @@ def cmd_confirm(a) -> int:
         if not a.doi:
             print("need --doi to resolve a filed capture", file=sys.stderr)
             return 2
-        rec = record_from_doi(a.doi, confirmed=True, source_kind="clipboard",
-                              source_detail=target.source_detail)
+        rec = record_from_doi(
+            a.doi,
+            confirmed=True,
+            source_kind="clipboard",
+            source_detail=target.source_detail,
+        )
         rec.sha256, rec.dhash = target.sha256, target.dhash
-        rec.captured_utc, rec.captured_local = target.captured_utc, target.captured_local
+        rec.captured_utc, rec.captured_local = (
+            target.captured_utc,
+            target.captured_local,
+        )
         store.put(rec)
         print(f"resolved {a.index}: {rec.display()}")
-        print("  (the image file itself is unchanged; the manifest now carries the citation)")
+        print(
+            "  (the image file itself is unchanged; the manifest now carries the citation)"
+        )
         return 0
 
     items = list_pending()
@@ -206,18 +331,30 @@ def cmd_confirm(a) -> int:
     if doi is None:
         doi = inf.get("doi")
         if doi and not inf.get("grounded"):
-            print("that DOI was only guessed; pass --doi explicitly to accept it",
-                  file=sys.stderr)
+            print(
+                "that DOI was only guessed; pass --doi explicitly to accept it",
+                file=sys.stderr,
+            )
             return 2
     if doi is None and not a.cite:
         print("need --doi, --pick N, or --cite", file=sys.stderr)
         return 2
 
-    detail = {"clipboard_capture": it.get("capture", {}),
-              "inference_kind": inf.get("kind", ""),
-              "doi_evidence": inf.get("doi_evidence", "")}
-    rec = _record_for(doi, a.cite, None, confirmed=True, kind="clipboard",
-                      detail=detail, adapted_from=a.adapted_from, note=a.note or "")
+    detail = {
+        "clipboard_capture": it.get("capture", {}),
+        "inference_kind": inf.get("kind", ""),
+        "doi_evidence": inf.get("doi_evidence", ""),
+    }
+    rec = _record_for(
+        doi,
+        a.cite,
+        None,
+        confirmed=True,
+        kind="clipboard",
+        detail=detail,
+        adapted_from=a.adapted_from,
+        note=a.note or "",
+    )
     dest = _finalize(png, rec, a.out)
     for suffix in (".pending.json", ".capture.json"):
         p = Path(str(png)[:-4] + suffix)
@@ -239,21 +376,38 @@ def cmd_register(a) -> int:
         u, loc = now_stamps()
         commit = None
         try:
-            r = subprocess.run(["git", "-C", str(src.parent), "rev-parse", "HEAD"],
-                               capture_output=True, text=True, timeout=10)
+            r = subprocess.run(
+                ["git", "-C", str(src.parent), "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
             if r.returncode == 0:
                 commit = r.stdout.strip()
         except Exception:
             pass
         detail["git_commit"] = commit
-        rec = Record(citation=a.cite or "This work", short_cite=a.cite or "This work",
-                     source_kind="generated", source_detail=detail,
-                     captured_utc=u, captured_local=loc, confirmed=True,
-                     note=a.note or "")
+        rec = Record(
+            citation=a.cite or "This work",
+            short_cite=a.cite or "This work",
+            source_kind="generated",
+            source_detail=detail,
+            captured_utc=u,
+            captured_local=loc,
+            confirmed=True,
+            note=a.note or "",
+        )
     else:
-        rec = _record_for(a.doi, a.cite, a.url, confirmed=True,
-                          kind=a.source_kind, detail=detail,
-                          adapted_from=a.adapted_from, note=a.note or "")
+        rec = _record_for(
+            a.doi,
+            a.cite,
+            a.url,
+            confirmed=True,
+            kind=a.source_kind,
+            detail=detail,
+            adapted_from=a.adapted_from,
+            note=a.note or "",
+        )
     rec = store.register_existing(src, rec)
     print(f"registered (file unmodified): {src}")
     print(f"  {rec.display()}")
@@ -275,9 +429,13 @@ def cmd_search(a) -> int:
     for i, c in enumerate(search_bibliographic(a.query, rows=a.rows)):
         print(f"[{i}] score {c['score']:>6}  {c['doi']}")
         print(f"     {c['title'][:90]}")
-        print(f"     {c.get('container','')} {c.get('year','')} [{c.get('type','')}]")
-    print("\nnote: CrossRef title search ranks reviews/commentaries above the paper "
-          "itself surprisingly often -- read the type field before picking.")
+        print(
+            f"     {c.get('container', '')} {c.get('year', '')} [{c.get('type', '')}]"
+        )
+    print(
+        "\nnote: CrossRef title search ranks reviews/commentaries above the paper "
+        "itself surprisingly often -- read the type field before picking."
+    )
     return 0
 
 
@@ -288,79 +446,117 @@ def _is_pdf(path) -> bool:
 def cmd_audit(a) -> int:
     if _is_pdf(a.pptx):
         from .pdfdeck import audit as pdf_audit
+
         rep = pdf_audit(a.pptx, min_inches=a.min_inches)
-        print(f"{rep['file']}: {rep['pictures']} image(s), {rep['tagged']} with provenance, "
-              f"{rep['unconfirmed']} unconfirmed, {rep['untagged_substantive']} substantive "
-              f"but unsourced")
+        print(
+            f"{rep['file']}: {rep['pictures']} image(s), {rep['tagged']} with provenance, "
+            f"{rep['unconfirmed']} unconfirmed, {rep['untagged_substantive']} substantive "
+            f"but unsourced"
+        )
         for r in rep["rows"]:
             rec = r["record"]
             if rec is None:
                 print(f"  page {r['page']:>3}  NO SOURCE   [{r['matched_by']}]")
             else:
                 mark = "ok " if rec.confirmed else "UNC"
-                label = rec.short_cite or rec.doi or rec.context_line()[:60] or "(context only)"
+                label = (
+                    rec.short_cite
+                    or rec.doi
+                    or rec.context_line()[:60]
+                    or "(context only)"
+                )
                 print(f"  page {r['page']:>3}  {mark} {label}  [{r['matched_by']}]")
         return 0
     from .deck import audit
+
     rep = audit(a.pptx, min_inches=a.min_inches)
-    print(f"{rep['pptx']}: {rep['pictures']} picture(s), {rep['tagged']} with provenance, "
-          f"{rep['unconfirmed']} unconfirmed, {rep['untagged_substantive']} substantive but unsourced")
+    print(
+        f"{rep['pptx']}: {rep['pictures']} picture(s), {rep['tagged']} with provenance, "
+        f"{rep['unconfirmed']} unconfirmed, {rep['untagged_substantive']} substantive but unsourced"
+    )
     for r in rep["rows"]:
         rec = r["record"]
         tag = "decorative" if r["decorative"] else ""
         if rec is None:
-            print(f"  slide {r['slide']:>3}  {r['shape'][:28]:28} NO SOURCE   {tag} [{r['matched_by']}]")
+            print(
+                f"  slide {r['slide']:>3}  {r['shape'][:28]:28} NO SOURCE   {tag} [{r['matched_by']}]"
+            )
         else:
             mark = "ok " if rec.confirmed else "UNC"
-            print(f"  slide {r['slide']:>3}  {r['shape'][:28]:28} {mark} {rec.short_cite or rec.doi} [{r['matched_by']}]")
+            print(
+                f"  slide {r['slide']:>3}  {r['shape'][:28]:28} {mark} {rec.short_cite or rec.doi} [{r['matched_by']}]"
+            )
     return 0
 
 
 def cmd_apply(a) -> int:
     if _is_pdf(a.pptx):
         from .pdfdeck import apply as pdf_apply
+
         out = a.out or str(Path(a.pptx).with_suffix("")) + ".cited.pdf"
-        man = a.manifest if a.manifest else (None if a.no_manifest
-                                             else str(Path(out).with_suffix("")))
-        rep = pdf_apply(a.pptx, out, captions=not a.no_captions,
-                        credits=not a.no_credits, caption_own_work=a.caption_own_work,
-                        manifest_path=man,
-                        allow_unconfirmed=a.allow_unconfirmed, min_inches=a.min_inches)
+        man = (
+            a.manifest
+            if a.manifest
+            else (None if a.no_manifest else str(Path(out).with_suffix("")))
+        )
+        rep = pdf_apply(
+            a.pptx,
+            out,
+            captions=not a.no_captions,
+            credits=not a.no_credits,
+            caption_own_work=a.caption_own_work,
+            manifest_path=man,
+            allow_unconfirmed=a.allow_unconfirmed,
+            min_inches=a.min_inches,
+        )
         print(f"wrote {rep['out']}")
-        print(f"  {rep['pictures']} image(s), {rep['cited']} credited, "
-              f"{rep['unsourced']} unsourced")
+        print(
+            f"  {rep['pictures']} image(s), {rep['cited']} credited, "
+            f"{rep['unsourced']} unsourced"
+        )
         if rep["manifest"]:
             print(f"  manifest: {rep['manifest']['csv']}")
         for e in rep["entries"]:
             print(f"  {e}")
         return 0
     from .deck import apply
+
     out = a.out or str(Path(a.pptx).with_suffix("")) + ".cited.pptx"
     man = a.manifest
     if man is None and not a.no_manifest:
         man = str(Path(out).with_suffix(""))
-    rep = apply(a.pptx, out,
-                captions=not a.no_captions, credits=not a.no_credits,
-                caption_own_work=a.caption_own_work,
-                manifest_path=man, allow_unconfirmed=a.allow_unconfirmed,
-                min_inches=a.min_inches)
+    rep = apply(
+        a.pptx,
+        out,
+        captions=not a.no_captions,
+        credits=not a.no_credits,
+        caption_own_work=a.caption_own_work,
+        manifest_path=man,
+        allow_unconfirmed=a.allow_unconfirmed,
+        min_inches=a.min_inches,
+    )
     print(f"wrote {rep['out']}")
-    print(f"  {rep['pictures']} picture(s), {rep['cited']} credited, {rep['unsourced']} unsourced")
+    print(
+        f"  {rep['pictures']} picture(s), {rep['cited']} credited, {rep['unsourced']} unsourced"
+    )
     if rep["manifest"]:
         print(f"  manifest: {rep['manifest']['csv']}")
         print(f"            {rep['manifest']['json']}")
     for e in rep["entries"]:
         print(f"  {e}")
     if rep["unsourced"]:
-        print(f"  ⚠ {rep['unsourced']} image(s) had no recorded source; the credits "
-              f"slide says so explicitly rather than hiding it")
+        print(
+            f"  ⚠ {rep['unsourced']} image(s) had no recorded source; the credits "
+            f"slide says so explicitly rather than hiding it"
+        )
     return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="figcite",
-        description="Keep DOI/citation provenance attached to images through to your slides.")
+        description="Keep DOI/citation provenance attached to images through to your slides.",
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
 
     t = sub.add_parser("tag", help="attach provenance to an existing image file")
@@ -368,7 +564,10 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--doi")
     t.add_argument("--cite", help="freeform citation when there is no DOI")
     t.add_argument("--url")
-    t.add_argument("--adapted-from", help="DOI of the ORIGINAL source, if this figure was reproduced")
+    t.add_argument(
+        "--adapted-from",
+        help="DOI of the ORIGINAL source, if this figure was reproduced",
+    )
     t.add_argument("--source-kind", default="download")
     t.add_argument("--note", default="")
     t.add_argument("-o", "--out")
@@ -377,9 +576,15 @@ def build_parser() -> argparse.ArgumentParser:
     g = sub.add_parser("grab", help="crop a figure out of a PDF, DOI attached")
     g.add_argument("pdf")
     g.add_argument("--page", type=int, required=True, help="1-based")
-    g.add_argument("--rect", help="x0,y0,x1,y1 in PDF points (or fractions with --frac)")
-    g.add_argument("--frac", action="store_true", help="treat --rect as 0-1 fractions of the page")
-    g.add_argument("--image-index", type=int, help="crop embedded image N (see `figcite images`)")
+    g.add_argument(
+        "--rect", help="x0,y0,x1,y1 in PDF points (or fractions with --frac)"
+    )
+    g.add_argument(
+        "--frac", action="store_true", help="treat --rect as 0-1 fractions of the page"
+    )
+    g.add_argument(
+        "--image-index", type=int, help="crop embedded image N (see `figcite images`)"
+    )
     g.add_argument("--dpi", type=int, default=300)
     g.add_argument("--doi", help="override the DOI discovered in the PDF")
     g.add_argument("--adapted-from")
@@ -395,12 +600,39 @@ def build_parser() -> argparse.ArgumentParser:
     w = sub.add_parser("watch", help="watch the Windows clipboard for snipped images")
     w.add_argument("--hours", type=float, default=8.0)
     w.add_argument("--poll-ms", type=int, default=800)
-    w.add_argument("--no-auto-confirm", action="store_true",
-                   help="leave even GROUNDED captures pending instead of filing them")
+    w.add_argument(
+        "--no-auto-confirm",
+        action="store_true",
+        help="leave even GROUNDED captures pending instead of filing them",
+    )
     w.set_defaults(func=cmd_watch)
 
-    pe = sub.add_parser("pending", help="list captured-but-unconfirmed clipboard images")
+    pe = sub.add_parser(
+        "pending", help="list captured-but-unconfirmed clipboard images"
+    )
     pe.set_defaults(func=cmd_pending)
+
+    au = sub.add_parser(
+        "autostart", help="keep the clipboard watcher running across logons"
+    )
+    ausub = au.add_subparsers(dest="action", required=True)
+    ai = ausub.add_parser(
+        "install", help="install the startup launcher (no admin needed)"
+    )
+    ai.add_argument(
+        "--hours",
+        type=float,
+        default=24.0,
+        help="watcher deadline; the launcher restarts it when this lapses",
+    )
+    ai.add_argument(
+        "--no-start", action="store_true", help="install only; do not start it now"
+    )
+    ai.set_defaults(func=cmd_autostart_install)
+    ast_ = ausub.add_parser("status", help="is the clipboard actually being watched?")
+    ast_.set_defaults(func=cmd_autostart_status)
+    aun = ausub.add_parser("uninstall", help="remove the launcher; captures are kept")
+    aun.set_defaults(func=cmd_autostart_uninstall)
 
     c = sub.add_parser("confirm", help="attach a DOI to a pending capture")
     c.add_argument("index")
@@ -412,14 +644,18 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("-o", "--out")
     c.set_defaults(func=cmd_confirm)
 
-    rg = sub.add_parser("register",
-                        help="record provenance for an existing image WITHOUT modifying it")
+    rg = sub.add_parser(
+        "register", help="record provenance for an existing image WITHOUT modifying it"
+    )
     rg.add_argument("image")
     rg.add_argument("--doi")
     rg.add_argument("--cite")
     rg.add_argument("--url")
-    rg.add_argument("--this-work", action="store_true",
-                    help="your own figure; records the producing git commit")
+    rg.add_argument(
+        "--this-work",
+        action="store_true",
+        help="your own figure; records the producing git commit",
+    )
     rg.add_argument("--adapted-from")
     rg.add_argument("--source-kind", default="download")
     rg.add_argument("--note", default="")
@@ -439,20 +675,32 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--min-inches", type=float, default=1.0)
     a.set_defaults(func=cmd_audit)
 
-    ap = sub.add_parser("apply", help="write alt-text, captions, credits slide, manifest")
+    ap = sub.add_parser(
+        "apply", help="write alt-text, captions, credits slide, manifest"
+    )
     ap.add_argument("pptx")
     ap.add_argument("-o", "--out")
     ap.add_argument("--no-captions", action="store_true")
     ap.add_argument("--no-credits", action="store_true")
-    ap.add_argument("--caption-own-work", action="store_true",
-                    help="also caption figures you generated (off: captions are for "
-                         "other people's figures)")
+    ap.add_argument(
+        "--caption-own-work",
+        action="store_true",
+        help="also caption figures you generated (off: captions are for "
+        "other people's figures)",
+    )
     ap.add_argument("--manifest", help="path stem for the .csv/.json manifest")
     ap.add_argument("--no-manifest", action="store_true")
-    ap.add_argument("--allow-unconfirmed", action="store_true",
-                    help="print machine-guessed citations onto slides (off by default)")
-    ap.add_argument("--min-inches", type=float, default=1.0,
-                    help="pictures smaller than this in both dimensions count as decorative")
+    ap.add_argument(
+        "--allow-unconfirmed",
+        action="store_true",
+        help="print machine-guessed citations onto slides (off by default)",
+    )
+    ap.add_argument(
+        "--min-inches",
+        type=float,
+        default=1.0,
+        help="pictures smaller than this in both dimensions count as decorative",
+    )
     ap.set_defaults(func=cmd_apply)
 
     return p

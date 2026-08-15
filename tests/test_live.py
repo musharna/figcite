@@ -100,7 +100,7 @@ def test_real_pdf_crop_end_to_end(tmp_path):
 
 
 @pytest.mark.skipif(not Path(PS_EXE).exists(), reason="no Windows PowerShell")
-def test_windows_clipboard_watcher_captures_a_real_snip(tmp_path):
+def test_windows_clipboard_watcher_captures_a_real_snip(tmp_path, monkeypatch):
     """Drives the actual watcher against the actual Windows clipboard.
 
     NOTE: this overwrites the clipboard with a small test bitmap.
@@ -128,6 +128,24 @@ def test_windows_clipboard_watcher_captures_a_real_snip(tmp_path):
     def captures_since(before):
         return sorted({p.name for p in wsl_dir.glob("clip-*.png")} - before)
 
+    # Claim a private staging queue. Sharing the default one with an installed
+    # autostart watcher means production finalizes this test's snip out of
+    # staging before captures_since() can see it -- the test then fails looking
+    # like "the watcher never captured", which is not what went wrong.
+    # Pause any installed production watcher for the duration.
+    #
+    # A private staging dir is not enough: the Windows clipboard is ONE global
+    # object, so the bitmaps this test copies are visible to every watcher
+    # running on the machine. Without this, running the suite files test
+    # bitmaps into the user's real provenance manifest -- measured, 7 of them.
+    from figcite import autostart
+
+    was_installed = autostart.installed_path() is not None
+    autostart.stop()
+
+    private = tmp_path / "staging"
+    private.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("FIGCITE_STAGING_WIN", wsl_to_win(private))
     win_dir, wsl_dir = staging_dirs()
     wsl_dir.mkdir(parents=True, exist_ok=True)
     before = {p.name for p in wsl_dir.glob("clip-*.png")}
@@ -199,3 +217,6 @@ def test_windows_clipboard_watcher_captures_a_real_snip(tmp_path):
             stem = str(wsl_dir / name)[:-4]
             for suffix in (".png", ".capture.json", ".pending.json"):
                 Path(stem + suffix).unlink(missing_ok=True)
+        # Put production back the way we found it.
+        if was_installed:
+            autostart.start()

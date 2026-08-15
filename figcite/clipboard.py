@@ -83,7 +83,19 @@ def wsl_to_win(p: str | os.PathLike) -> str:
 
 
 def staging_dirs() -> tuple[str, Path]:
-    """(windows staging path, wsl view of it)."""
+    """(windows staging path, wsl view of it).
+
+    `FIGCITE_STAGING_WIN` (a Windows-style path) overrides the default. This is
+    not a test knob for its own sake: staging is a hand-off queue, and a second
+    watcher on the same directory consumes the first one's captures before it
+    can see them. That is exactly what happened once the autostart watcher went
+    in -- the live watcher test started failing because production finalized the
+    test's snip out of staging mid-test. Anything that needs its own queue says
+    so instead of racing.
+    """
+    override = os.environ.get("FIGCITE_STAGING_WIN")
+    if override:
+        return override, Path(win_to_wsl(override))
     up = _win_userprofile()
     if not up:
         raise RuntimeError(
@@ -249,8 +261,12 @@ def infer_source(capture: dict) -> dict:
 # ------------------------------------------------------------- watching
 
 
-def watch(max_hours: float = 8.0, poll_ms: int = 800, resolve: bool = True,
-          auto_confirm: bool = True) -> int:
+def watch(
+    max_hours: float = 8.0,
+    poll_ms: int = 800,
+    resolve: bool = True,
+    auto_confirm: bool = True,
+) -> int:
     """Run the watcher until it hits its own wall-clock deadline."""
     if not Path(PS_EXE).exists():
         raise RuntimeError(f"powershell.exe not found at {PS_EXE}")
@@ -365,7 +381,6 @@ def auto_finalize(png: str | os.PathLike, pending: dict) -> Optional[Path]:
     """
     from . import store
     from .crossref import record_from_doi
-    from .provenance import Record, now_stamps
 
     inf = pending.get("inference", {})
     cap = pending.get("capture", {})
@@ -380,10 +395,17 @@ def auto_finalize(png: str | os.PathLike, pending: dict) -> Optional[Path]:
 
     if inf.get("grounded") and inf.get("doi"):
         try:
-            rec = record_from_doi(inf["doi"], confirmed=True, source_kind="clipboard",
-                                  source_detail=detail)
+            rec = record_from_doi(
+                inf["doi"],
+                confirmed=True,
+                source_kind="clipboard",
+                source_detail=detail,
+            )
         except Exception as e:
-            print(f"    (citation lookup failed, filing with context only: {e})", flush=True)
+            print(
+                f"    (citation lookup failed, filing with context only: {e})",
+                flush=True,
+            )
             rec = _context_record(detail, inf, note=f"citation lookup failed: {e}")
     else:
         rec = _context_record(detail, inf)
@@ -408,6 +430,7 @@ def auto_finalize(png: str | os.PathLike, pending: dict) -> Optional[Path]:
 def _context_record(detail: dict, inf: dict, note: str = ""):
     """A record that carries the capture context but claims no citation."""
     from .provenance import Record, now_stamps
+
     u, loc = now_stamps()
     cap = detail.get("clipboard_capture") or {}
     return Record(
