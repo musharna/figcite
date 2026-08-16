@@ -126,7 +126,23 @@ def test_windows_clipboard_watcher_captures_a_real_snip(tmp_path, monkeypatch):
         )
 
     def captures_since(before):
-        return sorted({p.name for p in wsl_dir.glob("clip-*.png")} - before)
+        """Completed captures only.
+
+        A capture is TWO writes: watch_clipboard.ps1 writes the .png first and
+        the .capture.json after it, and only then prints CAPTURED -- which is
+        the signal production actually consumes. Polling for the .png alone
+        therefore treats a half-written capture as finished, and the sidecar
+        assertion below lands in the gap between the two writes. That is
+        load-dependent, so it passed for months in an isolated run and failed
+        once the suite grew to 126 tests. Wait for the same marker production
+        waits for.
+        """
+        done = {
+            p.name
+            for p in wsl_dir.glob("clip-*.png")
+            if Path(str(p)[:-4] + ".capture.json").exists()
+        }
+        return sorted(done - before)
 
     # Claim a private staging queue. Sharing the default one with an installed
     # autostart watcher means production finalizes this test's snip out of
