@@ -286,10 +286,11 @@ from an earlier paper — the PDF's own DOI cannot tell you that.
 ## Tests
 
 ```bash
-python3 -m pytest tests/ -q -m "not live"   # 111 tests, no network
-python3 -m pytest tests/ -q -m live         # 15 tests: real CrossRef, real PDF,
+python3 -m pytest tests/ -q -m "not live"   # 127 tests, no network
+python3 -m pytest tests/ -q -m live         # 18 tests: real CrossRef, real PDF,
                                             # real clipboard, real ghostcite,
-                                            # real Ghostscript/ImageMagick
+                                            # real Ghostscript/ImageMagick,
+                                            # real Microsoft PowerPoint via COM
 ```
 
 The live tests drive the actual system boundaries — they are the only ones that
@@ -306,9 +307,16 @@ real manifest (measured — seven of them did).
   Insert the tagged file from disk when you can.
 - **JPEG can't hold the structured record** — only the human-readable citation
   goes into EXIF; the rest lives in the sidecar and manifest.
-- **Verified against python-pptx, not Microsoft PowerPoint.** The `.pptx` written
-  here round-trips correctly through python-pptx and unzips as expected; driving
-  real PowerPoint via COM was not run.
+- ~~**Verified against python-pptx, not Microsoft PowerPoint.**~~ Now driven
+  against PowerPoint 16 itself via COM, in all three directions: PowerPoint
+  writes a deck and figcite recovers 3/3 by exact sha256 (it does not recompress
+  on insert); PowerPoint opens figcite's output **without a repair prompt**, with
+  alt-text, captions and the credits slide intact; and a real edit-and-resave,
+  which rewrites the whole package, still leaves 3/3 recoverable.
+- **PowerPoint's "Compress Pictures" is still unverified** — it is a UI dialog
+  with no COM entry point, so it cannot be driven from a test. The recompression
+  it performs is the class already covered by the Ghostscript/ImageMagick runs
+  above, but that specific button has not been pressed.
 - The watcher deliberately ignores whatever is already on the clipboard when it
   starts, because the focused window at that moment is not where the image came
   from. `-CaptureExisting` opts in.
