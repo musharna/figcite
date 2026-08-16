@@ -8,11 +8,11 @@ a manifest.
 
 Provenance can ride along in three places, and they fail differently:
 
-| Layer | Survives | Dies when |
-|---|---|---|
-| 1. Embedded in the image bytes (PNG `tEXt`/XMP, JPEG EXIF) | *Insert → Picture* | clipboard paste, "Compress Pictures" — anything that re-encodes |
-| 2. Shape alt-text in the `.pptx` | edits, save/reopen, export to tagged PDF | someone deletes and re-inserts the picture |
-| 3. Central manifest keyed by sha256 **and** perceptual dhash | everything above failing | the image is heavily cropped or redrawn |
+| Layer                                                        | Survives                                 | Dies when                                                       |
+| ------------------------------------------------------------ | ---------------------------------------- | --------------------------------------------------------------- |
+| 1. Embedded in the image bytes (PNG `tEXt`/XMP, JPEG EXIF)   | _Insert → Picture_                       | clipboard paste, "Compress Pictures" — anything that re-encodes |
+| 2. Shape alt-text in the `.pptx`                             | edits, save/reopen, export to tagged PDF | someone deletes and re-inserts the picture                      |
+| 3. Central manifest keyed by sha256 **and** perceptual dhash | everything above failing                 | the image is heavily cropped or redrawn                         |
 
 `figcite` writes all three. Matching a slide image back to its source tries them
 in that order; a dhash match is reported as fuzzy and treated as unconfirmed.
@@ -24,7 +24,7 @@ cropped from are grounded and get marked confirmed. DOIs inferred from a window
 title are not, and stay behind `figcite pending` until you pick one.
 
 This isn't hypothetical caution. Asking CrossRef for the exact title
-*"Array programming with NumPy"* returns a **review of** that paper as the top
+_"Array programming with NumPy"_ returns a **review of** that paper as the top
 hit, not the paper — score 37.2, ahead of everything else. A tool that
 auto-accepted the top hit would have put the wrong citation on a slide with full
 confidence. `tests/test_live.py::test_crossref_title_search_is_untrustworthy_by_design`
@@ -47,10 +47,15 @@ figcite grab paper.pdf --page 3 --image-index 0 -o fig.png
 figcite grab paper.pdf --page 3 --rect 84,126,505,730 --dpi 300 -o fig.png
 figcite grab paper.pdf --page 3 --rect 0.1,0.1,0.9,0.5 --frac   # fractions of the page
 
-# 3. Your own generated plots
+# 3. Your own generated plots -- either register them at the call site...
 python -c "
 import figcite.mplhook as fc
 fc.savefig(fig, 'out.png', cite='This work', dataset='rnaseq_v3')  # stamps git commit too
+"
+# ...or patch savefig once and let ordinary code file itself
+python -c "
+import figcite.mplhook as fc; fc.install(dataset='rnaseq_v3')
+fig.savefig('panel_a.png')     # now filed, with cwd + git commit, no call-site change
 "
 
 # 4. A file you downloaded
@@ -67,6 +72,53 @@ figcite apply  deck.pptx -o deck.cited.pptx  # alt-text + captions + credits + m
 
 `apply` is idempotent — re-running replaces its own captions and credits slide
 rather than stacking a second copy.
+
+## Your Zotero library resolves first
+
+A window title is searched against your own library before CrossRef, because
+CrossRef title search is a search of ~150M works that reliably ranks a review
+above the paper it reviews, while your library is a few thousand works you
+chose. Same query, far better prior — and a hit is a paper you demonstrably
+have.
+
+```bash
+figcite zotero configure --api-key <key> --library-id 6532713 --type group
+figcite zotero status      # how much of the library can actually resolve
+figcite zotero sync        # refresh the local snapshot (auto after 7 days)
+figcite zotero resolve "Some paper title"
+```
+
+Credentials are written to `~/.config/figcite/zotero.json` mode 0600, **not**
+exported from a shell rc. That is not tidiness: the clipboard watcher is started
+by a Windows launcher running `wsl.exe … bash -lc`, and that shell inherits no
+exports at all — measured, every `ZOTERO_*` variable came back unset. An
+env-only credential would leave the watcher unable to resolve anything, silently.
+
+Only an **exact, unambiguous** title match is treated as grounded — the same bar
+the Firefox-history route uses. Measured on a real 4,824-item library: 536 items
+resolve to a DOI (147 from the DOI field, 389 from a `doi.org` URL — most items
+are `webpage`, which has no DOI field), of which 497 have an unambiguous title.
+Twenty-four items share the title "Redirecting"; those ground nothing and offer
+candidates instead.
+
+## Handing the bibliography to ghostcite
+
+```bash
+figcite bib deck.pptx -o deck.bib --check    # emits BibTeX, then runs ghostcite
+```
+
+BibTeX, not a DOI list, and the distinction is the whole point: ghostcite catches
+ghost citations by comparing the byline you _claim_ against the one CrossRef
+reports, and a bare DOI list claims nothing. Measured — two real DOIs as a plain
+list produced 0 findings; the same two as BibTeX with one fabricated author
+produced exactly 1.
+
+Unconfirmed records are excluded by default. Those are a machine's guess about
+_which paper a figure came from_, and no bibliography checker can catch that
+error — the byline would match the DOI perfectly, because both came from
+CrossRef. Every skip is counted in the output, because a bibliography that is
+short because entries vanished looks identical to one that is short because the
+deck was small.
 
 ## Browser snips are grounded automatically
 
@@ -150,29 +202,51 @@ Measured on 14 real project figures across 14 export conditions -- 300/150/96/72
 DPI downsampling x JPEG quality 95/75/50, plus CMYK roundtrips. Affinity's most
 aggressive preset ("PDF for web") downsamples anything above 108 DPI to 72.
 
-| Transform | Recovered | False matches |
-|---|---|---|
-| Any downsample tested, down to 64px wide | 14/14 | 0 |
-| JPEG quality down to 10 | 14/14 | 0 |
-| CMYK roundtrip (print export) | 14/14 | 0 |
-| Crop 10% off each edge | **0/14** | 0 |
-| Rotate 90 deg / horizontal flip | **0/14** | 0 |
+| Transform                                | Recovered | False matches |
+| ---------------------------------------- | --------- | ------------- |
+| Any downsample tested, down to 64px wide | 14/14     | 0             |
+| JPEG quality down to 10                  | 14/14     | 0             |
+| CMYK roundtrip (print export)            | 14/14     | 0             |
+| Crop 10% off each edge                   | **0/14**  | 0             |
+| Rotate 90 deg / horizontal flip          | **0/14**  | 0             |
 
 Worst self-distance under any encoding transform was 5; the nearest pair of
-*different* figures sat 15 apart (median 26). The threshold of 6 therefore has
+_different_ figures sat 15 apart (median 26). The threshold of 6 therefore has
 roughly 3x headroom -- it is measured, not guessed.
 
 So compression and resolution are not the risk. **Geometry is**: cropping,
 rotating or flipping an image inside the design app moves every cell of the
-difference hash and recovery fails. It fails *safe* -- a cropped figure reports
+difference hash and recovery fails. It fails _safe_ -- a cropped figure reports
 no match rather than matching the wrong source -- but the provenance is lost.
 
 That is another reason to keep images **linked** in Affinity: a link points at
 the original file no matter how the placed copy is cropped or rotated.
 
-Still not verified against a real Affinity export -- the PDF round-trip was
-produced with PyMuPDF, so what is characterised above is the class of
-transformation an exporter applies, not Affinity's binary itself.
+### Verified against PDFs we did not write
+
+The table above was produced entirely in-process: PyMuPDF wrote the fixtures,
+PyMuPDF read them back, and the transforms were applied in PIL. That is
+self-consistent by construction -- it shows the matcher agrees with itself, and
+cannot show that a PDF from a real exporter is readable at all.
+
+So the same three real project figures were run through **ImageMagick** and
+**Ghostscript** (`/screen`, `/ebook`, `/prepress` -- `/screen` downsamples to 72
+DPI and re-encodes as JPEG, roughly a design app's "PDF for web"). All three
+figures recovered through every preset at a perceptual distance of 0-1 against a
+threshold of 6, and a deliberately unregistered fourth figure correctly matched
+nothing.
+
+That run found a real defect. Ghostscript promotes an image's **soft mask** (its
+greyscale alpha channel) to a top-level image object, where ImageMagick keeps it
+as a child. figcite counted the mask as a figure, so the _same document_ audited
+as 6 images under one writer and 4 under the other, reporting phantom unsourced
+images and sending you looking for the source of something that is not a figure.
+Masks are now excluded by xref, and both writers agree.
+
+Affinity itself is still unverified: it is installed here (`Canva.Affinity
+3.2.3`) but has no scriptable export, so the check needs someone to place three
+images and press Export. The staged files are in
+`Downloads/figcite-affinity-test/`.
 
 ## Nothing is ever lost
 
@@ -180,7 +254,7 @@ Every clipboard capture is filed, whether or not a citation could be established
 
 - **Grounded** (a DOI from the page's URL, or from the PDF the snip came from) ->
   filed confirmed, with the full citation and license.
-- **Everything else** -> filed *unconfirmed*, carrying what was actually observed:
+- **Everything else** -> filed _unconfirmed_, carrying what was actually observed:
   which app was in front, what the window title said, what URL was open, and when.
 
 That second case is the point of the design. A screenshot with no resolvable DOI
@@ -212,12 +286,18 @@ from an earlier paper — the PDF's own DOI cannot tell you that.
 ## Tests
 
 ```bash
-python3 -m pytest tests/ -q -m "not live"   # 11 tests, no network
-python3 -m pytest tests/ -q -m live         # real CrossRef, real PDF, real clipboard
+python3 -m pytest tests/ -q -m "not live"   # 111 tests, no network
+python3 -m pytest tests/ -q -m live         # 15 tests: real CrossRef, real PDF,
+                                            # real clipboard, real ghostcite,
+                                            # real Ghostscript/ImageMagick
 ```
 
-The live tests drive the actual system boundaries. The clipboard test overwrites
-your clipboard with a small test bitmap while it runs.
+The live tests drive the actual system boundaries — they are the only ones that
+can catch a broken one, since the synthetic tests only prove the code is
+self-consistent with itself. The clipboard test overwrites your clipboard with a
+small test bitmap while it runs, and pauses any installed watcher first: the
+clipboard is a single global object, so without that, test bitmaps land in your
+real manifest (measured — seven of them did).
 
 ## Known limits
 

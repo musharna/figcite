@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -439,6 +440,164 @@ def cmd_search(a) -> int:
     return 0
 
 
+def cmd_zotero_sync(a) -> int:
+    from . import zotero
+
+    print("fetching library from the Zotero API...")
+    rep = zotero.sync(progress=True)
+    print(f"{rep['items']} item(s), {rep['with_doi']} resolvable to a DOI")
+    print(f"cached: {rep['cache']}")
+    return 0
+
+
+def cmd_zotero_configure(a) -> int:
+    from . import zotero
+
+    path = zotero.save_credentials(a.api_key, a.library_id, a.type)
+    print(f"wrote {path} (mode 0600)")
+    print(
+        "  background processes read this file directly. The clipboard watcher "
+        "is started by a Windows launcher whose shell inherits no exports, so a "
+        "shell-only export would leave the watcher unable to resolve anything."
+    )
+    try:
+        items = zotero.library(max_age_hours=0)  # force a fetch to prove it works
+    except Exception as e:
+        print(f"  but the library could not be read: {e}", file=sys.stderr)
+        return 1
+    print(f"  verified: {len(items)} item(s) readable")
+    return 0
+
+
+def cmd_zotero_status(a) -> int:
+    from . import zotero
+
+    if not zotero.configured():
+        print("Zotero: NOT CONFIGURED")
+        print(
+            "  set FIGCITE_ZOTERO_API_KEY, FIGCITE_ZOTERO_LIBRARY_ID and\n"
+            "  FIGCITE_ZOTERO_LIBRARY_TYPE (user|group) to enable library-first "
+            "resolution"
+        )
+        return 1
+    _key, lib, typ = zotero.credentials()
+    print(f"Zotero: configured  -> {typ}s/{lib}")
+    try:
+        items = zotero.library()
+    except Exception as e:
+        print(f"  library unavailable: {e}")
+        return 1
+    with_doi = [i for i in items if i["doi"]]
+    from collections import Counter
+
+    src = Counter(i.get("doi_source", "") for i in with_doi)
+    # The counts that decide whether this route can ever fire, printed rather
+    # than assumed: a library of webpages with no DOIs resolves nothing.
+    print(f"  {len(items)} item(s) cached, {len(with_doi)} resolvable to a DOI")
+    print(f"    from the DOI field: {src.get('doi-field', 0)}")
+    print(f"    from a doi.org URL: {src.get('url', 0)}")
+    titles = Counter(zotero.normalize_title(i["title"]) for i in with_doi)
+    print(f"  {sum(1 for _t, n in titles.items() if n == 1)} unambiguous title(s)")
+    return 0
+
+
+def cmd_zotero_resolve(a) -> int:
+    from . import zotero
+
+    r = zotero.resolve(a.title)
+    print(f"query: {a.title}")
+    print(f"  DOI: {r['doi'] or '(none)'}   grounded={r['grounded']}")
+    print(f"  why: {r['evidence']}")
+    for i, c in enumerate(r.get("candidates") or []):
+        print(f"  cand {i}: {c['doi'] or '(no doi)'}  {c['title'][:70]}")
+    return 0
+
+
+def _records_for_bib(source: Optional[str]):
+    """Records behind one deck, one apply-manifest, or the whole store."""
+    from . import store
+    from .provenance import Record
+
+    if not source:
+        return list(store.all_records().values())
+    p = Path(source)
+    if not p.exists():
+        raise FileNotFoundError(f"no such file: {source}")
+    if p.suffix.lower() == ".json":
+        # The .json half of an apply manifest: authoritative about what actually
+        # went into that deck, including images later removed from the store.
+        data = json.loads(p.read_text(encoding="utf-8"))
+        return [Record.from_dict(r["record"]) for r in data if r.get("record")]
+    if _is_pdf(p):
+        from .pdfdeck import audit as pdf_audit
+
+        return [r["record"] for r in pdf_audit(str(p))["rows"] if r["record"]]
+    from .deck import audit
+
+    return [r["record"] for r in audit(str(p))["rows"] if r["record"]]
+
+
+def cmd_bib(a) -> int:
+    from . import bibtex
+
+    recs = _records_for_bib(a.source)
+    rep = bibtex.records_to_bibtex(recs, include_unconfirmed=a.include_unconfirmed)
+
+    out = a.out
+    if not out and a.source and Path(a.source).suffix.lower() != ".json":
+        out = str(Path(a.source).with_suffix("")) + ".bib"
+    if out:
+        Path(out).parent.mkdir(parents=True, exist_ok=True)
+        Path(out).write_text(rep["bibtex"], encoding="utf-8")
+        print(f"wrote {out}")
+    else:
+        print(rep["bibtex"])
+
+    # Every skip is reported. A bibliography that is short because entries
+    # vanished looks identical to one that is short because the deck was small.
+    print(f"  {rep['included']} entr(ies) written", file=sys.stderr)
+    if rep["skipped_unconfirmed"]:
+        print(
+            f"  {rep['skipped_unconfirmed']} skipped as UNCONFIRMED -- a machine "
+            f"guessed which paper those figures came from. ghostcite cannot catch "
+            f"that error (the byline would match the DOI perfectly), so resolve "
+            f"them with `figcite pending` or pass --include-unconfirmed.",
+            file=sys.stderr,
+        )
+    if rep["skipped_no_doi"]:
+        print(
+            f"  {rep['skipped_no_doi']} skipped with no DOI (context only)",
+            file=sys.stderr,
+        )
+    if rep["skipped_own_work"]:
+        print(f"  {rep['skipped_own_work']} skipped as your own work", file=sys.stderr)
+
+    if not a.check:
+        return 0
+    if not out:
+        print("error: --check needs -o to write a file first", file=sys.stderr)
+        return 2
+    if rep["included"] == 0:
+        # Running a checker over an empty file returns "clean", which is the
+        # most dangerous possible answer here.
+        print(
+            "\nnot running ghostcite: the bibliography is empty, and a checker "
+            "over an empty file reports success.",
+            file=sys.stderr,
+        )
+        return 1
+    res = bibtex.run_ghostcite(out)
+    s = res.get("summary", {})
+    print(
+        f"\nghostcite: {s.get('total', 0)} entr(ies), {s.get('with_doi', 0)} with a "
+        f"DOI, {s.get('findings', 0)} finding(s)"
+    )
+    for f in res.get("findings", []):
+        print(f"  [{f.get('tier', '?')}] {f.get('key') or f.get('doi') or ''}")
+        print(f"      {str(f.get('message', ''))[:150]}")
+    return 1 if res.get("findings") else 0
+
+
 def _is_pdf(path) -> bool:
     return str(path).lower().endswith(".pdf")
 
@@ -669,6 +828,51 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("query")
     s.add_argument("--rows", type=int, default=5)
     s.set_defaults(func=cmd_search)
+
+    z = sub.add_parser(
+        "zotero", help="resolve captures against your Zotero library first"
+    )
+    zsub = z.add_subparsers(dest="zotero_cmd", required=True)
+    zc = zsub.add_parser(
+        "configure", help="store credentials 0600 so the watcher can read them"
+    )
+    zc.add_argument("--api-key", required=True)
+    zc.add_argument("--library-id", required=True)
+    zc.add_argument("--type", default="user", choices=["user", "group"])
+    zc.set_defaults(func=cmd_zotero_configure)
+
+    zs = zsub.add_parser("sync", help="refresh the local snapshot of the library")
+    zs.set_defaults(func=cmd_zotero_sync)
+    zt = zsub.add_parser(
+        "status", help="is the library configured, and how much of it resolves?"
+    )
+    zt.set_defaults(func=cmd_zotero_status)
+    zr = zsub.add_parser("resolve", help="look one title up in the library")
+    zr.add_argument("title")
+    zr.set_defaults(func=cmd_zotero_resolve)
+
+    b = sub.add_parser(
+        "bib",
+        help="emit BibTeX for the works a deck's figures came from, for ghostcite",
+    )
+    b.add_argument(
+        "source",
+        nargs="?",
+        help="a .pptx, a .pdf, an apply-manifest .json, or omit for the whole store",
+    )
+    b.add_argument("-o", "--out", help="write here (default: <source>.bib)")
+    b.add_argument(
+        "--include-unconfirmed",
+        action="store_true",
+        help="also emit machine-guessed figure-to-DOI links (off: they are the "
+        "ghost citations this is meant to prevent, and no checker can catch them)",
+    )
+    b.add_argument(
+        "--check",
+        action="store_true",
+        help="run ghostcite over the result; exit 1 if it finds anything",
+    )
+    b.set_defaults(func=cmd_bib)
 
     a = sub.add_parser("audit", help="report provenance coverage of a .pptx")
     a.add_argument("pptx")

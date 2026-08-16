@@ -15,6 +15,7 @@ import subprocess
 from pathlib import Path
 from typing import Iterable, Optional
 
+from . import zotero
 from .browser import resolve_from_capture as browser_resolve
 from .crossref import search_bibliographic
 from .pdfgrab import discover_doi
@@ -177,7 +178,11 @@ def infer_source(capture: dict) -> dict:
     is unconfirmed unless it came out of a PDF we actually located and read.
     """
     title = capture.get("title", "") or ""
-    proc = (capture.get("process") or "").lower()
+    # PowerShell's ProcessName has no ".exe", which is what BROWSERS/PDF_APPS are
+    # keyed on. Strip it anyway: if a capture ever arrives with the suffix, every
+    # app-specific branch below silently stops matching and the only symptom is
+    # worse inference -- a failure with no observable.
+    proc = re.sub(r"\.exe$", "", (capture.get("process") or "").lower().strip())
     out: dict = {
         "kind": "unknown",
         "doi": None,
@@ -230,16 +235,33 @@ def infer_source(capture: dict) -> dict:
                 grounded=bool(doi),
             )
             return out
+        # The file is not on disk -- but the paper may still be in the library,
+        # which is the whole point of keeping one. Before this, a window title
+        # naming a PDF we could not locate was a dead end that produced no
+        # candidates at all.
+        miss = f"window title named '{pdf_name}' but no such file was found on disk"
+        z = _zotero_try(zotero.title_from_pdf_name(pdf_name), out)
         out.update(
             kind="clipboard-from-pdf",
-            doi_evidence=f"window title named '{pdf_name}' but no such file was found on disk",
+            doi_evidence=f"{miss}; {z}",
         )
         return out
 
     if proc in BROWSERS:
         q = clean_browser_title(title)
         out["kind"] = "clipboard-from-web"
-        if len(q) > 12:
+
+        # Zotero BEFORE CrossRef. Your library is a few thousand works you chose;
+        # CrossRef is ~150M you did not. For the same query the library has the
+        # far better prior, and a hit there is a paper you demonstrably have.
+        # It also happens to store webpage items under the browser's own page
+        # title, which is exactly the string captured here.
+        znote = _zotero_try(q, out)
+        if out["doi"]:
+            out["doi_evidence"] = znote
+            return out
+
+        if len(q) > 12 and not out["candidates"]:
             try:
                 out["candidates"] = search_bibliographic(q, rows=5)
             except Exception as e:
@@ -248,14 +270,38 @@ def infer_source(capture: dict) -> dict:
             "title-derived candidates only -- CrossRef title search is unreliable "
             "(it ranks reviews and commentaries above the paper itself), so pick one explicitly"
         )
+        out["doi_evidence"] = f"{znote}; {out['doi_evidence']}"
         if browser_note:
             out["doi_evidence"] = f"{browser_note}; fell back to {out['doi_evidence']}"
         return out
 
-    out["doi_evidence"] = (
-        f"no rule for process '{proc or '?'}' with title '{title[:80]}'"
-    )
+    # No rule for this app. The window title is still a string, and the library
+    # is still searchable, so try it rather than giving up outright.
+    note = f"no rule for process '{proc or '?'}' with title '{title[:80]}'"
+    z = _zotero_try(title, out)
+    if out["doi"]:
+        out["kind"] = "clipboard-from-zotero"
+    out["doi_evidence"] = f"{note}; {z}"
     return out
+
+
+def _zotero_try(query: str, out: dict) -> str:
+    """Look `query` up in Zotero and fold any result into `out`. Returns evidence.
+
+    Mutates rather than returns so each call site keeps whatever it already
+    established. Never raises: an unconfigured or unreachable library must
+    degrade to "no answer from Zotero", never to a wrong answer, and the
+    distinction between the two is preserved in the evidence string.
+    """
+    try:
+        z = zotero.resolve(query)
+    except Exception as e:  # defensive: resolve() already swallows the known cases
+        return f"Zotero lookup errored: {e}"
+    if z.get("doi") and z.get("grounded"):
+        out.update(doi=z["doi"], grounded=True)
+    if z.get("candidates") and not out.get("candidates"):
+        out["candidates"] = z["candidates"]
+    return z.get("evidence", "")
 
 
 # ------------------------------------------------------------- watching
