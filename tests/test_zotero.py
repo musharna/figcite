@@ -84,6 +84,93 @@ def test_normalize_title_strips_accents():
     )
 
 
+# ------------------------------------------- browser tab titles carry a site name
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        " | PNAS",
+        " - PNAS",
+        " | Frontiers",
+        " | Science",
+        " | Cell",
+        " | bioRxiv",
+        " - Nature",
+        " - PMC",
+        " - ScienceDirect",
+        " | Proceedings of the National Academy of Sciences",
+        " | Philosophical Transactions of the Royal Society B",
+    ],
+)
+def test_a_site_name_suffix_does_not_hide_an_exact_match(lib, suffix):
+    """The defect this pins, measured 2026-08-16.
+
+    `clean_browser_title` strips publisher suffixes by NAME, from a fixed list.
+    Publishers are an open set, so every journal not on the list silently
+    defeated exact matching -- of ten real suffixes tested, PNAS, Frontiers,
+    Science and Cell all failed, purely because nobody had listed them.
+
+    The fix is structural, not a longer list: a trailing short run after a
+    separator is offered as a candidate. Grounding still requires an exact,
+    unique match, so more candidates does not mean a lower bar.
+    """
+    r = zotero.resolve_page_title(
+        "A conserved ARF-DNA interface underlies auxin response" + suffix
+    )
+    assert r["grounded"] is True, f"{suffix!r} hid an exact match"
+    assert r["doi"] == "10.1073/pnas.2501915122"
+
+
+def test_trimming_a_site_name_cannot_invent_a_match(lib):
+    """The control for the test above. Trimming must not turn a miss into a hit."""
+    for title in (
+        "Quantum badger husbandry | PNAS",
+        "Untitled document | Google Docs",
+        "Inbox (42) | Gmail",
+    ):
+        r = zotero.resolve_page_title(title)
+        assert r["grounded"] is False, f"{title!r} grounded after trimming"
+        assert r["doi"] is None
+
+
+def test_a_colon_subtitle_is_never_split():
+    """Journal titles use ':' for subtitles far more often than browsers use it
+    for site names, so splitting on it would trim real title text."""
+    t = "Gene X: a master regulator of root development"
+    assert zotero.title_variants(t) == [t]
+
+
+def test_a_long_tail_is_treated_as_title_text_not_a_site_name():
+    t = "A study of X - and its far wider implications for the whole of the field"
+    assert zotero.title_variants(t) == [t]
+
+
+def test_title_variants_are_most_literal_first():
+    """Order matters: an exact match on the untrimmed title must win before any
+    trimmed form is tried."""
+    v = zotero.title_variants("Some Paper Title | Journal Name | Publisher")
+    assert v[0] == "Some Paper Title | Journal Name | Publisher"
+    assert "Some Paper Title" in v
+    assert v == sorted(v, key=len, reverse=True)
+
+
+def test_page_title_resolver_reports_an_unreachable_library_once(monkeypatch):
+    """An unreachable library will not become reachable on the next variant."""
+    calls = []
+
+    def boom(*_a, **_kw):
+        calls.append(1)
+        raise LookupUnavailable("network down")
+
+    monkeypatch.setattr(zotero, "library", boom)
+    monkeypatch.setenv("FIGCITE_ZOTERO_API_KEY", "k")
+    monkeypatch.setenv("FIGCITE_ZOTERO_LIBRARY_ID", "1")
+    r = zotero.resolve_page_title("A paper title | Journal | Publisher")
+    assert r["available"] is False
+    assert len(calls) == 1, f"retried an unreachable library {len(calls)} times"
+
+
 def test_title_from_zotero_filename():
     """Zotero names attachments '<creators> - <year> - <title>.pdf'. Searching
     the whole filename matches nothing: no title contains its own author list."""

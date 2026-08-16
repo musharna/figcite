@@ -195,6 +195,75 @@ def normalize_title(s: str) -> str:
     return _WS.sub(" ", s).strip()
 
 
+# A browser tab title is conventionally "<page title> <sep> <site name>".
+# Matching the site name by NAME cannot work: publishers are an open set, and an
+# enumeration of them silently fails for every one not listed. Measured on the
+# existing publisher list -- of ten real suffixes, " | PNAS", " | Frontiers",
+# " | Science" and " | Cell" all defeated exact matching, because those names
+# were simply not in the list. So the tail is identified STRUCTURALLY (a short
+# trailing run after a separator) and offered as a candidate, rather than
+# recognised.
+# A colon is deliberately NOT a separator here: journal titles use ":" for
+# subtitles far more often than browsers use it for site names, so splitting on
+# it would trim real title text. Browsers use the pipe and dash family.
+_TAB_TAIL = re.compile(r"^(?P<head>.+?)\s+[|–—\-·]\s+(?P<tail>[^|]{1,60})$")
+# Long enough for the real journal names -- "Proceedings of the National Academy
+# of Sciences" is seven words, and a five-word cap silently dropped it. The
+# exact-and-unique requirement is what keeps the bar high, not this number: a
+# trimmed candidate that matches nothing simply loses.
+_MAX_TAIL_WORDS = 8
+
+
+def title_variants(title: str) -> list[str]:
+    """Candidate queries for a browser tab title, most literal first.
+
+    Returns the title itself, then progressively trimmed forms with a trailing
+    site name removed. Grounding still requires an exact, unique match against
+    the library, so offering more candidates does not lower the bar -- it only
+    stops a publisher we happen not to have heard of from hiding an exact match.
+    """
+    out: list[str] = []
+    cur = (title or "").strip()
+    seen: set[str] = set()
+    for _ in range(3):  # "Title | Journal | Publisher" bottoms out quickly
+        if cur and cur.lower() not in seen:
+            seen.add(cur.lower())
+            out.append(cur)
+        m = _TAB_TAIL.match(cur)
+        if not m:
+            break
+        tail = m.group("tail").strip()
+        if len(tail.split()) > _MAX_TAIL_WORDS:
+            break
+        cur = m.group("head").strip()
+    return out
+
+
+def resolve_page_title(title: str, max_age_hours: Optional[float] = None) -> dict:
+    """resolve() over the candidate forms of a browser tab title.
+
+    Stops at the first candidate that grounds. If none ground, the result of the
+    most literal candidate is returned, so the evidence describes what was
+    actually asked rather than some trimmed variant of it.
+    """
+    first: Optional[dict] = None
+    for cand in title_variants(title):
+        r = resolve(cand, max_age_hours=max_age_hours)
+        if first is None:
+            first = r
+        if r.get("grounded"):
+            r["evidence"] = r["evidence"] + (
+                f" (matched on {cand!r})" if cand != title else ""
+            )
+            return r
+        # An unreachable library will not become reachable on the next variant.
+        if r.get("available") is False:
+            return r
+        if r.get("candidates") and not (first.get("candidates")):
+            first = r
+    return first or resolve(title, max_age_hours=max_age_hours)
+
+
 def title_from_pdf_name(name: str) -> str:
     """Recover the paper title from a Zotero-style attachment filename.
 

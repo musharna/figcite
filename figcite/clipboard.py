@@ -256,7 +256,7 @@ def infer_source(capture: dict) -> dict:
         # far better prior, and a hit there is a paper you demonstrably have.
         # It also happens to store webpage items under the browser's own page
         # title, which is exactly the string captured here.
-        znote = _zotero_try(q, out)
+        znote = _zotero_try(q, out, page_title=True)
         if out["doi"]:
             out["doi_evidence"] = znote
             return out
@@ -278,23 +278,30 @@ def infer_source(capture: dict) -> dict:
     # No rule for this app. The window title is still a string, and the library
     # is still searchable, so try it rather than giving up outright.
     note = f"no rule for process '{proc or '?'}' with title '{title[:80]}'"
-    z = _zotero_try(title, out)
+    # An unknown app's window title carries an app-name tail just as a browser
+    # tab does ("paper.pdf - Some Viewer"), and we know even less about which
+    # apps those are, so the structural trim applies here more, not less.
+    z = _zotero_try(title, out, page_title=True)
     if out["doi"]:
         out["kind"] = "clipboard-from-zotero"
     out["doi_evidence"] = f"{note}; {z}"
     return out
 
 
-def _zotero_try(query: str, out: dict) -> str:
+def _zotero_try(query: str, out: dict, page_title: bool = False) -> str:
     """Look `query` up in Zotero and fold any result into `out`. Returns evidence.
 
     Mutates rather than returns so each call site keeps whatever it already
     established. Never raises: an unconfigured or unreachable library must
     degrade to "no answer from Zotero", never to a wrong answer, and the
     distinction between the two is preserved in the evidence string.
+
+    `page_title` selects the browser-tab resolver, which also tries the title
+    with a trailing site name removed. That matters because the publisher-suffix
+    strip list is an enumeration and publishers are an open set.
     """
     try:
-        z = zotero.resolve(query)
+        z = zotero.resolve_page_title(query) if page_title else zotero.resolve(query)
     except Exception as e:  # defensive: resolve() already swallows the known cases
         return f"Zotero lookup errored: {e}"
     if z.get("doi") and z.get("grounded"):
