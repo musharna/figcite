@@ -275,7 +275,16 @@ def start() -> dict:
     p = installed_path()
     if p is None:
         raise RuntimeError("not installed; run `figcite autostart install` first")
-    if supervisor_processes():
+    # Check for a live WATCHER too, not just a supervisor.
+    #
+    # The thing that must not be duplicated is the watcher, and a watcher can
+    # outlive the supervisor that spawned it. Guarding on supervisors alone let
+    # three accumulate, which then raced on identical capture filenames and
+    # destroyed a real capture. The PowerShell side now holds a mutex so this
+    # cannot happen even if something bypasses this check -- the guard belongs
+    # at the layer that owns the resource -- but reporting it here honestly is
+    # what makes the duplicate visible instead of silent.
+    if supervisor_processes() or watcher_processes():
         return {"ok": True, "already_running": True}
     vbs_win = _startup_dir_win() + "\\" + VBS_NAME
     r = _ps(

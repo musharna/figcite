@@ -352,9 +352,31 @@ def watch(
             line = line.strip()
             if not line:
                 continue
+            if line.startswith("WATCH_ALREADY_RUNNING"):
+                print(
+                    f"  another watcher already owns this staging directory; "
+                    f"not starting a second one ({line.split(' ', 1)[-1]})",
+                    flush=True,
+                )
+                continue
             if line.startswith("CAPTURED "):
                 png_win = line.split(" ", 1)[1]
                 png = win_to_wsl(png_win)
+                # The announced path is not trusted.
+                #
+                # PowerShell writes its errors to this same stream, so an error
+                # raised mid-capture spliced itself into the middle of the
+                # CAPTURED line and yielded a path like
+                # "clip-...pngSet-Content : Stream was not readable." -- which
+                # then failed far downstream as a confusing FileNotFoundError.
+                # Measured on a real capture 2026-08-16.
+                if not png_win.lower().endswith(".png") or not Path(png).exists():
+                    print(
+                        f"    IGNORED a malformed capture announcement (the "
+                        f"watcher's stdout was corrupted): {line[:120]!r}",
+                        flush=True,
+                    )
+                    continue
                 print(f"  captured {Path(png).name}", flush=True)
                 if resolve:
                     try:

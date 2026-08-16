@@ -69,3 +69,76 @@ def test_grounded_capture_is_still_confirmed(monkeypatch, tmp_path):
     rec = store.get(__import__("figcite").provenance.sha256_file(dest))
     assert rec.confirmed is True
     assert rec.doi == "10.1111/nph.71477"
+# IRON_LAW_OK
+
+
+# ------------------------------------------------- found by a REAL capture, 2026-08-16
+
+
+def test_watcher_script_is_a_singleton_per_staging_dir():
+    """Two watchers on one staging dir destroy captures.
+
+    Filenames are clip-<second>-<md5[0..7]>, so two watchers seeing the SAME
+    clipboard image in the same second compute the SAME path and race to write
+    the sidecar. Measured: three watchers had accumulated, the collision failed
+    the write with "Stream was not readable", and the capture was lost.
+
+    The lock lives in the PowerShell script, not the Python launcher, because
+    the launcher could only ever check whether a *supervisor* was running --
+    which is not the thing being duplicated.
+    """
+    src = C.PS1.read_text(encoding="utf-8", errors="replace")
+    assert "System.Threading.Mutex" in src, "no singleton lock"
+    assert "WATCH_ALREADY_RUNNING" in src, "a refused start must be announced"
+    assert "$StagingDir.ToLower()" in src, "lock must be keyed per staging dir"
+
+
+def test_capture_is_announced_only_after_both_files_exist():
+    """CAPTURED used to be emitted even when the sidecar write had failed, so
+    the consumer was told about a capture whose context did not exist."""
+    src = C.PS1.read_text(encoding="utf-8", errors="replace")
+    assert "CAPTURE_FAILED" in src, "a failed sidecar write must be reported"
+    assert src.index("$ok = $true") < src.index('if ($ok) { Write-Output ("CAPTURED '), (
+        "the announcement must come after the write attempt"
+    )
+
+
+def test_malformed_capture_announcement_is_ignored(monkeypatch, tmp_path, capsys):
+    """PowerShell writes errors to the same stream as CAPTURED, so an error
+    raised mid-capture splices into the line and yields a path like
+    'clip-....pngSet-Content : Stream was not readable.' -- which then failed
+    far downstream as a confusing FileNotFoundError. Measured on a real capture.
+    """
+    import subprocess
+
+    real = tmp_path / "clip-20260101-000000-AAAABBBB.png"
+    Image.new("RGB", (40, 30), (10, 10, 10)).save(real)
+
+    lines = [
+        "WATCH_START x",
+        f"CAPTURED {real}Set-Content : Stream was not readable.",  # corrupted
+        f"CAPTURED {tmp_path / 'does-not-exist.png'}",             # announced, absent
+        f"CAPTURED {real}",                                        # the good one
+    ]
+
+    class FakeProc:
+        stdout = iter(lines)
+
+        def terminate(self):
+            pass
+
+    monkeypatch.setattr(C, "win_to_wsl", lambda p: str(p))
+    monkeypatch.setattr(C, "wsl_to_win", lambda p: str(p))
+    monkeypatch.setattr(C, "staging_dirs", lambda: (str(tmp_path), tmp_path))
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: FakeProc())
+
+    seen = []
+    monkeypatch.setattr(C, "enrich", lambda p: (seen.append(str(p)), {})[1])
+    monkeypatch.setattr(C, "auto_finalize", lambda p, pending: None)
+
+    C.watch(max_hours=0.001, resolve=True, auto_confirm=True)
+
+    assert seen == [str(real)], (
+        f"expected only the one real capture to be processed, got {seen}"
+    )
+    assert "malformed capture announcement" in capsys.readouterr().out
