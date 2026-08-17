@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Run the unit suite before anything leaves this machine.
+#
+# This repo is PRIVATE, so GitHub-hosted Actions minutes bill against the free
+# tier -- and this account is already at roughly half of it. A pre-push hook is
+# the honest free equivalent for a one-developer repo: same tests, same failure,
+# 14 seconds, no quota.
+#
+# Install (once per clone, hooks are not cloned):
+#     git config core.hooksPath .githooks
+#
+# Bypass deliberately with `git push --no-verify`. There is no automatic bypass:
+# a hook that skips itself when it is inconvenient is not a check.
+set -euo pipefail
+
+# Pushing only deletions runs no code, so there is nothing to verify.
+only_deletes=1
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+  [ -n "${local_sha:-}" ] || continue
+  [ "$local_sha" = "0000000000000000000000000000000000000000" ] || only_deletes=0
+done
+if [ "$only_deletes" = 1 ]; then
+  exit 0
+fi
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+# The live tests need a Zotero API key, Windows, PowerPoint, Ghostscript, and
+# the real network. They cannot run unattended, so they are excluded here.
+#
+# Selection is by MARKER, not by filename. Excluding the three obviously-live
+# FILES still let six live-marked tests through -- including ones that read the
+# real Firefox history and call real CrossRef and real ghostcite -- because
+# `live` is defined by the marker and those six live in ordinary test files.
+# The marker is the definition; a filename list is a guess at it.
+
+echo "pre-push: running the unit suite (live tests excluded)..."
+
+# Deliberately NOT piped. Routing pytest through `tail`/`grep` makes the pipeline
+# report the filter's exit status, which has hidden a failing gate in this
+# account's history for two commits. The verdict must be pytest's own status.
+# Capture pytest's own status directly. Reading $? after an `if ... fi` yields
+# the status of the *if construct* (0 when the condition merely failed), which
+# made this hook block correctly while reporting "pytest exit 0" -- a message
+# that pointed away from the actual failure.
+set +e
+python3 -m pytest tests/ -q -m "not live"
+status=$?
+set -e
+
+if [ "$status" -eq 0 ]; then
+  echo "pre-push: OK"
+  exit 0
+fi
+cat >&2 <<MSG
+
+pre-push: BLOCKED -- the unit suite failed (pytest exit $status).
+
+Nothing was pushed. Fix the failures above, or if you are certain this push
+should go out regardless:
+
+    git push --no-verify
+
+MSG
+exit 1

@@ -286,7 +286,7 @@ from an earlier paper — the PDF's own DOI cannot tell you that.
 ## Tests
 
 ```bash
-python3 -m pytest tests/ -q -m "not live"   # 127 tests, no network
+python3 -m pytest tests/ -q -m "not live"   # 130 tests, no network
 python3 -m pytest tests/ -q -m live         # 18 tests: real CrossRef, real PDF,
                                             # real clipboard, real ghostcite,
                                             # real Ghostscript/ImageMagick,
@@ -299,6 +299,20 @@ self-consistent with itself. The clipboard test overwrites your clipboard with a
 small test bitmap while it runs, and pauses any installed watcher first: the
 clipboard is a single global object, so without that, test bitmaps land in your
 real manifest (measured — seven of them did).
+
+### Before every push
+
+The unit suite runs automatically on `git push`, via a hook in the repo:
+
+```bash
+git config core.hooksPath .githooks   # once per clone; hooks are not cloned
+```
+
+This is deliberately not GitHub Actions. The repository is private, so
+GitHub-hosted minutes bill against the account's free tier, and a pre-push hook
+gives a one-developer repo the same signal in six seconds for nothing. It runs
+the 130 non-live tests and refuses the push if any fail; `git push --no-verify`
+overrides it when you mean to.
 
 ## Known limits
 
