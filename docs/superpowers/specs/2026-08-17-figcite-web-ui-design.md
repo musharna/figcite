@@ -1,7 +1,20 @@
 # figcite web UI + service layer (SP1)
 
 Date: 2026-08-17
-Status: approved, not yet implemented
+Status: implemented (branch `feat/web-ui`)
+
+> **This file records the ORIGINAL design.** It is kept as written, not
+> rewritten to match the code: decisions taken during implementation and the
+> four review rounds that followed live in
+> `.superpowers/sdd/2026-08-17-figcite-web-ui/progress.md`, which is the
+> current record. Where the two disagree, progress.md and the code are right.
+> Two specifics below have been corrected in place because they would mislead
+> a reader about a shipped interface -- `confirm`'s return type, and the
+> candidate dict's key name. Everything else is the design as approved,
+> including places where implementation later ruled otherwise: "`confirm`
+> argument exclusivity" below still says zero selectors raise `ValueError`,
+> where the shipped `service.confirm` accepts zero and reads the item's own
+> grounded DOI (controller ruling 1).
 
 ## Why
 
@@ -72,7 +85,9 @@ roughly a dozen endpoints.
 ```python
 pending_items() -> list[PendingItem]   # staged captures + filed-unconfirmed, unified
 confirm(ref, *, doi=None, pick=None, cite=None,
-        own_work=False, adapted_from=None, note=None) -> Record
+        own_work=False, adapted_from=None, note=None) -> ConfirmResult
+        # ^ ConfirmResult, not a bare Record: it carries `.record` AND the
+        #   `.path` the image was filed to, which both front ends need
 skip(ref)                     -> None
 audit(path, min_inches=1.0)   -> Report          # delegates to deck.audit / pdfdeck.audit
 apply(path, out=None, **opts) -> ApplyResult
@@ -92,7 +107,7 @@ UI never constructs CLI syntax, so the two front ends cannot drift on addressing
 | `context`         | app, window title, capture timestamp - the `context_line()` data                   |
 | `doi`             | auto-grounded DOI, or `None`                                                       |
 | `doi_evidence`    | _why_ that DOI is trusted, e.g. "DOI in URL"; empty when `doi` is `None`           |
-| `candidates`      | list of `{origin, score, doi, title, container, year, type}`, possibly empty       |
+| `candidates`      | list of `{source, score, doi, title, container, year, type}`, possibly empty       |
 | `error`           | the lookup failure message, or `None`. Distinct from an empty `candidates`         |
 
 `candidates == []` with `error is None` means "looked, found nothing".
