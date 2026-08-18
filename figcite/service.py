@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-from . import clipboard, store
+from . import clipboard, deck, pdfdeck, store
 from ._actions import finalize, record_for
 from .provenance import Record
 
@@ -232,3 +232,84 @@ def _confirm_filed(item, *, doi, adapted_from, note):
     # No path: the bytes were already in the library, so nothing was filed here
     # and there is no new file for the caller to point the user at.
     return ConfirmResult(record=rec, path=None)
+
+
+def _is_pdf(path) -> bool:
+    return str(path).lower().endswith(".pdf")
+
+
+def audit(path, min_inches: float = 1.0) -> dict:
+    """One report shape for a deck OR a PDF, so the UI needs none of its own.
+
+    `deck.audit()` and `pdfdeck.audit()` disagree on their own key names
+    (pptx/file, slide+shape/page+xref) -- this is where that disagreement
+    ends. See `figcite/deck.py:audit` and `figcite/pdfdeck.py:audit`.
+    """
+    if _is_pdf(path):
+        raw, kind = pdfdeck.audit(path, min_inches=min_inches), "pdf"
+
+        def where(r):
+            return f"page {r['page']}"
+
+        def label(r):
+            return f"xref {r['xref']}"
+    else:
+        raw, kind = deck.audit(path, min_inches=min_inches), "pptx"
+
+        def where(r):
+            return f"slide {r['slide']}"
+
+        def label(r):
+            return r["shape"]
+
+    rows = []
+    for r in raw["rows"]:
+        rec = r["record"]
+        if rec is None:
+            status = "no-source"
+        elif rec.confirmed:
+            status = "ok"
+        else:
+            status = "unconfirmed"
+        rows.append(
+            {
+                "ref": f"sha:{rec.sha256}" if rec is not None else "",
+                "location": where(r),
+                "label": label(r),
+                "status": status,
+                "matched_by": r["matched_by"],
+                "decorative": r["decorative"],
+                "citation": (rec.short_cite or rec.doi or "") if rec else "",
+                "doi": (rec.doi or "") if rec else "",
+                "license_url": (rec.license_url or "") if rec else "",
+                "reuse": (rec.reuse or "unknown") if rec else "",
+                "retracted": bool(rec.retracted) if rec else False,
+            }
+        )
+    return {
+        "path": raw.get("pptx") or raw.get("file"),
+        "kind": kind,
+        "pictures": raw["pictures"],
+        "tagged": raw["tagged"],
+        "unconfirmed": raw["unconfirmed"],
+        "untagged_substantive": raw["untagged_substantive"],
+        "rows": rows,
+    }
+
+
+def apply(path, out=None, **opts) -> dict:
+    """Write provenance into a deck or PDF. Never honours a caller's
+    allow_unconfirmed -- there is no path from the web UI to it, ever -- and
+    never overwrites its own input.
+    """
+    opts.pop("allow_unconfirmed", None)  # no UI path to it, ever
+    out = out or _default_out(path)
+    if Path(out).resolve() == Path(path).resolve():
+        raise ValueError("apply refuses to overwrite its input")
+    fn = pdfdeck.apply if _is_pdf(path) else deck.apply
+    return fn(path, out, allow_unconfirmed=False, **opts)
+
+
+def _default_out(path) -> str:
+    p = Path(path)
+    return str(p.with_name(p.stem + ".cited" + p.suffix))
