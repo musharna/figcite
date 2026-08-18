@@ -1564,3 +1564,134 @@ git commit -m "test: the two front doors must agree, or the service layer failed
 1. **`PendingItem` gained a `grounded` field** not in the spec's table. `confirm` needs it to distinguish an evidenced DOI from a guess, and the spec's own "show the evidence" rule implies it.
 2. **Refs are stable strings, not list indices.** The spec said "opaque"; indices shift when an item is resolved, which in a UI that holds a ref across a round trip is a wrong-image-confirmed bug.
 3. **`cmd_pending` gains a `LOOKUP FAILED` branch.** The spec required the distinction in the UI; leaving the CLI unable to express it would put a known defect in the older front end.
+
+---
+
+### Task 11: Make inference failures distinguishable from no-match
+
+**Added mid-execution by controller Ruling 3.** Executes AFTER Task 2 and BEFORE Task 3.
+
+**Files:**
+- Modify: `figcite/clipboard.py` (`infer_source`, `_zotero_try`)
+- Test: `tests/test_inference_errors.py`
+
+**Interfaces:**
+- Consumes: nothing new
+- Produces: an `"error"` key in the dict `infer_source()` returns — `None` when nothing failed, the failure message when a lookup could not run. `service.PendingItem.error` (Task 1) reads it; Task 3's `LOOKUP FAILED` branch and Task 7's `LOOKUP FAILED` card both render it.
+
+**Why this task exists.** Task 1's review found that **nothing writes `error`** — `service.py:61`'s `inf.get("error")` was the only mention of the key in the codebase. Worse than absent: failures are currently folded into `doi_evidence`, the same field that carries *legitimate* evidence like "DOI in URL". So "CrossRef was unreachable" and "CrossRef returned nothing" arrive at every consumer as indistinguishable prose in one field. That is exactly the conflation the spec forbids, and without this task the `LOOKUP FAILED` branches in Tasks 3 and 7 are permanently dead code.
+
+`doi_evidence` keeps its current text at every site — this task only ADDS a parallel signal. Nothing that reads `doi_evidence` today changes behavior.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+import pytest
+
+from figcite import clipboard
+
+
+def test_a_failed_browser_lookup_sets_error(monkeypatch):
+    """'Could not look' must be readable as such, not as prose in doi_evidence."""
+    def boom(capture):
+        raise RuntimeError("Network is unreachable")
+    monkeypatch.setattr(clipboard, "browser_resolve", boom)
+
+    out = clipboard.infer_source({"process": "firefox", "title": "Some paper"})
+    assert out["error"] is not None
+    assert "Network is unreachable" in out["error"]
+
+
+def test_a_successful_inference_leaves_error_none(monkeypatch):
+    """Positive control. Without this, a function that set error unconditionally
+    -- or one that crashed on every path -- would pass the test above."""
+    monkeypatch.setattr(clipboard, "browser_resolve", lambda capture: {
+        "doi": "10.1/real", "url": "https://example.org/10.1/real",
+        "grounded": True, "evidence": "DOI in URL",
+    })
+    out = clipboard.infer_source({"process": "firefox", "title": "Some paper"})
+    assert out["doi"] == "10.1/real"
+    assert out["error"] is None
+
+
+def test_error_and_doi_evidence_are_independent_signals(monkeypatch):
+    """The regression this task prevents: collapsing the two back into one."""
+    def boom(capture):
+        raise RuntimeError("Network is unreachable")
+    monkeypatch.setattr(clipboard, "browser_resolve", boom)
+
+    out = clipboard.infer_source({"process": "firefox", "title": "Some paper"})
+    assert out["error"], "the failure must be its own field"
+    assert out["doi_evidence"] is not None, "existing evidence text must survive"
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `python3 -m pytest tests/test_inference_errors.py -v`
+Expected: FAIL — `KeyError: 'error'` on the first and third tests. The second (positive control) may pass already; that is fine and is why it is there.
+
+- [ ] **Step 3: Add the parallel signal at each failure site**
+
+In `figcite/clipboard.py`, add `"error": None,` to the `out` dict literal inside `infer_source` (it currently ends `..., "url": None, "grounded": False,`).
+
+Then at each of the four sites where a failure message is currently written, ALSO set `out["error"]`. Leave every existing `doi_evidence` assignment exactly as it is:
+
+```python
+        # browser branch
+        try:
+            b = browser_resolve(capture)
+        except Exception as e:
+            out["error"] = f"browser grounding failed: {e}"
+            b = {
+                "doi": None,
+                "url": None,
+                "grounded": False,
+                "evidence": f"browser grounding failed: {e}",
+            }
+```
+
+```python
+            # pdf branch
+            try:
+                doi, where = discover_doi(path)
+            except Exception as e:
+                out["error"] = f"could not read {path}: {e}"
+                doi, where = None, f"could not read {path}: {e}"
+```
+
+```python
+            # CrossRef branch
+            try:
+                out["candidates"] = search_bibliographic(q, rows=5)
+            except Exception as e:
+                out["error"] = f"CrossRef search failed: {e}"
+                out["doi_evidence"] = f"CrossRef search failed: {e}"
+```
+
+```python
+# in _zotero_try, whose `out` parameter is the same dict (it mutates by design)
+    try:
+        z = zotero.resolve_page_title(query) if page_title else zotero.resolve(query)
+    except Exception as e:
+        out["error"] = f"Zotero lookup errored: {e}"
+        return f"Zotero lookup errored: {e}"
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `python3 -m pytest tests/test_inference_errors.py -v`
+Expected: 3 passed
+
+- [ ] **Step 5: Confirm nothing that reads doi_evidence regressed**
+
+Run: `python3 -m pytest tests/ -q -m "not live"`
+Expected: all pass, no test edited. `doi_evidence` text is unchanged at every site, so any test asserting on it must still hold.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add figcite/clipboard.py tests/test_inference_errors.py
+git commit -m "fix: a lookup that could not run is not a lookup that found nothing"
+```
+
+**Known gap, deliberately out of scope.** If `enrich()` itself raises, the watcher's handler (`clipboard.py:~386`) prints `(inference failed: ...)` and writes no `pending.json` at all; `list_pending()` then surfaces the bare png as `kind: "unenriched"` with no error text. That is a watcher-lifecycle concern rather than an inference-result one, and the capture is still visible with its context. Recorded in the ledger as deferred.
