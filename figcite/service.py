@@ -377,11 +377,24 @@ def audit(path, min_inches: float = 1.0) -> dict:
                 "status": status,
                 "matched_by": r["matched_by"],
                 "decorative": r["decorative"],
-                "citation": (rec.short_cite or rec.doi or "") if rec else "",
+                # Review fix I3: the JPEG-EXIF recovery path
+                # (provenance.py's `read_embedded`) sets ONLY `citation` --
+                # no `short_cite`, no `doi` -- so a figure carrying a
+                # genuine embedded credit used to render an empty citation
+                # cell here. Fix B's own defect class, one column over.
+                "citation": (
+                    (rec.short_cite or rec.doi or rec.citation or "") if rec else ""
+                ),
                 "doi": (rec.doi or "") if rec else "",
                 "license_url": (rec.license_url or "") if rec else "",
                 "reuse": (rec.reuse or "unknown") if rec else "",
                 "retracted": bool(rec.retracted) if rec else False,
+                # Review fix I5: lets the front end tell "own work" (no
+                # third-party licence to ask about) apart from "genuinely
+                # unclassified" -- both currently carry reuse=="unknown",
+                # and only source_kind distinguishes them. Matches
+                # deck.py's own `own_work = rec.source_kind == "generated"`.
+                "source_kind": (rec.source_kind or "") if rec else "",
             }
         )
     return {

@@ -39,14 +39,18 @@ PAGE = r"""<!doctype html>
            vertical-align:top; }
 </style>
 <nav>
-  <button id="tab-pending" aria-selected="true" onclick="show('pending')">Pending</button>
-  <button id="tab-deck" aria-selected="false" onclick="show('deck')">Deck</button>
+  <button id="tab-pending" data-tab="pending" aria-selected="true">Pending</button>
+  <button id="tab-deck" data-tab="deck" aria-selected="false">Deck</button>
 </nav>
 <section id="pending"></section>
 <section id="deck" hidden>
   <p>
     <input id="deckpath" size="60" placeholder="/path/to/deck.pptx">
     <button id="deck-audit-btn" type="button">Audit</button>
+  </p>
+  <p>
+    <input id="deckout" size="60" placeholder="output path (default: &lt;name&gt;.cited.ext)">
+    <label><input type="checkbox" id="deckforce"> overwrite if it already exists</label>
     <button id="deck-apply-btn" type="button">Apply</button>
   </p>
   <p id="decksummary"></p>
@@ -61,6 +65,16 @@ function show(which) {
     $("#tab-" + t).setAttribute("aria-selected", String(t === which));
   }
 }
+
+// Review fold-in: these two tab buttons used to carry a static inline
+// click-handler attribute literal (harmless on its own -- no interpolated
+// value ever reached it -- but every OTHER interactive element in this page
+// goes through delegation, and this makes that actually true instead of
+// true-except-here).
+document.querySelector("nav").addEventListener("click", (e) => {
+  const tab = e.target.dataset.tab;
+  if (tab) show(tab);
+});
 
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g,
   c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -237,12 +251,13 @@ loadPending();
 
 // --- Deck screen -----------------------------------------------------------
 
-// Every verdict crossref.classify_reuse can return. A verdict missing from
-// this map would render blank, and blank reads as "fine" -- the opposite of
-// what an unknown or restricted license means. tests/test_webui_deck.py
-// derives the verdict set from classify_reuse's own source (not a copy of
-// this list) so a verdict added there tomorrow fails that test until a
-// badge for it exists here too.
+// Friendly labels for the seven verdicts crossref.classify_reuse can
+// return. crossref.py's REUSE_VERDICTS frozenset is the actual source of
+// truth for what those seven are -- tests/test_webui_deck.py reads that
+// constant directly, not this map or classify_reuse's source text, so a
+// verdict added there is checked against a real shared value, not a
+// re-parsed guess. This map only supplies nicer wording; badgeFor()'s
+// fallback below is what makes an unmapped verdict safe to skip here.
 const REUSE = {
   "public-domain": ["public domain", ""],
   "reuse-ok-attribution-required": ["CC-BY: cite it", ""],
@@ -254,31 +269,73 @@ const REUSE = {
   "restricted-no-derivatives": ["no derivatives", "warn"],
   "publisher-terms-check-required": ["check publisher terms", "warn"],
   "unknown-ask-publisher": ["license unknown: ask", "warn"],
-  // Not a classify_reuse verdict -- provenance.Record.reuse's own default
-  // (see provenance.py), for a record built without ever calling
+  // Not a classify_reuse verdict -- provenance.Record.reuse's own dataclass
+  // default (see provenance.py), for a record built without ever calling
   // classify_reuse at all (an own-work confirmation, a clipboard/matplotlib
   // capture, anything with no DOI). Confirmed live against the demo deck:
-  // every one of its "This work" rows carries this exact string. Leaving it
-  // out of this map would render those rows' badge as an empty box -- the
-  // same "blank reads as fine" failure this map exists to prevent, just
-  // reached from provenance.py's default instead of crossref.py's classifier.
+  // every one of its "This work" rows carries this exact string. This is
+  // now a *friendlier label*, not the only thing standing between this
+  // string and a blank badge -- badgeFor()'s fallback covers that even if
+  // this entry is deleted.
   unknown: ["no licence recorded", "warn"],
 };
 
+function badgeFor(r) {
+  // Own work has no third-party licence to ask about, and a warn-colored
+  // badge on every one of a user's own figures trains a user to ignore
+  // red -- measured live on this project's own demo deck, where all 15
+  // rows are own work and would otherwise show 15 red badges reading
+  // "no licence recorded". Neutral styling; bypasses the reuse map.
+  if (r.source_kind === "generated") return ["own work", ""];
+  // Review fix C2: a verdict this map has never heard of -- a genuinely
+  // new classify_reuse verdict before anyone gets around to adding a
+  // friendly label, or any other truthy string -- renders AS ITSELF, in
+  // warn styling, instead of ["", ""]. A blank badge for a truthy
+  // r.reuse is impossible by construction now: there is no path left
+  // that can produce an empty label.
+  return REUSE[r.reuse] || [r.reuse, "warn"];
+}
+
 function deckRow(r) {
-  const [text, cls] = REUSE[r.reuse] || ["", ""];
+  const [text, cls] = badgeFor(r);
   const badge = r.reuse ? `<span class="badge ${cls}">${esc(text)}</span>` : "";
   const flag = r.retracted ? ' <span class="retracted">RETRACTED</span>' : "";
+  // decorative rows are excluded from the headline untagged_substantive
+  // count (figcite/deck.py) -- marked here too, so a deck with a pile of
+  // tiny bullet icons never shows "0 substantive but unsourced" above a
+  // table of no-source rows that look identical to the substantive kind.
+  const decorative = r.decorative ? ' <span class="ctx">(decorative)</span>' : "";
   // A row's ref can be empty when nothing matched -- an empty ref is not a
   // thumbnail request the /api/thumb route can answer (it 404s "unknown
-  // ref"), so skip the <img> entirely rather than send one.
+  // ref"), so skip the <img> entirely rather than send one. A non-empty
+  // but unresolvable ref (a record present in the audit but absent from
+  // the library manifest, reproduced live with an EXIF-credit JPEG) still
+  // 404s at request time -- the capture-phase "error" listener below turns
+  // that into a legible placeholder instead of a broken-image icon.
   const thumb = r.ref
     ? `<img src="/api/thumb?ref=${encodeURIComponent(r.ref)}" alt="" height="80">`
     : "";
   return `<tr><td>${esc(r.location)}<td>${thumb}
-    <td>${esc(r.status)} <span class="ctx">[${esc(r.matched_by)}]</span>
+    <td>${esc(r.status)}${decorative} <span class="ctx">[${esc(r.matched_by)}]</span>
     <td>${esc(r.citation)}<td>${badge}${flag}</tr>`;
 }
+
+// <img> "error" events do not bubble, so this listener must run in the
+// capture phase to see one at all. Attached once, to the <table> element
+// itself -- auditDeck() only ever rewrites the table's innerHTML (its
+// children), never the table element, so this survives every re-render
+// without needing to be re-attached per row.
+$("#deckrows").addEventListener(
+  "error",
+  (e) => {
+    if (e.target.tagName !== "IMG") return;
+    const span = document.createElement("span");
+    span.className = "ctx";
+    span.textContent = "(image unavailable)";
+    e.target.replaceWith(span);
+  },
+  true,
+);
 
 async function auditDeck() {
   const path = $("#deckpath").value.trim();
@@ -305,20 +362,33 @@ async function auditDeck() {
 }
 
 async function applyDeck() {
-  // A rejected apply() (existing output without force=, mismatched out
-  // suffix) is already surfaced by post()'s alert(); nothing below this
-  // await runs in that case, so there is nothing further to swallow.
-  const out = await post("/api/apply", { path: $("#deckpath").value.trim() });
-  alert("wrote " + (out.out || out.path || "the cited deck"));
+  const path = $("#deckpath").value.trim();
+  const out = $("#deckout").value.trim();
+  const force = $("#deckforce").checked;
+  let result;
+  try {
+    // `out` empty string -> service.apply()'s own `out or _default_out(path)`
+    // fallback picks "<name>.cited.<ext>", same as leaving the field out
+    // entirely -- sending it unconditionally keeps this payload static
+    // rather than conditionally shaped.
+    result = await post("/api/apply", { path, out, force });
+  } catch (e) {
+    // post() already alerted with the server's real reason (an existing
+    // out without force=, a mismatched suffix); returning here is what
+    // stops that rejection from also surfacing as an unhandled one in the
+    // delegated click listener below -- auditDeck() has the equivalent
+    // try/catch above, this one was missing it.
+    return;
+  }
+  alert("wrote " + (result.out || result.path || "the cited deck"));
 }
 
-// Delegated on the section, matching #pending: the buttons are static (no
-// ref/path is ever interpolated into an attribute), but routing clicks
-// through one listener instead of per-button `onclick="fn()"` keeps every
-// interactive element in this file going through the same dataset/delegation
-// path, so a later edit that DOES need to interpolate a value has nowhere
-// on this screen to reach for the string-built-onclick shape that made a
-// ref-scheme change one step from XSS on the pending screen.
+// Delegated on the section, matching #pending: the buttons carry no
+// interpolated value, but routing clicks through one listener instead of
+// per-button `onclick="fn()"` keeps every interactive element on this
+// screen off the string-built-onclick shape that made a ref-scheme change
+// one step from XSS on the pending screen, so a later edit that DOES need
+// to interpolate a ref has nowhere on this screen to reach for it.
 $("#deck").addEventListener("click", async (e) => {
   if (e.target.id === "deck-audit-btn") await auditDeck();
   else if (e.target.id === "deck-apply-btn") await applyDeck();
