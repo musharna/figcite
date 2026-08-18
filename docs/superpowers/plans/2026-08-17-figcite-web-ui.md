@@ -1142,10 +1142,15 @@ async function loadPending() {
 
 function card(item) {
   let body;
-  if (item.error) {
+  // Controller Ruling 5: the error is a BANNER, not a branch. A failure in one
+  // lookup does not invalidate candidates another lookup returned, and hiding
+  // usable candidates behind a failure notice would discard real information.
+  const banner = item.error
+    ? `<p class="fail">LOOKUP FAILED: ${esc(item.error)}</p>`
+    : "";
+  if (item.error && !item.candidates.length && !item.doi) {
     // A failed lookup and a genuine no-match must never read the same.
-    body = `<p class="fail">LOOKUP FAILED: ${esc(item.error)}</p>
-            <p>Enter a DOI by hand below.</p>`;
+    body = `<p>Enter a DOI by hand below.</p>`;
   } else if (item.doi && item.grounded) {
     body = `<p><strong>${esc(item.doi)}</strong>
               <span class="ev">evidence: ${esc(item.doi_evidence)}</span></p>`;
@@ -1164,6 +1169,7 @@ function card(item) {
     <img src="/api/thumb?ref=${encodeURIComponent(item.ref)}" alt="">
     <div>
       <p class="ctx">${esc(item.context)}</p>
+      ${banner}
       ${body}
       <p><input placeholder="10.xxxx/yyyy" id="doi-${esc(item.ref)}"
                 oninput="enable('${esc(item.ref)}')"></p>
