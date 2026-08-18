@@ -2,32 +2,22 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
 
 from . import store
-from .crossref import normalize_doi, record_from_doi, search_bibliographic
-from .provenance import Record, embed, now_stamps
-
-
-def _slug(s: str, n: int = 60) -> str:
-    return re.sub(r"[^A-Za-z0-9._-]+", "-", s or "").strip("-")[:n] or "image"
-
-
-def _library_dest(rec: Record, src: Path) -> Path:
-    store._ensure()
-    base = _slug(rec.doi or rec.short_cite or src.stem)
-    stamp = (rec.captured_local or "")[:19].replace(":", "").replace("-", "")
-    return store.LIBRARY / f"{base}--{stamp or 'na'}{src.suffix.lower() or '.png'}"
+from ._actions import finalize as _finalize_no_print
+from ._actions import record_for as _record_for
+from .crossref import record_from_doi, search_bibliographic
+from .provenance import Record, now_stamps
 
 
 def _finalize(src: Path, rec: Record, out: Optional[str], quiet: bool = False) -> Path:
-    dest = Path(out) if out else _library_dest(rec, src)
-    rec = embed(src, dest, rec)
-    store.put(rec)
+    """CLI-side wrapper: the service's finalize() no longer prints, so the CLI
+    prints here instead -- the one place that still needs to."""
+    dest = _finalize_no_print(src, rec, out)
     if not quiet:
         print(f"tagged -> {dest}")
         print(f"  {rec.display()}")
@@ -39,39 +29,6 @@ def _finalize(src: Path, rec: Record, out: Optional[str], quiet: bool = False) -
             print("  ** THIS WORK IS FLAGGED AS RETRACTED IN CROSSREF **")
         print(f"  sha256: {rec.sha256[:16]}...  (insert THIS file into your deck)")
     return dest
-
-
-def _record_for(
-    doi: Optional[str],
-    cite: Optional[str],
-    url: Optional[str],
-    confirmed: bool,
-    kind: str,
-    detail: dict,
-    adapted_from: Optional[str] = None,
-    note: str = "",
-) -> Record:
-    if doi:
-        rec = record_from_doi(
-            doi, confirmed=confirmed, source_kind=kind, source_detail=detail
-        )
-    else:
-        u, loc = now_stamps()
-        rec = Record(
-            citation=cite or "",
-            short_cite=(cite or "")[:40],
-            url=url,
-            source_kind=kind,
-            source_detail=detail,
-            captured_utc=u,
-            captured_local=loc,
-            confirmed=bool(cite or url),
-        )
-    if adapted_from:
-        rec.adapted_from = normalize_doi(adapted_from)
-    if note:
-        rec.note = note
-    return rec
 
 
 # ---------------------------------------------------------------- commands
