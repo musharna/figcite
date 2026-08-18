@@ -25,6 +25,9 @@ PAGE = r"""<!doctype html>
   .fail { color:var(--warn); font-weight:600; }
   .ev { color:var(--mut); font-style:italic; }
   label { display:block; margin:.2rem 0; }
+  .src { display:inline-block; font-size:.75em; text-transform:uppercase;
+         letter-spacing:.03em; padding:.05rem .4rem; margin-right:.4em;
+         border:1px solid var(--line); border-radius:.25rem; color:var(--mut); }
 </style>
 <nav>
   <button id="tab-pending" aria-selected="true" onclick="show('pending')">Pending</button>
@@ -71,7 +74,7 @@ function card(item) {
     body = item.candidates.map((c, i) => `
       <label><input type="radio" name="pick-${esc(item.ref)}" value="${i}"
                     onchange="enable('${esc(item.ref)}')">
-        ${esc(c.origin || "")} ${esc(c.score || "")} &mdash;
+        <span class="src">${esc(c.source || "")}</span> ${esc(c.score || "")} &mdash;
         ${esc(c.title)} (${esc(c.container || "")} ${esc(c.year || "")})
       </label>`).join("");
   } else {
