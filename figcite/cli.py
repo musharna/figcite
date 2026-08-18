@@ -14,20 +14,46 @@ from .crossref import record_from_doi, search_bibliographic
 from .provenance import Record, now_stamps
 
 
+def _print_filed(rec: Record, dest: Path) -> None:
+    """What the CLI says after an image lands in the library.
+
+    M2. This block used to exist twice -- here and copied into cmd_confirm --
+    and only one copy had a test, so a mutation to the other stayed green.
+    One copy, one net.
+    """
+    print(f"tagged -> {dest}")
+    print(f"  {rec.display()}")
+    if rec.license_url:
+        print(f"  license: {rec.license_url}  ({rec.reuse})")
+    else:
+        print(f"  license: not stated by publisher ({rec.reuse})")
+    if rec.retracted:
+        print("  ** THIS WORK IS FLAGGED AS RETRACTED IN CROSSREF **")
+    print(f"  sha256: {rec.sha256[:16]}...  (insert THIS file into your deck)")
+
+
+def _in_cli_words(msg: str) -> str:
+    """Translate the service's kwarg vocabulary into CLI flags.
+
+    I3. The service speaks kwargs because the web UI is its other consumer and
+    kwargs are correct there. Passed through verbatim, the CLI told the user to
+    "pass doi=, pick=, cite=, or own_work=True" -- three names no shell accepts,
+    and own_work has no `figcite confirm` flag at all, so it is dropped rather
+    than renamed. A CLI that advertises an option it does not have is worse
+    than one that says nothing.
+    """
+    msg = msg.replace(", or own_work=True", "").replace(", own_work=True", "")
+    for kwarg, flag in (("doi=", "--doi"), ("pick=", "--pick N"), ("cite=", "--cite")):
+        msg = msg.replace(kwarg, flag)
+    return msg
+
+
 def _finalize(src: Path, rec: Record, out: Optional[str], quiet: bool = False) -> Path:
     """CLI-side wrapper: the service's finalize() no longer prints, so the CLI
     prints here instead -- the one place that still needs to."""
     dest = _finalize_no_print(src, rec, out)
     if not quiet:
-        print(f"tagged -> {dest}")
-        print(f"  {rec.display()}")
-        if rec.license_url:
-            print(f"  license: {rec.license_url}  ({rec.reuse})")
-        else:
-            print(f"  license: not stated by publisher ({rec.reuse})")
-        if rec.retracted:
-            print("  ** THIS WORK IS FLAGGED AS RETRACTED IN CROSSREF **")
-        print(f"  sha256: {rec.sha256[:16]}...  (insert THIS file into your deck)")
+        _print_filed(rec, dest)
     return dest
 
 
@@ -200,11 +226,15 @@ def cmd_pending(a) -> int:
         return 0
     staged = [i for i in items if i.kind == "staged"]
     filed = [i for i in items if i.kind == "filed"]
+    if filed:
+        print(f"{len(filed)} filed capture(s) with context but no citation:")
     for i, it in enumerate(filed):
         print(f"[m{i}] {it.context[:100]}")
         if it.note:
             print(f"      why: {it.note[:96]}")
         print(f"      resolve: figcite confirm m{i} --doi 10.x/y")
+    if filed:
+        print()
     for i, it in enumerate(staged):
         print(f"[{i}] {it.ref.split(':', 1)[1]}  {it.width or '?'}x{it.height or '?'}")
         if it.context:
@@ -255,17 +285,17 @@ def cmd_confirm(a) -> int:
             out=a.out,
         )
     except service.NotGrounded as e:
-        print(str(e), file=sys.stderr)
+        print(_in_cli_words(str(e)), file=sys.stderr)
         return 2
     except ValueError as e:
-        print(str(e), file=sys.stderr)
+        print(_in_cli_words(str(e)), file=sys.stderr)
         return 2
     except KeyError as e:
         # Not in the brief. Without it `--pick 9` (or any out-of-range
         # candidate) tracebacks, where the old cmd_confirm printed a message
         # and exited 2 -- and the brief's own contract for this task is
         # "output text and exit codes are unchanged".
-        print(e.args[0] if e.args else str(e), file=sys.stderr)
+        print(_in_cli_words(e.args[0] if e.args else str(e)), file=sys.stderr)
         return 2
 
     rec = res.record
@@ -282,15 +312,7 @@ def cmd_confirm(a) -> int:
     # (a1d6b66^:figcite/cli.py). The sha256 line names WHICH file to insert
     # into the deck, and the retraction line is a correctness warning about
     # the source; neither is decoration.
-    print(f"tagged -> {res.path}")
-    print(f"  {rec.display()}")
-    if rec.license_url:
-        print(f"  license: {rec.license_url}  ({rec.reuse})")
-    else:
-        print(f"  license: not stated by publisher ({rec.reuse})")
-    if rec.retracted:
-        print("  ** THIS WORK IS FLAGGED AS RETRACTED IN CROSSREF **")
-    print(f"  sha256: {rec.sha256[:16]}...  (insert THIS file into your deck)")
+    _print_filed(rec, res.path)
     return 0
 
 

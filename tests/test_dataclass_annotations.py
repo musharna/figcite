@@ -38,7 +38,14 @@ def _dataclasses_in_package():
     this defect got in.
     """
     found = []
-    for m in pkgutil.walk_packages(figcite.__path__, figcite.__name__ + "."):
+    walk_errors = []
+    # M4. walk_packages swallows ImportError while recursing unless onerror is
+    # given, so a sub-package that stopped importing would drop its dataclasses
+    # out of the sweep silently -- the sweep would go green having looked at
+    # less than it did yesterday.
+    for m in pkgutil.walk_packages(
+        figcite.__path__, figcite.__name__ + ".", onerror=walk_errors.append
+    ):
         mod = importlib.import_module(m.name)
         for name, obj in vars(mod).items():
             if (
@@ -47,16 +54,30 @@ def _dataclasses_in_package():
                 and obj.__module__ == mod.__name__
             ):
                 found.append(pytest.param(obj, id=f"{obj.__module__}.{name}"))
-    return found
+    return found, walk_errors
 
 
-_FOUND = _dataclasses_in_package()
+_FOUND, _WALK_ERRORS = _dataclasses_in_package()
+_FOUND_IDS = {p.id for p in _FOUND}
+
+# The classes this sweep exists for. Naming them is NOT the guard -- the sweep
+# below is, and it covers whatever else the package defines. This is the
+# positive control on the sweep's reach: a count cannot serve, because once a
+# fourth dataclass lands anywhere, a targeted discovery failure of
+# figcite.service -- the one module that actually had the defect -- keeps the
+# count at 3 and the sweep goes green with ConfirmResult never looked at.
+_MUST_REACH = {
+    "figcite.service.ConfirmResult",
+    "figcite.service.PendingItem",
+    "figcite.provenance.Record",
+}
 
 
-def test_the_sweep_actually_found_dataclasses():
-    """Positive control. An import error or a renamed package would make the
-    parametrized test below collect zero cases and report green."""
-    assert len(_FOUND) >= 3, f"expected figcite's dataclasses, found {_FOUND}"
+def test_the_sweep_reached_the_classes_it_exists_for():
+    """Positive control on reach, by identity rather than by count."""
+    assert not _WALK_ERRORS, f"walk_packages could not import: {_WALK_ERRORS}"
+    missing = _MUST_REACH - _FOUND_IDS
+    assert not missing, f"sweep never looked at {missing}; it saw {_FOUND_IDS}"
 
 
 @pytest.mark.parametrize("cls", _FOUND)

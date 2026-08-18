@@ -8,8 +8,10 @@ of the code being rewritten.
 """
 
 import json
+import re
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from figcite import _actions, cli, clipboard, store
@@ -240,3 +242,172 @@ def test_confirming_a_filed_capture_says_the_image_is_unchanged(
         in out
     )
     assert "tagged -> " not in out, "nothing was filed, so nothing may be claimed filed"
+
+
+# --------------------------------------------------------------- fix round 3
+
+
+def test_confirm_rejects_an_out_of_range_pick(tmp_path, monkeypatch, capsys):
+    """I1. cmd_confirm's `except KeyError` had no coverage at all: mutating it
+    to `raise` left the suite green, one revert away from a traceback."""
+    png = _stage(
+        tmp_path,
+        monkeypatch,
+        {"candidates": [{"score": 88, "doi": "10.2/x", "title": "A title"}]},
+    )
+    assert cli.main(["confirm", "0", "--pick", "7"]) == 2
+    assert "no candidate" in capsys.readouterr().err
+    assert png.exists(), "a refusal must not consume the capture"
+
+
+def test_pending_distinguishes_a_failed_lookup_from_an_empty_one(
+    tmp_path, monkeypatch, capsys
+):
+    """I2. The brief's own new branch, and the bug Task 11's `error` field
+    exists to fix: a lookup that could not run used to print identically to a
+    lookup that ran and found nothing. Both directions are asserted, because
+    only the pair distinguishes the two states."""
+    _stage(
+        tmp_path,
+        monkeypatch,
+        {"kind": "browser", "error": "crossref timed out", "candidates": []},
+    )
+    assert cli.main(["pending"]) == 0
+    out = capsys.readouterr().out
+    assert "LOOKUP FAILED: crossref timed out" in out
+    assert "no source inferred" not in out
+
+
+@pytest.mark.parametrize("grounded", [True, False])
+def test_pending_shows_an_inferred_doi_whether_or_not_it_is_grounded(
+    tmp_path, monkeypatch, capsys, grounded
+):
+    """M1. Showing the DOI is not gated on `grounded` -- `pending` reports what
+    was inferred and `confirm` is what refuses a guess. Gating the line here
+    would hide the guess a user needs to see in order to accept it explicitly,
+    and that mutation survived a green suite."""
+    _stage(
+        tmp_path,
+        monkeypatch,
+        {
+            "doi": "10.5/real",
+            "grounded": grounded,
+            "doi_evidence": "citation_doi meta tag",
+            "candidates": [],
+        },
+    )
+    assert cli.main(["pending"]) == 0
+    out = capsys.readouterr().out
+    assert "DOI: 10.5/real   (from citation_doi meta tag)" in out
+    assert "confirm: figcite confirm 0" in out
+    assert "no source inferred" not in out
+
+
+def test_pending_lists_candidates_with_their_scores(tmp_path, monkeypatch, capsys):
+    """M1. The candidate branch was rewritten field-by-field with no net."""
+    _stage(
+        tmp_path,
+        monkeypatch,
+        {
+            "candidates": [
+                {
+                    "score": 88,
+                    "doi": "10.2/x",
+                    "title": "Auxin transport in the root",
+                    "container": "Plant Cell",
+                    "year": 2020,
+                    "type": "journal-article",
+                }
+            ]
+        },
+    )
+    assert cli.main(["pending"]) == 0
+    out = capsys.readouterr().out
+    assert "cand 0: score    88  10.2/x" in out
+    assert "Auxin transport in the root (Plant Cell 2020) [journal-article]" in out
+    assert "confirm: figcite confirm 0 --pick <n>   (or --doi 10.x/y)" in out
+
+
+def test_pending_heads_the_filed_section_so_m0_means_something(
+    tmp_path, monkeypatch, capsys
+):
+    """M3. Without the header, `[m0]` is an unexplained index in a list whose
+    other entries are numbered differently and mean something else."""
+    staging = tmp_path / "empty"
+    staging.mkdir()
+    monkeypatch.setattr(clipboard, "staging_dirs", lambda: (None, staging))
+    u, loc = now_stamps()
+    rec = Record(
+        sha256="e" * 64,
+        dhash="4" * 16,
+        source_kind="clipboard",
+        confirmed=False,
+        captured_utc=u,
+        captured_local=loc,
+        source_detail={"clipboard_capture": {"process": "firefox", "title": "A paper"}},
+    )
+    monkeypatch.setattr(store, "all_records", lambda: {rec.sha256: rec})
+    assert cli.main(["pending"]) == 0
+    out = capsys.readouterr().out
+    assert "1 filed capture(s) with context but no citation:" in out
+    assert out.splitlines()[0].endswith("no citation:"), "the header comes first"
+
+
+_KWARGISH = re.compile(r"\b\w+=")
+
+
+def _assert_speaks_cli(err: str) -> None:
+    """I3. Structural, not a list of the three kwarg names I know about today.
+
+    A new selector added to `service.confirm()` would leak into CLI output the
+    same way, and a name list could not see it -- which is how `own_work=True`
+    got as far as the user in the first place.
+    """
+    assert err.strip(), "positive control: the refusal actually said something"
+    assert "own_work" not in err, "the CLI has no --this-work on `confirm`"
+    assert not _KWARGISH.search(err), f"service kwargs leaked to the CLI: {err!r}"
+
+
+def test_a_bare_confirm_with_nothing_inferable_names_real_flags(
+    tmp_path, monkeypatch, capsys
+):
+    """I3. Delta 13. The old CLI said `need --doi, --pick N, or --cite`; the
+    refactor started telling the user to pass `own_work=True`, which
+    `figcite confirm` has no flag for at all."""
+    _stage(tmp_path, monkeypatch, {"candidates": []})
+    assert cli.main(["confirm", "0"]) == 2
+    err = capsys.readouterr().err
+    _assert_speaks_cli(err)
+    assert "--doi" in err and "--pick N" in err and "--cite" in err
+
+
+def test_two_selectors_are_refused_in_cli_words(tmp_path, monkeypatch, capsys):
+    """I3. Ruling 8 made this message user-visible for the first time."""
+    _stage(tmp_path, monkeypatch, {"candidates": []})
+    assert cli.main(["confirm", "0", "--doi", "10.1/x", "--cite", "Someone 2020"]) == 2
+    err = capsys.readouterr().err
+    _assert_speaks_cli(err)
+    assert "at most one" in err
+
+
+def test_a_filed_capture_refusal_names_the_flag(tmp_path, monkeypatch, capsys):
+    """I3. `a filed capture can only be resolved with doi=` is the third path
+    that reaches the user in service vocabulary."""
+    staging = tmp_path / "empty"
+    staging.mkdir()
+    monkeypatch.setattr(clipboard, "staging_dirs", lambda: (None, staging))
+    u, loc = now_stamps()
+    rec = Record(
+        sha256="f" * 64,
+        dhash="5" * 16,
+        source_kind="clipboard",
+        confirmed=False,
+        captured_utc=u,
+        captured_local=loc,
+        source_detail={"clipboard_capture": {"process": "firefox", "title": "A paper"}},
+    )
+    monkeypatch.setattr(store, "all_records", lambda: {rec.sha256: rec})
+    assert cli.main(["confirm", "m0"]) == 2
+    err = capsys.readouterr().err
+    _assert_speaks_cli(err)
+    assert "--doi" in err
