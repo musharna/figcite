@@ -7,17 +7,36 @@ knows about HTTP. The reason this module exists at all: two implementations of
 
 from __future__ import annotations
 
+import io
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from PIL import Image
+
 from . import clipboard, deck, pdfdeck, store
 from ._actions import finalize, record_for
-from .provenance import Record
+from .provenance import Record, sidecar_path
 
 
 class NotGrounded(Exception):
     """An inferred DOI was offered for confirmation without being named."""
+
+
+class LibraryFileMissing(LookupError):
+    """The manifest names a record whose image file is gone from the library.
+
+    Deliberately NOT a KeyError: a KeyError out of `_resolve_ref_to_path`
+    means "this ref names nothing real", which is the security property
+    callers rely on. This is the opposite case -- the ref resolved to a
+    genuine manifest record -- but the library and the manifest have drifted
+    apart, which is a storage-integrity failure, not a bad address. Kept
+    distinct so a caller (an HTTP handler, eventually) can tell "no such ref"
+    apart from "this ref is real but its bytes are gone" instead of both
+    collapsing into one catch, and so it never reaches a caller as a bare
+    FileNotFoundError out of Image.open().
+    """
 
 
 _skipped: list[str] = []  # deferred for this process only; never persisted
@@ -232,6 +251,85 @@ def _confirm_filed(item, *, doi, adapted_from, note):
     # No path: the bytes were already in the library, so nothing was filed here
     # and there is no new file for the caller to point the user at.
     return ConfirmResult(record=rec, path=None)
+
+
+def thumbnail(ref: str, max_px: int = 480) -> tuple[bytes, str]:
+    """PNG bytes for a small preview of whatever `ref` addresses.
+
+    `ref` is the only addressing scheme a caller (eventually, a browser hitting
+    an HTTP endpoint) gets: "staged:<png name>", "filed:<sha256>", or
+    "sha:<sha256>". `_resolve_ref_to_path` is what makes that safe -- see its
+    docstring. Raises KeyError for a ref naming no pending item or manifest
+    record, and LibraryFileMissing when the manifest is right but the file
+    backing it is gone from the library.
+    """
+    src = _resolve_ref_to_path(ref)
+    im = Image.open(src)
+    im.thumbnail((max_px, max_px))
+    buf = io.BytesIO()
+    im.convert("RGB").save(buf, format="PNG")
+    return buf.getvalue(), "image/png"
+
+
+def _resolve_ref_to_path(ref: str) -> Path:
+    """Look `ref` up and return the path THAT LOOKUP found -- never a path
+    built out of `ref`'s own characters.
+
+    This is the whole security property: a ref is opaque input from a
+    browser, so nothing here may ever do `Path(...) / <bit of ref>`.
+    - "staged:<name>" goes through `_raw_staged`, which already matches
+      against `Path(raw["png"]).name` (a bare filename with no directory
+      separators in it) rather than joining `name` onto a directory. A
+      ref like "staged:../../../../etc/passwd" can never equal a `.name`,
+      so the loop in `_raw_staged` runs out and raises KeyError before any
+      filesystem path is touched.
+    - "filed:<sha256>" and "sha:<sha256>" are looked up in
+      `store.all_records()`, keyed by the sha itself -- a dict lookup, not
+      a path join -- and then handed to `_library_path_for`, which finds
+      the matching file by reading the sidecars `provenance.write_sidecar`
+      already wrote (matching on the sidecar's own recorded sha256), again
+      never by constructing a filename from the sha string.
+    """
+    if ref.startswith("staged:"):
+        raw = _raw_staged(ref)  # KeyError for anything unknown
+        return Path(raw["png"])
+
+    if ref.startswith("filed:") or ref.startswith("sha:"):
+        sha = ref.split(":", 1)[1]
+        rec = store.all_records().get(sha)
+        if rec is None:
+            raise KeyError(f"no manifest record {ref!r}")
+        return _library_path_for(rec.sha256)
+
+    raise KeyError(f"unrecognized ref {ref!r}")
+
+
+def _library_path_for(sha: str) -> Path:
+    """Find the library file whose sidecar carries this sha256.
+
+    Records don't store their own file path -- `_actions.library_dest`
+    derives the on-disk filename from the record's DOI/citation, not from
+    the hash -- so recovering it from `sha` alone would mean either
+    recomputing that slug (fragile: it depends on the source file's
+    original stem, which is gone once filed) or re-hashing every image in
+    the library on every lookup. Reading the sidecars `provenance.embed`
+    already writes next to each library file is a real, existing pointer:
+    checking their own recorded sha256 field, not building a path out of
+    `sha`.
+    """
+    if store.LIBRARY.exists():
+        suffix = sidecar_path("")  # ".figcite.json", read from provenance.py
+        # itself so the two never drift apart.
+        for sidecar in sorted(store.LIBRARY.glob("*" + suffix)):
+            try:
+                data = json.loads(sidecar.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if data.get("sha256") == sha:
+                return Path(str(sidecar)[: -len(suffix)])
+    raise LibraryFileMissing(
+        f"manifest has a record for sha256={sha!r} but no library file carries it"
+    )
 
 
 def _is_pdf(path) -> bool:
