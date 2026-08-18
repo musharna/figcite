@@ -192,134 +192,81 @@ def cmd_autostart_uninstall(a) -> int:
 
 
 def cmd_pending(a) -> int:
-    from .clipboard import list_pending
-    from . import store
+    from . import service
 
-    unconfirmed = [
-        r
-        for r in store.all_records().values()
-        if not r.confirmed and r.source_kind == "clipboard"
-    ]
-    if unconfirmed:
-        print(f"{len(unconfirmed)} filed capture(s) with context but no citation:")
-        for i, r in enumerate(unconfirmed):
-            print(f"[m{i}] {r.context_line()[:100]}")
-            if r.note:
-                print(f"      why: {r.note[:96]}")
-            print(f"      resolve: figcite confirm m{i} --doi 10.x/y")
-        print()
-    items = list_pending()
+    items = service.pending_items()
     if not items:
         print("nothing pending (run `figcite watch`, then snip something)")
         return 0
-    for i, it in enumerate(items):
-        png = Path(it["png"])
-        cap = it.get("capture", {})
-        inf = it.get("inference", {})
-        print(f"[{i}] {png.name}  {cap.get('width', '?')}x{cap.get('height', '?')}")
-        if cap.get("title"):
-            print(f"     window: {cap.get('process', '?')} — {cap['title'][:90]}")
-        if inf.get("doi"):
-            print(f"     DOI: {inf['doi']}   (from {inf.get('doi_evidence', '')})")
+    staged = [i for i in items if i.kind == "staged"]
+    filed = [i for i in items if i.kind == "filed"]
+    for i, it in enumerate(filed):
+        print(f"[m{i}] {it.context[:100]}")
+        print(f"      resolve: figcite confirm m{i} --doi 10.x/y")
+    for i, it in enumerate(staged):
+        print(f"[{i}] {it.ref.split(':', 1)[1]}  {it.width or '?'}x{it.height or '?'}")
+        if it.context:
+            print(f"     window: {it.context[:90]}")
+        if it.error:
+            print(f"     LOOKUP FAILED: {it.error}")
+        elif it.doi:
+            print(f"     DOI: {it.doi}   (from {it.doi_evidence})")
             print(f"     confirm: figcite confirm {i}")
-        elif inf.get("candidates"):
-            for ci, c in enumerate(inf["candidates"]):
+        elif it.candidates:
+            for ci, c in enumerate(it.candidates):
                 print(f"     cand {ci}: score {c['score']:>5}  {c['doi']}")
                 print(
                     f"               {c['title'][:80]} ({c.get('container', '')} {c.get('year', '')}) [{c.get('type', '')}]"
                 )
             print(f"     confirm: figcite confirm {i} --pick <n>   (or --doi 10.x/y)")
         else:
-            print(f"     no source inferred: {inf.get('doi_evidence', '')}")
+            print(f"     no source inferred: {it.doi_evidence}")
             print(f"     confirm: figcite confirm {i} --doi 10.x/y")
     return 0
 
 
 def cmd_confirm(a) -> int:
-    from .clipboard import list_pending
-    from . import store
+    from . import service
 
-    if isinstance(a.index, str) and a.index.startswith("m"):
-        recs = [
-            r
-            for r in store.all_records().values()
-            if not r.confirmed and r.source_kind == "clipboard"
-        ]
-        try:
-            target = recs[int(a.index[1:])]
-        except (ValueError, IndexError):
-            print(f"no filed capture {a.index} (have {len(recs)})", file=sys.stderr)
-            return 2
-        if not a.doi:
-            print("need --doi to resolve a filed capture", file=sys.stderr)
-            return 2
-        rec = record_from_doi(
-            a.doi,
-            confirmed=True,
-            source_kind="clipboard",
-            source_detail=target.source_detail,
-        )
-        rec.sha256, rec.dhash = target.sha256, target.dhash
-        rec.captured_utc, rec.captured_local = (
-            target.captured_utc,
-            target.captured_local,
-        )
-        store.put(rec)
-        print(f"resolved {a.index}: {rec.display()}")
-        print(
-            "  (the image file itself is unchanged; the manifest now carries the citation)"
-        )
-        return 0
-
-    items = list_pending()
+    items = service.pending_items()
+    idx = str(a.index)
+    if idx.startswith("m"):
+        pool = [i for i in items if i.kind == "filed"]
+        n = idx[1:]
+    else:
+        pool = [i for i in items if i.kind == "staged"]
+        n = idx
     try:
-        it = items[int(a.index)]
-    except (IndexError, TypeError, ValueError):
-        print(f"no pending item {a.index} (have {len(items)})", file=sys.stderr)
-        return 2
-    png = Path(it["png"])
-    inf = it.get("inference", {})
-    doi = a.doi
-    if doi is None and a.pick is not None:
-        try:
-            doi = inf["candidates"][a.pick]["doi"]
-        except Exception:
-            print(f"no candidate {a.pick} on item {a.index}", file=sys.stderr)
-            return 2
-    if doi is None:
-        doi = inf.get("doi")
-        if doi and not inf.get("grounded"):
-            print(
-                "that DOI was only guessed; pass --doi explicitly to accept it",
-                file=sys.stderr,
-            )
-            return 2
-    if doi is None and not a.cite:
-        print("need --doi, --pick N, or --cite", file=sys.stderr)
+        ref = pool[int(n)].ref
+    except (ValueError, IndexError):
+        print(f"no pending item {a.index} (have {len(pool)})", file=sys.stderr)
         return 2
 
-    detail = {
-        "clipboard_capture": it.get("capture", {}),
-        "inference_kind": inf.get("kind", ""),
-        "doi_evidence": inf.get("doi_evidence", ""),
-    }
-    rec = _record_for(
-        doi,
-        a.cite,
-        None,
-        confirmed=True,
-        kind="clipboard",
-        detail=detail,
-        adapted_from=a.adapted_from,
-        note=a.note or "",
-    )
-    dest = _finalize(png, rec, a.out)
-    for suffix in (".pending.json", ".capture.json"):
-        p = Path(str(png)[:-4] + suffix)
-        if p.exists():
-            p.unlink()
-    if png.exists() and png != dest:
-        png.unlink()
+    try:
+        rec = service.confirm(
+            ref,
+            doi=a.doi,
+            pick=a.pick,
+            cite=a.cite,
+            adapted_from=a.adapted_from,
+            note=a.note or "",
+            out=a.out,
+        )
+    except service.NotGrounded as e:
+        print(str(e), file=sys.stderr)
+        return 2
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        return 2
+    except KeyError as e:
+        # Not in the brief. Without it `--pick 9` (or any out-of-range
+        # candidate) tracebacks, where the old cmd_confirm printed a message
+        # and exited 2 -- and the brief's own contract for this task is
+        # "output text and exit codes are unchanged".
+        print(e.args[0] if e.args else str(e), file=sys.stderr)
+        return 2
+
+    print(f"resolved {a.index}: {rec.display()}")
     return 0
 
 
