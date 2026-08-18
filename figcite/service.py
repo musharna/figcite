@@ -34,6 +34,21 @@ class PendingItem:
     grounded: bool = False  # True => the DOI is evidence, not a guess
     candidates: list[dict] = field(default_factory=list)
     error: Optional[str] = None  # None + empty candidates == "looked, found nothing"
+    note: str = ""  # why the capture is still unresolved, as figcite recorded it
+
+
+@dataclass
+class ConfirmResult:
+    """What confirming produced: the record, and where the image ended up.
+
+    Ruling 6. `confirm()` used to return the bare Record, so every front end
+    lost the destination path -- and with it the "insert THIS file into your
+    deck" hint, which is the whole point of filing the image.
+    """
+
+    record: Record
+    path: Optional[Path] = None  # where the image was filed; None for `filed:`
+    # refs, whose bytes are already in the library
 
 
 def pending_items() -> list[PendingItem]:
@@ -48,6 +63,7 @@ def pending_items() -> list[PendingItem]:
                 kind="filed",
                 context=rec.context_line(),
                 error=None,
+                note=rec.note or "",
             )
         )
 
@@ -159,7 +175,7 @@ def confirm(
     png = Path(raw["png"])
     dest = finalize(png, rec, out)
     _clear_staged(png, dest)
-    return rec
+    return ConfirmResult(record=rec, path=dest)
 
 
 def _item_for(ref: str):
@@ -212,4 +228,6 @@ def _confirm_filed(item, *, doi, adapted_from, note):
     rec.sha256, rec.dhash = target.sha256, target.dhash
     rec.captured_utc, rec.captured_local = target.captured_utc, target.captured_local
     store.put(rec)
-    return rec
+    # No path: the bytes were already in the library, so nothing was filed here
+    # and there is no new file for the caller to point the user at.
+    return ConfirmResult(record=rec, path=None)

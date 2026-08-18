@@ -202,6 +202,8 @@ def cmd_pending(a) -> int:
     filed = [i for i in items if i.kind == "filed"]
     for i, it in enumerate(filed):
         print(f"[m{i}] {it.context[:100]}")
+        if it.note:
+            print(f"      why: {it.note[:96]}")
         print(f"      resolve: figcite confirm m{i} --doi 10.x/y")
     for i, it in enumerate(staged):
         print(f"[{i}] {it.ref.split(':', 1)[1]}  {it.width or '?'}x{it.height or '?'}")
@@ -243,7 +245,7 @@ def cmd_confirm(a) -> int:
         return 2
 
     try:
-        rec = service.confirm(
+        res = service.confirm(
             ref,
             doi=a.doi,
             pick=a.pick,
@@ -266,7 +268,26 @@ def cmd_confirm(a) -> int:
         print(e.args[0] if e.args else str(e), file=sys.stderr)
         return 2
 
-    print(f"resolved {a.index}: {rec.display()}")
+    rec = res.record
+    if res.path is None:
+        # A `filed:` ref: the bytes were already in the library, so there is no
+        # destination to name -- exactly what the pre-refactor `m` branch said.
+        print(f"resolved {a.index}: {rec.display()}")
+        return 0
+
+    # Ruling 6. Restored verbatim from the pre-refactor `_finalize` printer
+    # (a1d6b66^:figcite/cli.py). The sha256 line names WHICH file to insert
+    # into the deck, and the retraction line is a correctness warning about
+    # the source; neither is decoration.
+    print(f"tagged -> {res.path}")
+    print(f"  {rec.display()}")
+    if rec.license_url:
+        print(f"  license: {rec.license_url}  ({rec.reuse})")
+    else:
+        print(f"  license: not stated by publisher ({rec.reuse})")
+    if rec.retracted:
+        print("  ** THIS WORK IS FLAGGED AS RETRACTED IN CROSSREF **")
+    print(f"  sha256: {rec.sha256[:16]}...  (insert THIS file into your deck)")
     return 0
 
 

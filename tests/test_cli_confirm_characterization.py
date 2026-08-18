@@ -8,10 +8,12 @@ of the code being rewritten.
 """
 
 import json
+from pathlib import Path
 
 from PIL import Image
 
-from figcite import cli, clipboard, store
+from figcite import _actions, cli, clipboard, store
+from figcite.provenance import Record, now_stamps
 
 
 def _stage(tmp_path, monkeypatch, inference):
@@ -90,3 +92,102 @@ def test_confirm_rejects_an_out_of_range_index(tmp_path, monkeypatch, capsys):
     _stage(tmp_path, monkeypatch, {"candidates": []})
     assert cli.main(["confirm", "7"]) == 2
     assert "no pending item" in capsys.readouterr().err
+
+
+# --------------------------------------------------------------- fix round 1
+
+
+def test_confirm_prints_where_it_filed_the_image_and_its_sha(
+    tmp_path, monkeypatch, capsys
+):
+    """Ruling 6. The four lines the service-layer refactor silently dropped.
+
+    The sha256 hint is not decoration: it names WHICH file to put in the deck.
+    """
+    _stage(tmp_path, monkeypatch, {"candidates": []})
+    assert cli.main(["confirm", "0", "--cite", "Band et al. 2014"]) == 0
+    out = capsys.readouterr().out
+    assert "tagged -> " in out
+    assert "license: not stated by publisher" in out
+    assert "sha256: " in out
+    assert "insert THIS file into your deck" in out
+    dest = Path(out.splitlines()[0].split("tagged -> ", 1)[1])
+    assert dest.exists(), "the printed path must name the file that actually landed"
+
+
+def test_confirm_warns_when_the_source_is_retracted(tmp_path, monkeypatch, capsys):
+    """Ruling 6. A correctness warning about the source, not decoration."""
+    _stage(tmp_path, monkeypatch, {"candidates": []})
+
+    def _retracted(doi, **kw):
+        u, loc = now_stamps()
+        return Record(
+            doi=doi,
+            citation="Retracted et al. 2019",
+            short_cite="Retracted et al. 2019",
+            retracted=True,
+            source_kind=kw.get("source_kind", ""),
+            source_detail=kw.get("source_detail", {}),
+            captured_utc=u,
+            captured_local=loc,
+            confirmed=True,
+        )
+
+    # Patched at the seam _actions.record_for actually calls, so the retracted
+    # record travels the real finalize/store path without touching CrossRef.
+    monkeypatch.setattr(_actions, "record_from_doi", _retracted)
+    assert cli.main(["confirm", "0", "--doi", "10.1/retracted"]) == 0
+    out = capsys.readouterr().out
+    assert "tagged -> " in out, "positive control: the confirm actually printed"
+    assert "** THIS WORK IS FLAGGED AS RETRACTED IN CROSSREF **" in out
+
+
+def test_pending_shows_why_a_filed_capture_is_unresolved(
+    tmp_path, monkeypatch, capsys
+):
+    """Ruling 7. figcite records the note; the surface must not drop it."""
+    staging = tmp_path / "empty"
+    staging.mkdir()
+    monkeypatch.setattr(clipboard, "staging_dirs", lambda: (None, staging))
+    u, loc = now_stamps()
+    rec = Record(
+        sha256="a" * 64,
+        dhash="0" * 16,
+        source_kind="clipboard",
+        confirmed=False,
+        note="the tab was closed before the DOI could be read",
+        captured_utc=u,
+        captured_local=loc,
+        source_detail={"clipboard_capture": {"process": "firefox", "title": "A paper"}},
+    )
+    monkeypatch.setattr(store, "all_records", lambda: {rec.sha256: rec})
+    assert cli.main(["pending"]) == 0
+    out = capsys.readouterr().out
+    assert "[m0]" in out, "positive control: the filed capture is listed at all"
+    assert "why: the tab was closed before the DOI could be read" in out
+
+
+def test_an_explicit_cite_outranks_a_guessed_doi(tmp_path, monkeypatch):
+    """Ruling 8. A human-supplied citation beats a machine guess; the old CLI
+    refused this because it read the guess before it read --cite."""
+    _stage(
+        tmp_path,
+        monkeypatch,
+        {"doi": "10.1/guess", "grounded": False, "candidates": []},
+    )
+    before = set(store.all_records())
+    assert cli.main(["confirm", "0", "--cite", "Whitcomb 2021"]) == 0
+    new = set(store.all_records()) - before
+    assert len(new) == 1, f"confirm should file exactly one record, got {new}"
+    rec = store.all_records()[new.pop()]
+    assert rec.citation == "Whitcomb 2021"
+    assert rec.doi is None, "the guessed DOI must not ride along"
+
+
+def test_confirm_refuses_a_doi_and_a_cite_together(tmp_path, monkeypatch, capsys):
+    """Ruling 8. Silently discarding one of two conflicting citations is the
+    failure mode this project exists to prevent."""
+    png = _stage(tmp_path, monkeypatch, {"candidates": []})
+    assert cli.main(["confirm", "0", "--doi", "10.1/x", "--cite", "Someone 2020"]) == 2
+    assert "at most one" in capsys.readouterr().err
+    assert png.exists(), "a refusal must not consume the capture"

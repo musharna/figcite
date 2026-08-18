@@ -55,7 +55,7 @@ def test_the_same_guess_is_accepted_when_named_explicitly(tmp_path, monkeypatch)
         {"doi": "10.1/guess", "grounded": False, "candidates": []},
     )
     monkeypatch.setattr(service, "record_for", _fake_record_for)
-    rec = service.confirm("staged:clip-1.png", doi="10.1/guess")
+    rec = service.confirm("staged:clip-1.png", doi="10.1/guess").record
     assert rec.confirmed is True
     assert rec.doi == "10.1/guess"
 
@@ -95,7 +95,7 @@ def test_zero_selectors_means_use_this_item_s_own_grounded_doi(tmp_path, monkeyp
         tmp_path, monkeypatch, {"doi": "10.1/real", "grounded": True, "candidates": []}
     )
     monkeypatch.setattr(service, "record_for", _fake_record_for)
-    rec = service.confirm("staged:clip-1.png")
+    rec = service.confirm("staged:clip-1.png").record
     assert rec.doi == "10.1/real"
 
 
