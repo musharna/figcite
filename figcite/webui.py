@@ -30,13 +30,28 @@ PAGE = r"""<!doctype html>
   .src { display:inline-block; font-size:.75em; text-transform:uppercase;
          letter-spacing:.03em; padding:.05rem .4rem; margin-right:.4em;
          border:1px solid var(--line); border-radius:.25rem; color:var(--mut); }
+  .badge { display:inline-block; padding:0 .4rem; border:1px solid var(--line);
+           border-radius:3px; font-size:12px; }
+  .badge.warn { color:var(--warn); border-color:var(--warn); }
+  .retracted { color:var(--warn); font-weight:700; }
+  table { border-collapse:collapse; width:100%; }
+  td, th { border-bottom:1px solid var(--line); padding:.4rem; text-align:left;
+           vertical-align:top; }
 </style>
 <nav>
   <button id="tab-pending" aria-selected="true" onclick="show('pending')">Pending</button>
   <button id="tab-deck" aria-selected="false" onclick="show('deck')">Deck</button>
 </nav>
 <section id="pending"></section>
-<section id="deck" hidden></section>
+<section id="deck" hidden>
+  <p>
+    <input id="deckpath" size="60" placeholder="/path/to/deck.pptx">
+    <button id="deck-audit-btn" type="button">Audit</button>
+    <button id="deck-apply-btn" type="button">Apply</button>
+  </p>
+  <p id="decksummary"></p>
+  <table id="deckrows"></table>
+</section>
 <script>
 const $ = (s) => document.querySelector(s);
 
@@ -219,5 +234,94 @@ pendingSection.addEventListener("click", async (e) => {
 });
 
 loadPending();
+
+// --- Deck screen -----------------------------------------------------------
+
+// Every verdict crossref.classify_reuse can return. A verdict missing from
+// this map would render blank, and blank reads as "fine" -- the opposite of
+// what an unknown or restricted license means. tests/test_webui_deck.py
+// derives the verdict set from classify_reuse's own source (not a copy of
+// this list) so a verdict added there tomorrow fails that test until a
+// badge for it exists here too.
+const REUSE = {
+  "public-domain": ["public domain", ""],
+  "reuse-ok-attribution-required": ["CC-BY: cite it", ""],
+  "reuse-ok-share-alike-attribution-required": [
+    "CC-BY-SA: cite + share alike",
+    "",
+  ],
+  "noncommercial-only": ["noncommercial only", "warn"],
+  "restricted-no-derivatives": ["no derivatives", "warn"],
+  "publisher-terms-check-required": ["check publisher terms", "warn"],
+  "unknown-ask-publisher": ["license unknown: ask", "warn"],
+  // Not a classify_reuse verdict -- provenance.Record.reuse's own default
+  // (see provenance.py), for a record built without ever calling
+  // classify_reuse at all (an own-work confirmation, a clipboard/matplotlib
+  // capture, anything with no DOI). Confirmed live against the demo deck:
+  // every one of its "This work" rows carries this exact string. Leaving it
+  // out of this map would render those rows' badge as an empty box -- the
+  // same "blank reads as fine" failure this map exists to prevent, just
+  // reached from provenance.py's default instead of crossref.py's classifier.
+  unknown: ["no licence recorded", "warn"],
+};
+
+function deckRow(r) {
+  const [text, cls] = REUSE[r.reuse] || ["", ""];
+  const badge = r.reuse ? `<span class="badge ${cls}">${esc(text)}</span>` : "";
+  const flag = r.retracted ? ' <span class="retracted">RETRACTED</span>' : "";
+  // A row's ref can be empty when nothing matched -- an empty ref is not a
+  // thumbnail request the /api/thumb route can answer (it 404s "unknown
+  // ref"), so skip the <img> entirely rather than send one.
+  const thumb = r.ref
+    ? `<img src="/api/thumb?ref=${encodeURIComponent(r.ref)}" alt="" height="80">`
+    : "";
+  return `<tr><td>${esc(r.location)}<td>${thumb}
+    <td>${esc(r.status)} <span class="ctx">[${esc(r.matched_by)}]</span>
+    <td>${esc(r.citation)}<td>${badge}${flag}</tr>`;
+}
+
+async function auditDeck() {
+  const path = $("#deckpath").value.trim();
+  $("#decksummary").textContent = "auditing…";
+  $("#deckrows").innerHTML = "";
+  let rep;
+  try {
+    rep = await post("/api/audit", { path });
+  } catch (e) {
+    // post() already alerted; a stale or blank summary after a failed
+    // audit would be indistinguishable from "0 pictures, none unsourced"
+    // -- the same lie loadPending()'s catch exists to prevent, here for
+    // the headline number instead of the item list.
+    $("#decksummary").innerHTML =
+      `<span class="fail">COULD NOT AUDIT: ${esc(e.message || String(e))}</span>`;
+    return;
+  }
+  $("#decksummary").textContent =
+    `${rep.pictures} picture(s), ${rep.tagged} with provenance, ` +
+    `${rep.unconfirmed} unconfirmed, ${rep.untagged_substantive} substantive but unsourced`;
+  $("#deckrows").innerHTML =
+    "<tr><th>where<th>figure<th>status<th>citation<th>licence</tr>" +
+    rep.rows.map(deckRow).join("");
+}
+
+async function applyDeck() {
+  // A rejected apply() (existing output without force=, mismatched out
+  // suffix) is already surfaced by post()'s alert(); nothing below this
+  // await runs in that case, so there is nothing further to swallow.
+  const out = await post("/api/apply", { path: $("#deckpath").value.trim() });
+  alert("wrote " + (out.out || out.path || "the cited deck"));
+}
+
+// Delegated on the section, matching #pending: the buttons are static (no
+// ref/path is ever interpolated into an attribute), but routing clicks
+// through one listener instead of per-button `onclick="fn()"` keeps every
+// interactive element in this file going through the same dataset/delegation
+// path, so a later edit that DOES need to interpolate a value has nowhere
+// on this screen to reach for the string-built-onclick shape that made a
+// ref-scheme change one step from XSS on the pending screen.
+$("#deck").addEventListener("click", async (e) => {
+  if (e.target.id === "deck-audit-btn") await auditDeck();
+  else if (e.target.id === "deck-apply-btn") await applyDeck();
+});
 </script>
 """

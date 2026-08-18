@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import io
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
@@ -413,6 +413,18 @@ def apply(path, out=None, force: bool = False, **opts) -> dict:
       - `out`'s suffix must match `path`'s -- a mismatched suffix is a signal
         of caller error, not something to "helpfully" honour.
       - an existing `out` is refused unless `force=True` is passed explicitly.
+
+    Task-8 web-UI verification finding: `deck.apply()`/`pdfdeck.apply()`
+    (the CLI's own consumers, which only ever print from the result -- see
+    `cli.cmd_apply`) return `rows` with a live `Record` instance under
+    `"record"` for every matched picture. This function used to return that
+    dict unchanged. `web.py`'s `/api/apply` route feeds the result straight
+    to `json.dumps()`, which cannot serialize a dataclass instance, so the
+    route 500'd on every real deck (one with at least one matched figure) --
+    exactly the case the existing test suite's only successful-apply test
+    never exercised, because its fixture presentation has zero pictures and
+    so `rows` is always `[]`. `audit()` above already normalizes its own
+    `rows` for the same reason; `apply()` never had, until now.
     """
     opts.pop("allow_unconfirmed", None)  # no UI path to it, ever
     out = out or _default_out(path)
@@ -427,7 +439,18 @@ def apply(path, out=None, force: bool = False, **opts) -> dict:
     if out_path.exists() and not force:
         raise ValueError(f"{out} already exists; pass force=True to overwrite it")
     fn = pdfdeck.apply if _is_pdf(path) else deck.apply
-    return fn(path, out, allow_unconfirmed=False, **opts)
+    result = fn(path, out, allow_unconfirmed=False, **opts)
+    result = dict(result)
+    if "rows" in result:  # real deck.apply()/pdfdeck.apply() always set this;
+        # guarded rather than assumed so a caller's own stand-in return value
+        # (tests/test_service_deck.py's allow_unconfirmed-forwarding check
+        # monkeypatches deck.apply to return {}) isn't required to shape
+        # itself around a normalization step it has nothing to do with.
+        result["rows"] = [
+            {**r, "record": (asdict(r["record"]) if r["record"] is not None else None)}
+            for r in result["rows"]
+        ]
+    return result
 
 
 def _default_out(path) -> str:

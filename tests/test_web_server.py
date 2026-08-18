@@ -400,6 +400,73 @@ def test_apply_with_force_overwrites_an_existing_out(tmp_path):
 
 
 @pytest.mark.live
+def test_apply_returns_a_json_safe_result_for_a_deck_with_a_matched_figure(
+    tmp_path,
+):
+    """Regression, found via task-8's own live verification (a real deck
+    audited/applied through the actual HTTP route, not just through
+    service.apply() in Python -- that direction is what
+    test_pptx_powerpoint.py's web-path test covers, and it never touches
+    json.dumps() at all).
+
+    `test_apply_with_force_overwrites_an_existing_out` above is this
+    route's only other successful-apply test, and its fixture is an EMPTY
+    `Presentation()` -- zero pictures, so `rows` is always `[]` and
+    `json.dumps()` never sees what `deck.apply()` actually puts in a row:
+    a live `Record` instance under `"record"` for every matched picture
+    (figcite/deck.py:apply). `service.apply()` used to return that dict
+    unchanged, so `/api/apply` 500'd with "Object of type Record is not
+    JSON serializable" on any deck that had at least one figure figcite
+    could actually cite -- the ordinary case, not an edge case.
+    """
+    from PIL import Image
+    from pptx.util import Inches
+
+    from figcite.provenance import Record, now_stamps
+
+    png = tmp_path / "fig.png"
+    Image.new("RGB", (900, 700), (10, 20, 30)).save(png)
+    u, loc = now_stamps()
+    service.store.register_existing(
+        png,
+        Record(
+            doi="10.9999/regress.1",
+            citation="Regression et al. (2026).",
+            short_cite="Regression 2026",
+            source_kind="pdf-crop",
+            captured_utc=u,
+            captured_local=loc,
+            confirmed=True,
+        ),
+    )
+
+    pptx_path = tmp_path / "deck.pptx"
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    slide.shapes.add_picture(str(png), Inches(0.5), Inches(0.5), Inches(5))
+    prs.save(str(pptx_path))
+    out_path = tmp_path / "deck.cited.pptx"
+
+    srv = web.make_server(0)
+    port = srv.server_address[1]
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        status, body = _post(
+            port, "/api/apply", {"path": str(pptx_path), "out": str(out_path)}
+        )
+        assert status == 200, body
+    finally:
+        srv.shutdown()
+
+    assert body["out"] == str(out_path)
+    assert body["cited"] == 1
+    assert out_path.exists()
+    # The normalized record must still carry the citation through -- this
+    # isn't just "didn't crash", the caller's data has to survive the fix.
+    assert body["rows"][0]["record"]["doi"] == "10.9999/regress.1"
+
+
+@pytest.mark.live
 def test_apply_refuses_an_out_suffix_that_does_not_match_the_input(tmp_path):
     """I3. A mismatched suffix is refused even when `out` doesn't exist yet
     -- a signal of caller error, not something to "helpfully" honour.
