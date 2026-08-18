@@ -13,6 +13,7 @@ from typing import Any, Optional
 
 from . import clipboard, store
 from ._actions import finalize, record_for
+from .provenance import Record
 
 
 class NotGrounded(Exception):

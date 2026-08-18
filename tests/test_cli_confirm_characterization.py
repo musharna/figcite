@@ -191,3 +191,52 @@ def test_confirm_refuses_a_doi_and_a_cite_together(tmp_path, monkeypatch, capsys
     assert cli.main(["confirm", "0", "--doi", "10.1/x", "--cite", "Someone 2020"]) == 2
     assert "at most one" in capsys.readouterr().err
     assert png.exists(), "a refusal must not consume the capture"
+
+
+def test_confirming_a_filed_capture_says_the_image_is_unchanged(
+    tmp_path, monkeypatch, capsys
+):
+    """Fix round 2. The `m` branch's trailing line went missing in the refactor
+    and nothing noticed, because no test read this command's stdout at all.
+
+    It is not decoration either: it is the answer to "so where is my file?"
+    for the one confirm path that does NOT produce a new file.
+    """
+    staging = tmp_path / "empty"
+    staging.mkdir()
+    monkeypatch.setattr(clipboard, "staging_dirs", lambda: (None, staging))
+    u, loc = now_stamps()
+    filed = Record(
+        sha256="c" * 64,
+        dhash="2" * 16,
+        source_kind="clipboard",
+        confirmed=False,
+        captured_utc=u,
+        captured_local=loc,
+        source_detail={"clipboard_capture": {"process": "firefox", "title": "A paper"}},
+    )
+    # store.get() reads through all_records(), so this one patch serves both.
+    monkeypatch.setattr(store, "all_records", lambda: {filed.sha256: filed})
+    monkeypatch.setattr(store, "put", lambda rec: None)
+
+    def _resolved(doi, **kw):
+        return Record(
+            doi=doi,
+            citation="Resolved et al. 2020",
+            short_cite="Resolved et al. 2020",
+            source_kind=kw.get("source_kind", ""),
+            source_detail=kw.get("source_detail", {}),
+            captured_utc=u,
+            captured_local=loc,
+            confirmed=True,
+        )
+
+    monkeypatch.setattr(_actions, "record_from_doi", _resolved)
+    assert cli.main(["confirm", "m0", "--doi", "10.1/real"]) == 0
+    out = capsys.readouterr().out
+    assert "resolved m0: Resolved et al. 2020" in out, "positive control"
+    assert (
+        "  (the image file itself is unchanged; the manifest now carries the citation)"
+        in out
+    )
+    assert "tagged -> " not in out, "nothing was filed, so nothing may be claimed filed"

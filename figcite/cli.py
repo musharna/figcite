@@ -273,6 +273,9 @@ def cmd_confirm(a) -> int:
         # A `filed:` ref: the bytes were already in the library, so there is no
         # destination to name -- exactly what the pre-refactor `m` branch said.
         print(f"resolved {a.index}: {rec.display()}")
+        print(
+            "  (the image file itself is unchanged; the manifest now carries the citation)"
+        )
         return 0
 
     # Ruling 6. Restored verbatim from the pre-refactor `_finalize` printer
