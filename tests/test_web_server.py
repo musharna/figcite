@@ -12,7 +12,6 @@ from pptx import Presentation
 from figcite import crossref, service, web
 
 
-@pytest.mark.live
 def test_the_server_serves_pending_over_a_real_socket():
     srv = web.make_server(0)  # ephemeral port
     port = srv.server_address[1]
@@ -25,7 +24,6 @@ def test_the_server_serves_pending_over_a_real_socket():
         srv.shutdown()
 
 
-@pytest.mark.live
 def test_it_binds_loopback_only():
     srv = web.make_server(0)
     try:
@@ -34,7 +32,6 @@ def test_it_binds_loopback_only():
         srv.server_close()
 
 
-@pytest.mark.live
 def test_it_refuses_a_port_already_in_use_rather_than_moving():
     held = socket.socket()
     held.bind(("127.0.0.1", 0))
@@ -109,7 +106,6 @@ def _status_of(raw_response: bytes) -> bytes:
     return raw_response.split(b"\r\n", 1)[0]
 
 
-@pytest.mark.live
 def test_confirm_out_field_cannot_write_outside_the_library(tmp_path, monkeypatch):
     """The regression test for the arbitrary-file-write finding.
 
@@ -152,7 +148,6 @@ def test_confirm_out_field_cannot_write_outside_the_library(tmp_path, monkeypatc
         srv.shutdown()
 
 
-@pytest.mark.live
 def test_confirm_rejects_an_unknown_field_instead_of_silently_dropping_it(
     tmp_path, monkeypatch
 ):
@@ -180,7 +175,6 @@ def test_confirm_rejects_an_unknown_field_instead_of_silently_dropping_it(
         srv.shutdown()
 
 
-@pytest.mark.live
 def test_confirm_still_files_a_real_capture_to_the_library(tmp_path, monkeypatch):
     """Positive control: a normal confirm through the API still works."""
     _stage(tmp_path, monkeypatch, name="clip-positive")
@@ -212,7 +206,6 @@ def test_confirm_still_files_a_real_capture_to_the_library(tmp_path, monkeypatch
     assert matches, "no confirmed library record was filed"
 
 
-@pytest.mark.live
 def test_apply_route_never_forwards_allow_unconfirmed(monkeypatch):
     """No path from this API to `allow_unconfirmed`, verified, not just read.
 
@@ -244,7 +237,6 @@ def test_apply_route_never_forwards_allow_unconfirmed(monkeypatch):
     assert calls == [], f"allow_unconfirmed reached service.apply's opts: {calls!r}"
 
 
-@pytest.mark.live
 def test_it_refuses_a_cross_origin_post(tmp_path, monkeypatch):
     _stage(tmp_path, monkeypatch, name="clip-csrf-evil")
 
@@ -263,7 +255,6 @@ def test_it_refuses_a_cross_origin_post(tmp_path, monkeypatch):
         srv.shutdown()
 
 
-@pytest.mark.live
 def test_same_origin_and_no_origin_posts_still_work(tmp_path, monkeypatch):
     _stage(tmp_path, monkeypatch, name="clip-csrf-ok1")
 
@@ -290,7 +281,6 @@ def test_same_origin_and_no_origin_posts_still_work(tmp_path, monkeypatch):
 # --- round 2 security fixes ---------------------------------------------
 
 
-@pytest.mark.live
 def test_malformed_json_body_gets_a_clean_400_not_a_dropped_connection():
     """I1. Body parsing used to sit OUTSIDE the try block, so a malformed
     request got no HTTP response at all -- a dropped connection, which is
@@ -315,7 +305,6 @@ def test_malformed_json_body_gets_a_clean_400_not_a_dropped_connection():
         srv.shutdown()
 
 
-@pytest.mark.live
 def test_negative_content_length_gets_400_not_a_hang():
     """I2. `Content-Length: -1` makes stdlib's `self.rfile.read(-1)` read
     until EOF, blocking the handler thread as long as the client holds the
@@ -341,7 +330,6 @@ def test_negative_content_length_gets_400_not_a_hang():
         srv.shutdown()
 
 
-@pytest.mark.live
 def test_apply_refuses_to_overwrite_an_existing_out_without_force(tmp_path):
     """I3. `apply()`'s `out` is a real, accepted design (unlike `confirm()`'s
     `out` -- producing an output file IS the operation, and the CLI's own
@@ -371,7 +359,6 @@ def test_apply_refuses_to_overwrite_an_existing_out_without_force(tmp_path):
         srv.shutdown()
 
 
-@pytest.mark.live
 def test_apply_with_force_overwrites_an_existing_out(tmp_path):
     """Positive control for I3: `force=True` on a suffix-matched `out` still
     lets the ordinary case (re-running apply on purpose) through.
@@ -399,7 +386,6 @@ def test_apply_with_force_overwrites_an_existing_out(tmp_path):
     assert written[:2] == b"PK", "expected a real pptx (zip) header"
 
 
-@pytest.mark.live
 def test_apply_returns_a_json_safe_result_for_a_deck_with_a_matched_figure(
     tmp_path,
 ):
@@ -466,7 +452,6 @@ def test_apply_returns_a_json_safe_result_for_a_deck_with_a_matched_figure(
     assert body["rows"][0]["record"]["doi"] == "10.9999/regress.1"
 
 
-@pytest.mark.live
 def test_apply_refuses_an_out_suffix_that_does_not_match_the_input(tmp_path):
     """I3. A mismatched suffix is refused even when `out` doesn't exist yet
     -- a signal of caller error, not something to "helpfully" honour.
@@ -489,7 +474,6 @@ def test_apply_refuses_an_out_suffix_that_does_not_match_the_input(tmp_path):
     assert not bad_out.exists(), "a file was created at the mismatched-suffix out"
 
 
-@pytest.mark.live
 def test_it_rejects_a_forged_host_header_on_get_and_post():
     """I4. DNS-rebinding probe: a page on a public domain that rebinds to
     127.0.0.1 is same-origin to the BROWSER, so its GETs are readable unless
@@ -527,7 +511,6 @@ def test_it_rejects_a_forged_host_header_on_get_and_post():
         srv.shutdown()
 
 
-@pytest.mark.live
 def test_localhost_spelling_is_accepted_on_host_and_origin(tmp_path, monkeypatch):
     """I5. Browsers attach `Origin` to every POST including same-origin
     ones, so a user who navigates to `http://localhost:<port>` (the spelling
@@ -560,7 +543,6 @@ def test_localhost_spelling_is_accepted_on_host_and_origin(tmp_path, monkeypatch
         srv.shutdown()
 
 
-@pytest.mark.live
 def test_a_non_dict_json_body_gets_400_not_a_crash():
     """M3. `POST /api/skip [1, 2]` used to reach `payload["ref"]` /
     `payload.items()` on a list and 500 with an AttributeError.
@@ -576,7 +558,6 @@ def test_a_non_dict_json_body_gets_400_not_a_crash():
         srv.shutdown()
 
 
-@pytest.mark.live
 def test_make_server_leaves_the_stdlib_class_untouched():
     """M4. `ThreadingHTTPServer.allow_reuse_address = False` (as opposed to
     scoping the override to a private subclass) mutates the actual stdlib
@@ -598,7 +579,6 @@ def test_make_server_leaves_the_stdlib_class_untouched():
         srv.server_close()
 
 
-@pytest.mark.live
 def test_concurrent_posts_are_serialized_so_skip_never_double_appends(monkeypatch):
     """M5. The brief's rationale for refusing a taken port was "two servers
     writing one manifest is a corruption path" -- but `ThreadingHTTPServer`
@@ -645,7 +625,6 @@ def test_concurrent_posts_are_serialized_so_skip_never_double_appends(monkeypatc
 # --- round 3 security fixes ---------------------------------------------
 
 
-@pytest.mark.live
 def test_a_slow_client_does_not_stall_other_clients(tmp_path, monkeypatch):
     """N1. `_LOCK` used to be held across `self.rfile.read(n)` -- unbounded,
     client-paced socket I/O -- and every response write. A lock protects
@@ -728,7 +707,6 @@ class _SlowCrossRefResponse:
         }
 
 
-@pytest.mark.live
 def test_a_slow_crossref_lookup_does_not_stall_other_clients(tmp_path, monkeypatch):
     """Round 4, I1. The round-3 fix narrowed `_LOCK` off CLIENT-paced I/O but
     left it spanning SERVER-paced I/O: `/api/confirm` held it across
@@ -800,7 +778,6 @@ def test_a_slow_crossref_lookup_does_not_stall_other_clients(tmp_path, monkeypat
     assert confirm_result["res"][0] == 200, confirm_result["res"]
 
 
-@pytest.mark.live
 def test_host_header_comparison_is_case_insensitive():
     """N2. `Host` matching is case-insensitive per RFC 9110; comparing it
     case-sensitively fails closed (not a security hole -- an attacker
@@ -821,3 +798,56 @@ def test_host_header_comparison_is_case_insensitive():
         assert b" 200 " in _status_of(resp), resp
     finally:
         srv.shutdown()
+
+
+# --- round 4, I2: these tests run in the push gate now, which is only safe
+# if the fixture that lets them run still blocks everything else -----------
+
+
+def test_the_network_block_still_refuses_a_non_loopback_address():
+    """I2. Every test in this file was `@pytest.mark.live` purely because
+    `conftest._block_network` patched `socket.socket.connect`
+    unconditionally, and `.githooks/pre-push` runs `pytest -m "not live"` --
+    so the whole HTTP security net sat outside the push gate. Exempting
+    loopback is what brought them in; this is the check that the exemption
+    did not also open the door it exists to keep shut.
+
+    Asserted against the LIVE patched `connect` -- this test is itself
+    non-live, so the fixture is active on it and `socket.connect` here IS
+    the guard, not a re-implementation of it. No real outbound attempt is
+    made: the patch raises before any syscall, which is the point.
+    """
+    s = socket.socket()
+    # A short timeout so that a BROKEN guard (one that lets the address
+    # through) fails this test in seconds with a connect error, instead of
+    # hanging the run on a real outbound attempt that nothing answers.
+    s.settimeout(2)
+    try:
+        # A public IP literal.
+        with pytest.raises(RuntimeError, match="network access blocked"):
+            s.connect(("93.184.216.34", 80))
+        # A hostname, which `_is_loopback` cannot resolve and so must refuse
+        # -- including the loopback-ish spellings, since a name is not an
+        # address until something resolves it.
+        with pytest.raises(RuntimeError, match="network access blocked"):
+            s.connect(("api.crossref.org", 443))
+        with pytest.raises(RuntimeError, match="network access blocked"):
+            s.connect(("localhost", 80))
+    finally:
+        s.close()
+
+
+def test_the_network_block_lets_loopback_through():
+    """Positive control for the test above: a negative result needs one, or
+    a fixture that blocked EVERYTHING would read as "the guard works" while
+    every test in this file failed to connect at all.
+    """
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    port = listener.getsockname()[1]
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as s:
+            assert s.getpeername()[1] == port
+    finally:
+        listener.close()
