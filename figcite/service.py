@@ -395,15 +395,37 @@ def audit(path, min_inches: float = 1.0) -> dict:
     }
 
 
-def apply(path, out=None, **opts) -> dict:
+def apply(path, out=None, force: bool = False, **opts) -> dict:
     """Write provenance into a deck or PDF. Never honours a caller's
     allow_unconfirmed -- there is no path from the web UI to it, ever -- and
     never overwrites its own input.
+
+    Round-2 web-security review. `out` staying a caller-chosen path (rather
+    than being removed the way `confirm()`'s `out` was) is a deliberate,
+    accepted design: producing an output file *is* what `apply` does, and the
+    CLI's own `-o/--out` already accepts any path, so a local caller gains
+    nothing new. The web route's `Origin`/`Host` checks are what keep this
+    off-limits to a browser page that merely got the user to visit it. What
+    they don't cover is a plain data-loss hazard for the ordinary same-origin
+    user: an `out` that already names a real file. Two invariants close that,
+    enforced here (a service-layer property, not a wire concern) rather than
+    only in the route:
+      - `out`'s suffix must match `path`'s -- a mismatched suffix is a signal
+        of caller error, not something to "helpfully" honour.
+      - an existing `out` is refused unless `force=True` is passed explicitly.
     """
     opts.pop("allow_unconfirmed", None)  # no UI path to it, ever
     out = out or _default_out(path)
-    if Path(out).resolve() == Path(path).resolve():
+    out_path, in_path = Path(out), Path(path)
+    if out_path.resolve() == in_path.resolve():
         raise ValueError("apply refuses to overwrite its input")
+    if out_path.suffix.lower() != in_path.suffix.lower():
+        raise ValueError(
+            f"apply refuses an output suffix {out_path.suffix!r} that does "
+            f"not match the input's {in_path.suffix!r}"
+        )
+    if out_path.exists() and not force:
+        raise ValueError(f"{out} already exists; pass force=True to overwrite it")
     fn = pdfdeck.apply if _is_pdf(path) else deck.apply
     return fn(path, out, allow_unconfirmed=False, **opts)
 
