@@ -142,6 +142,13 @@ def cmd_watch(a) -> int:
     )
 
 
+def cmd_ui(a) -> int:
+    from . import web
+
+    web.serve(port=a.port, open_browser=a.open)
+    return 0
+
+
 def cmd_autostart_install(a) -> int:
     from . import autostart
 
@@ -715,6 +722,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="leave even GROUNDED captures pending instead of filing them",
     )
     w.set_defaults(func=cmd_watch)
+
+    ui = sub.add_parser("ui", help="open the browser UI for pending captures and decks")
+    ui.add_argument("--port", type=int, default=8765)
+    ui.add_argument("--open", action="store_true", help="open a browser window too")
+    ui.set_defaults(func=cmd_ui)
 
     pe = sub.add_parser(
         "pending", help="list captured-but-unconfirmed clipboard images"

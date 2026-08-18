@@ -73,6 +73,13 @@ figcite apply  deck.pptx -o deck.cited.pptx  # alt-text + captions + credits + m
 `apply` is idempotent — re-running replaces its own captions and credits slide
 rather than stacking a second copy.
 
+### The browser UI
+
+    figcite ui --open
+
+Resolve pending captures and audit a deck by looking at the pictures rather
+than reading paths. Loopback only (127.0.0.1), no auth, single user.
+
 ## Your Zotero library resolves first
 
 A window title is searched against your own library before CrossRef, because
@@ -286,8 +293,8 @@ from an earlier paper — the PDF's own DOI cannot tell you that.
 ## Tests
 
 ```bash
-python3 -m pytest tests/ -q -m "not live"   # 130 tests, no network
-python3 -m pytest tests/ -q -m live         # 18 tests: real CrossRef, real PDF,
+python3 -m pytest tests/ -q -m "not live"   # 208 tests, no network
+python3 -m pytest tests/ -q -m live         # 42 tests (1 skipped): real CrossRef, real PDF,
                                             # real clipboard, real ghostcite,
                                             # real Ghostscript/ImageMagick,
                                             # real Microsoft PowerPoint via COM
@@ -311,7 +318,7 @@ git config core.hooksPath .githooks   # once per clone; hooks are not cloned
 This is deliberately not GitHub Actions. The repository is private, so
 GitHub-hosted minutes bill against the account's free tier, and a pre-push hook
 gives a one-developer repo the same signal in six seconds for nothing. It runs
-the 130 non-live tests and refuses the push if any fail; `git push --no-verify`
+the 208 non-live tests and refuses the push if any fail; `git push --no-verify`
 overrides it when you mean to.
 
 ## Known limits
