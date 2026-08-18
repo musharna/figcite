@@ -334,6 +334,17 @@ def confirm(ref, *, doi=None, pick=None, cite=None, own_work=False,
                 "that DOI was only guessed; name it explicitly to accept it"
             )
 
+    # Controller Ruling 4. cmd_confirm has TWO guards; Ruling 1 removed only the
+    # arity one. Without this second check, zero selectors on an item with no
+    # inferable DOI skips NotGrounded (because doi is FALSY, not because it is
+    # grounded) and falls through to record_for(None, None, None) -- filing an
+    # uncited record while _clear_staged deletes the pending.json holding the
+    # candidates, the inference kind, and the error field. Irreversible.
+    if doi is None and cite is None:
+        raise ValueError(
+            "nothing to confirm with: pass doi=, pick=, cite=, or own_work=True"
+        )
+
     detail = {
         "clipboard_capture": raw.get("capture", {}),
         "inference_kind": inf.get("kind", ""),
