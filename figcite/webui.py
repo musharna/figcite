@@ -9,9 +9,9 @@ PAGE = r"""<!doctype html>
 <title>figcite</title>
 <style>
   :root { color-scheme: light dark; --bg:#fff; --fg:#111; --mut:#666;
-          --line:#ddd; --warn:#a40000; }
+          --line:#8a8a8a; --warn:#a40000; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#151515; --fg:#eee; --mut:#999; --line:#333; --warn:#ff8a80; }
+    :root { --bg:#151515; --fg:#eee; --mut:#999; --line:#6b6b6b; --warn:#ff8a80; }
   }
   body { background:var(--bg); color:var(--fg); font:14px/1.5 system-ui, sans-serif;
          margin:0; padding:1.5rem; }
@@ -21,7 +21,9 @@ PAGE = r"""<!doctype html>
   .card { display:flex; gap:1rem; border:1px solid var(--line); padding:1rem;
           margin:1rem 0; align-items:flex-start; }
   .card img { max-width:260px; max-height:260px; border:1px solid var(--line); }
+  .info { min-width:0; }
   .ctx { color:var(--mut); }
+  .note { color:var(--mut); }
   .fail { color:var(--warn); font-weight:600; }
   .ev { color:var(--mut); font-style:italic; }
   label { display:block; margin:.2rem 0; }
@@ -48,16 +50,42 @@ function show(which) {
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g,
   c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
+// Shared by loadPending() and post(): a non-2xx response from this server is
+// always JSON (see web.py's _json()), but a request that never reaches our
+// routing -- a malformed request the stdlib itself rejects -- can come back
+// as an HTML error page that r.json() cannot parse. Falling back to the raw
+// status keeps that case from throwing before the failure is ever shown.
+async function errMsg(r) {
+  let msg = `${r.status} ${r.statusText}`;
+  try {
+    const body = await r.json();
+    if (body && body.error) msg = body.error;
+  } catch {}
+  return msg;
+}
+
 async function loadPending() {
-  const r = await fetch("/api/pending");
-  const { items } = await r.json();
-  $("#pending").innerHTML = items.length
-    ? items.map(card).join("")
-    : "<p>nothing pending. Run <code>figcite watch</code>, then snip something.</p>";
+  const el = $("#pending");
+  try {
+    const r = await fetch("/api/pending");
+    if (!r.ok) throw new Error(await errMsg(r));
+    const { items } = await r.json();
+    el.innerHTML = (items && items.length)
+      ? items.map(card).join("")
+      : "<p>nothing pending. Run <code>figcite watch</code>, then snip something.</p>";
+  } catch (e) {
+    // Rule 2's failure mode again, one level up: a broken loader must not
+    // read as "there is nothing pending" -- that's the same lie the
+    // per-item LOOKUP FAILED banner exists to prevent, at the list level
+    // instead of the item level. Without this, an un-awaited throw here
+    // leaves the section blank forever, indistinguishable from empty.
+    el.innerHTML = `<p class="fail">COULD NOT LOAD PENDING ITEMS: ${esc(e.message || String(e))}</p>`;
+  }
 }
 
 function card(item) {
   let body;
+  let prefillDoi = "";
   // Controller Ruling 5: the error is a BANNER, not a branch. A failure in one
   // lookup does not invalidate candidates another lookup returned, and hiding
   // usable candidates behind a failure notice would discard real information.
@@ -70,10 +98,21 @@ function card(item) {
   } else if (item.doi && item.grounded) {
     body = `<p><strong>${esc(item.doi)}</strong>
               <span class="ev">evidence: ${esc(item.doi_evidence)}</span></p>`;
+  } else if (item.doi) {
+    // grounded === false but a DOI exists: figcite has an unverified
+    // SOMETHING, not nothing. Rendering "no source inferred" here would be
+    // rule 1's defect, inverted -- claiming absence where there is an
+    // unconfirmed guess (this is the normal output of a nearest-visit
+    // Firefox match, whose own evidence string says "confirm before
+    // citing"). Show it as unconfirmed, pre-fill the box so the reviewer
+    // sees exactly what a Confirm click will send, but never submit it
+    // without that explicit click.
+    body = `<p><strong>${esc(item.doi)}</strong> <span class="fail">(unconfirmed)</span>
+              <span class="ev">evidence: ${esc(item.doi_evidence)}</span></p>`;
+    prefillDoi = item.doi;
   } else if (item.candidates.length) {
     body = item.candidates.map((c, i) => `
-      <label><input type="radio" name="pick-${esc(item.ref)}" value="${i}"
-                    onchange="enable('${esc(item.ref)}')">
+      <label><input type="radio" name="pick" class="pick" value="${i}">
         <span class="src">${esc(c.source || "")}</span> ${esc(c.score || "")} &mdash;
         ${esc(c.title)} (${esc(c.container || "")} ${esc(c.year || "")})
       </label>`).join("");
@@ -81,49 +120,103 @@ function card(item) {
     body = `<p class="ctx">no source inferred${
       item.doi_evidence ? ": " + esc(item.doi_evidence) : ""}</p>`;
   }
-  return `<div class="card" data-ref="${esc(item.ref)}">
+  // A grounded DOI needs no radio and no typed text: confirmRef() sends
+  // {ref} alone, and service.confirm() resolves zero selectors to "use this
+  // item's own grounded DOI" -- the NotGrounded check is what refuses to
+  // let that same path accept an ungrounded guess, so the safety lives
+  // server-side, where it belongs, not in whether this button is enabled.
+  const canConfirm = (item.doi && item.grounded) || !!prefillDoi;
+  return `<form class="card" data-ref="${esc(item.ref)}"
+                data-grounded="${item.doi && item.grounded ? "1" : "0"}"
+                onsubmit="return false">
     <img src="/api/thumb?ref=${encodeURIComponent(item.ref)}" alt="">
-    <div>
+    <div class="info">
       <p class="ctx">${esc(item.context)}</p>
+      ${item.note ? `<p class="note">${esc(item.note)}</p>` : ""}
       ${banner}
       ${body}
-      <p><input placeholder="10.xxxx/yyyy" id="doi-${esc(item.ref)}"
-                oninput="enable('${esc(item.ref)}')"></p>
+      <p><input class="doi-input" placeholder="10.xxxx/yyyy" value="${esc(prefillDoi)}"></p>
       <p>
-        <button id="ok-${esc(item.ref)}" disabled
-                onclick="confirmRef('${esc(item.ref)}')">Confirm</button>
-        <button onclick="ownWork('${esc(item.ref)}')">This is my own work</button>
-        <button onclick="post('/api/skip', {ref:'${esc(item.ref)}'}).then(loadPending)">Skip</button>
+        <button class="ok-btn" type="button" ${canConfirm ? "" : "disabled"}>Confirm</button>
+        ${item.kind !== "filed"
+          ? '<button class="own-work-btn" type="button">This is my own work</button>' : ""}
+        <button class="skip-btn" type="button">Skip</button>
       </p>
-    </div></div>`;
+    </div></form>`;
 }
 
-function enable(ref) {
-  const picked = document.querySelector(`input[name="pick-${ref}"]:checked`);
-  const typed = $("#doi-" + CSS.escape(ref)).value.trim();
-  $("#ok-" + CSS.escape(ref)).disabled = !(picked || typed);
+function updateConfirm(cardEl) {
+  const typed = cardEl.querySelector(".doi-input").value.trim();
+  const picked = cardEl.querySelector(".pick:checked");
+  const grounded = cardEl.dataset.grounded === "1";
+  cardEl.querySelector(".ok-btn").disabled = !(typed || picked || grounded);
 }
 
 async function post(url, payload) {
   const r = await fetch(url, {method:"POST",
     headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload)});
-  const out = await r.json();
-  if (!r.ok) { alert(out.error || "failed"); throw new Error(out.error); }
-  return out;
+  if (!r.ok) {
+    const msg = await errMsg(r);
+    alert(msg);
+    throw new Error(msg);
+  }
+  return r.json();
 }
 
-async function confirmRef(ref) {
-  const picked = document.querySelector(`input[name="pick-${ref}"]:checked`);
-  const typed = $("#doi-" + CSS.escape(ref)).value.trim();
-  const body = typed ? {ref, doi: typed} : {ref, pick: Number(picked.value)};
+async function confirmRef(cardEl) {
+  const ref = cardEl.dataset.ref;
+  const typed = cardEl.querySelector(".doi-input").value.trim();
+  const picked = cardEl.querySelector(".pick:checked");
+  const grounded = cardEl.dataset.grounded === "1";
+  let body;
+  if (typed) body = {ref, doi: typed};
+  else if (picked) body = {ref, pick: Number(picked.value)};
+  else if (grounded) body = {ref};
+  else return; // Confirm should not be reachable in this state.
   await post("/api/confirm", body);
   loadPending();
 }
 
-async function ownWork(ref) {
-  await post("/api/confirm", {ref, own_work: true});
-  loadPending();
-}
+// Delegated on the section, not per-card: card() rebuilds #pending's
+// innerHTML on every loadPending(), and a listener attached to an element
+// that gets thrown away would silently stop firing. Using `dataset.ref`
+// (read off the DOM, HTML-entity-decoded by the parser) instead of
+// interpolating ref into a JS string literal means no ref value -- however
+// it's spelled -- can ever break out of a quoted attribute.
+const pendingSection = $("#pending");
+
+pendingSection.addEventListener("input", (e) => {
+  const cardEl = e.target.closest("[data-ref]");
+  if (!cardEl || !e.target.classList.contains("doi-input")) return;
+  // Typing a DOI and a picked radio must never disagree about what gets
+  // sent -- clear the radio the instant the box gets text, so the card
+  // never shows one decision while sending another.
+  const picked = cardEl.querySelector(".pick:checked");
+  if (picked) picked.checked = false;
+  updateConfirm(cardEl);
+});
+
+pendingSection.addEventListener("change", (e) => {
+  const cardEl = e.target.closest("[data-ref]");
+  if (!cardEl || !e.target.classList.contains("pick")) return;
+  cardEl.querySelector(".doi-input").value = "";
+  updateConfirm(cardEl);
+});
+
+pendingSection.addEventListener("click", async (e) => {
+  const cardEl = e.target.closest("[data-ref]");
+  if (!cardEl) return;
+  const ref = cardEl.dataset.ref;
+  if (e.target.classList.contains("ok-btn")) {
+    await confirmRef(cardEl);
+  } else if (e.target.classList.contains("own-work-btn")) {
+    await post("/api/confirm", {ref, own_work: true});
+    loadPending();
+  } else if (e.target.classList.contains("skip-btn")) {
+    await post("/api/skip", {ref});
+    loadPending();
+  }
+});
 
 loadPending();
 </script>
