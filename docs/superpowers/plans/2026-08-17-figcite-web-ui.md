@@ -245,14 +245,24 @@ def _fake_record_for(doi, cite, url, *, confirmed, kind, detail,
 
 
 @pytest.mark.parametrize("kwargs", [
-    {},                                        # zero selectors
     {"doi": "10.1/a", "own_work": True},       # two selectors
     {"pick": 0, "cite": "Someone 2020"},       # two selectors
 ])
-def test_confirm_requires_exactly_one_selector(tmp_path, monkeypatch, kwargs):
+def test_confirm_refuses_more_than_one_selector(tmp_path, monkeypatch, kwargs):
     _stage(tmp_path, monkeypatch, {"candidates": [{"doi": "10.1/a"}]})
     with pytest.raises(ValueError):
         service.confirm("staged:clip-1.png", **kwargs)
+
+
+def test_zero_selectors_means_use_this_item_s_own_grounded_doi(tmp_path, monkeypatch):
+    """Controller Ruling 1. Zero selectors is the `figcite confirm 0` case that
+    cmd_pending itself prints as the instruction for a grounded capture. It is
+    valid, and the grounded check -- not an arity check -- is what guards it."""
+    _stage(tmp_path, monkeypatch,
+           {"doi": "10.1/real", "grounded": True, "candidates": []})
+    monkeypatch.setattr(service, "record_for", _fake_record_for)
+    rec = service.confirm("staged:clip-1.png")
+    assert rec.doi == "10.1/real"
 
 
 def test_skip_defers_and_does_not_delete(tmp_path, monkeypatch):
@@ -288,10 +298,15 @@ def skip(ref: str) -> None:
 
 def confirm(ref, *, doi=None, pick=None, cite=None, own_work=False,
             adapted_from=None, note=None, out=None):
+    # Controller Ruling 1: zero selectors is VALID and means "use this item's
+    # own grounded DOI" -- the `figcite confirm 0` invocation cmd_pending prints
+    # for a grounded capture. What guards a guess is the NotGrounded check
+    # below, not an arity check up here. Requiring exactly one would both break
+    # that invocation and make the NotGrounded branch unreachable dead code.
     selectors = [doi is not None, pick is not None, cite is not None, bool(own_work)]
-    if sum(selectors) != 1:
+    if sum(selectors) > 1:
         raise ValueError(
-            "confirm needs exactly one of doi=, pick=, cite=, own_work=True "
+            "confirm takes at most one of doi=, pick=, cite=, own_work=True "
             f"(got {sum(selectors)})"
         )
 
@@ -422,10 +437,88 @@ git commit -m "feat: confirm and skip, with the never-auto-confirm guard intact"
 
 The CLI keeps accepting `0` and `m0`. It maps them to refs itself: the Nth `staged` item and the Nth `filed` item of `service.pending_items()` respectively. `cmd_tag`/`cmd_grab`/`cmd_register` import the helpers from `_actions` instead of defining them.
 
-- [ ] **Step 1: Capture current CLI behavior as the baseline**
+- [ ] **Step 1: Build the regression net this task claimed it already had**
 
-Run: `python3 -m pytest tests/ -q -m "not live" > /tmp/figcite-baseline.txt; tail -1 /tmp/figcite-baseline.txt`
-Expected: `130 passed`. Record the number — it must not change.
+**Controller Ruling 2.** The plan originally asserted that "the existing CLI tests are the regression net". They are not. No test in the suite calls `cli.main(["confirm", ...])` or `cli.main(["pending"])` — the only `cli.main` callers are `tests/test_live.py:75` and `tests/test_bibtex.py:197,210`, none of which touch these two functions. Refactoring them under a green suite would prove nothing, because nothing in the suite executes them. A test's name is not its coverage.
+
+So write the characterization tests FIRST, against the current code, and only then refactor. Create `tests/test_cli_confirm_characterization.py`:
+
+```python
+import json
+import pytest
+from pathlib import Path
+from PIL import Image
+
+from figcite import cli, clipboard, store
+
+
+def _stage(tmp_path, monkeypatch, inference):
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    png = staging / "clip-1.png"
+    Image.new("RGB", (40, 40), "white").save(png)
+    (staging / "clip-1.pending.json").write_text(json.dumps({
+        "png": str(png),
+        "capture": {"process": "firefox", "title": "A paper", "width": 40, "height": 40},
+        "inference": inference,
+    }))
+    monkeypatch.setattr(clipboard, "staging_dirs", lambda: (None, staging))
+    return png
+
+
+def test_pending_lists_a_staged_capture_with_its_window(tmp_path, monkeypatch, capsys):
+    _stage(tmp_path, monkeypatch, {"kind": "browser", "candidates": []})
+    assert cli.main(["pending"]) == 0
+    out = capsys.readouterr().out
+    assert "[0]" in out
+    assert "firefox" in out
+    assert "A paper" in out
+
+
+def test_pending_says_so_when_nothing_is_staged(tmp_path, monkeypatch, capsys):
+    staging = tmp_path / "empty"
+    staging.mkdir()
+    monkeypatch.setattr(clipboard, "staging_dirs", lambda: (None, staging))
+    assert cli.main(["pending"]) == 0
+    assert "nothing pending" in capsys.readouterr().out
+
+
+def test_confirm_refuses_a_guessed_doi(tmp_path, monkeypatch, capsys):
+    """The behavior that must survive the refactor."""
+    _stage(tmp_path, monkeypatch, {"doi": "10.1/guess", "grounded": False, "candidates": []})
+    assert cli.main(["confirm", "0"]) == 2
+    assert "only guessed" in capsys.readouterr().err
+
+
+def test_confirm_with_a_cite_files_the_capture(tmp_path, monkeypatch):
+    png = _stage(tmp_path, monkeypatch, {"candidates": []})
+    assert cli.main(["confirm", "0", "--cite", "Band et al. 2014"]) == 0
+    rec = max(store.all_records().values(), key=lambda r: r.captured_utc)
+    assert rec.citation == "Band et al. 2014"
+    assert rec.confirmed is True
+    assert not png.exists(), "the staged png is consumed on confirm"
+
+
+def test_confirm_rejects_an_out_of_range_index(tmp_path, monkeypatch, capsys):
+    _stage(tmp_path, monkeypatch, {"candidates": []})
+    assert cli.main(["confirm", "7"]) == 2
+    assert "no pending item" in capsys.readouterr().err
+```
+
+- [ ] **Step 1b: Run them against the UNREFACTORED code and record the baseline**
+
+Run: `python3 -m pytest tests/test_cli_confirm_characterization.py -v`
+Expected: **5 passed against the current, un-refactored `cli.py`.** If any fails now, it encodes an assumption the current code does not honor — fix the test, not the code; the point is to pin what exists.
+
+Then: `python3 -m pytest tests/ -q -m "not live" | tail -1`
+Expected: `135 passed` (130 + these 5). Record it; this is the number Step 4 must reproduce.
+
+Commit the characterization tests on their own, before touching `cli.py`:
+
+```bash
+git add tests/test_cli_confirm_characterization.py
+git commit -m "test: pin cmd_pending and cmd_confirm before refactoring them"
+```
 
 - [ ] **Step 2: Rewrite `cmd_pending` as a printer**
 
@@ -503,7 +596,7 @@ def cmd_confirm(a) -> int:
 - [ ] **Step 4: Run the full suite and diff against the baseline**
 
 Run: `python3 -m pytest tests/ -q -m "not live"`
-Expected: `130 passed` — the same number as Step 1, **with no test file edited**. If a test needed editing, stop: behavior changed and the refactor is wrong.
+Expected: `135 passed` — the number recorded in Step 1b, **with no test file edited**, and in particular with all 5 characterization tests still green. If a test needed editing, stop: behavior changed and the refactor is wrong. The characterization tests are the ones that matter here; the other 130 never executed these two functions.
 
 - [ ] **Step 5: Commit**
 
@@ -1455,7 +1548,7 @@ Expected: 1 passed
 - [ ] **Step 3: Run the whole suite**
 
 Run: `python3 -m pytest tests/ -q -m "not live"`
-Expected: all pass, with the Task 3 baseline of 130 still present among them.
+Expected: all pass, including the 5 Task 3 characterization tests that pin `cmd_pending`/`cmd_confirm`.
 
 - [ ] **Step 4: Commit**
 
