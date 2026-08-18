@@ -67,6 +67,28 @@ APPLY_FIELDS = {"path", "out", "force"}
 # server, when before this lock existed a slow client only blocked its own
 # thread. `do_POST` now takes `_LOCK` only around the service call itself;
 # reading and parsing the body, and writing the response, happen outside it.
+#
+# Round-4 finding I1: that narrowing kept the lock off CLIENT-paced I/O but
+# left it spanning SERVER-paced I/O. `/api/confirm` still held it across
+# `service.confirm()`, whose CrossRef lookup can take ~65s (a 25s timeout
+# plus a 429 retry that sleeps up to 15s and re-requests) -- longer than
+# `_Handler.timeout`, so a queued client's socket could die before its turn
+# came. The principle is the same one round 3 applied: this lock exists to
+# serialize SHARED-STATE MUTATION, not slow work.
+#
+# So the confirm/audit/apply routes no longer take it. The invariant it was
+# introduced (M5) to enforce did not move -- it moved DOWN, to the layer that
+# owns the state: `service._WRITE_LOCK` covers the library write and the
+# manifest append inside `confirm()`, with the network call outside it, so
+# two concurrent confirms still cannot interleave their manifest writes.
+# `audit()`/`apply()` only READ the manifest (see deck.py/pdfdeck.py, which
+# call `store.all_records`/`find_similar` and never `store.put`), and
+# `apply()` shelling out to Ghostscript under a global lock was the same
+# defect one route over.
+#
+# `/api/skip` keeps it: `service.skip`'s check-then-act touches a process
+# global and does no I/O at all, so serializing that route costs nothing and
+# holds nothing slow.
 _LOCK = threading.Lock()
 
 
@@ -217,8 +239,10 @@ class _Handler(BaseHTTPRequestHandler):
             if u.path == "/api/confirm":
                 fields = _fields(payload, CONFIRM_FIELDS)
                 ref = fields.pop("ref")
-                with _LOCK:
-                    res = service.confirm(ref, **fields)
+                # No `_LOCK` here (round-4 I1): confirm() reaches CrossRef,
+                # and it takes `service._WRITE_LOCK` itself around the part
+                # that actually mutates the library and the manifest.
+                res = service.confirm(ref, **fields)
                 self._json({"ok": True, "citation": res.record.display()})
             elif u.path == "/api/skip":
                 fields = _fields(payload, SKIP_FIELDS)
@@ -227,17 +251,17 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True})
             elif u.path == "/api/audit":
                 fields = _fields(payload, AUDIT_FIELDS)
-                with _LOCK:
-                    report = service.audit(fields["path"])
+                report = service.audit(fields["path"])  # read-only; see _LOCK
                 self._json(report)
             elif u.path == "/api/apply":
                 fields = _fields(payload, APPLY_FIELDS)
-                with _LOCK:
-                    result = service.apply(
-                        fields["path"],
-                        fields.get("out"),
-                        force=bool(fields.get("force", False)),
-                    )
+                # Reads the manifest, writes only the caller's own output
+                # file -- and can run Ghostscript to get there. See _LOCK.
+                result = service.apply(
+                    fields["path"],
+                    fields.get("out"),
+                    force=bool(fields.get("force", False)),
+                )
                 self._json(result)
             else:
                 self._json({"error": "not found"}, 404)

@@ -9,7 +9,7 @@ import pytest
 from PIL import Image
 from pptx import Presentation
 
-from figcite import service, web
+from figcite import crossref, service, web
 
 
 @pytest.mark.live
@@ -706,6 +706,98 @@ def test_a_slow_client_does_not_stall_other_clients(tmp_path, monkeypatch):
         if slow_sock is not None:
             slow_sock.close()
         srv.shutdown()
+
+
+class _SlowCrossRefResponse:
+    """Whatever `fetch_work` needs from a `requests` response, and no more."""
+
+    status_code = 200
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return {
+            "message": {
+                "DOI": "10.1234/slow-service",
+                "title": ["A paper CrossRef is slow about"],
+                "author": [{"family": "Slow", "given": "S."}],
+                "issued": {"date-parts": [[2026]]},
+                "container-title": ["Journal of Waiting"],
+            }
+        }
+
+
+@pytest.mark.live
+def test_a_slow_crossref_lookup_does_not_stall_other_clients(tmp_path, monkeypatch):
+    """Round 4, I1. The round-3 fix narrowed `_LOCK` off CLIENT-paced I/O but
+    left it spanning SERVER-paced I/O: `/api/confirm` held it across
+    `service.confirm()`, which reaches `_actions.record_for` ->
+    `crossref.record_from_doi` -> `fetch_work` -> `throttled_get` -- a
+    25s-timeout request plus a 429 retry that sleeps up to 15s and re-requests,
+    so ~65s worst case, against a handler whose own socket `timeout` is 30.
+
+    `test_a_slow_client_does_not_stall_other_clients` above cannot catch this:
+    it stalls a CLIENT socket, and the round-3 fix moved the lock off exactly
+    that path. This one stalls the SERVICE DEPENDENCY instead -- the network
+    call inside `confirm()` -- which is the path still under the lock.
+
+    The two timing assertions are a pair. `elapsed < 2` is the finding; the
+    confirm's own `>= STALL` is the control, without which the test would
+    pass vacuously if the confirm 400'd before it ever reached CrossRef.
+    """
+    STALL = 5.0
+    _stage(tmp_path, monkeypatch, name="clip-slow-service")
+
+    def _slow_get(url, **kw):
+        time.sleep(STALL)
+        return _SlowCrossRefResponse()
+
+    monkeypatch.setattr(crossref, "throttled_get", _slow_get)
+
+    srv = web.make_server(0)
+    port = srv.server_address[1]
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    confirm_result = {}
+    try:
+
+        def _confirm():
+            began = time.monotonic()
+            confirm_result["res"] = _post(
+                port,
+                "/api/confirm",
+                {"ref": "staged:clip-slow-service.png", "doi": "10.1234/slow-service"},
+                timeout=30,
+            )
+            confirm_result["elapsed"] = time.monotonic() - began
+
+        t = threading.Thread(target=_confirm)
+        t.start()
+        # Let the confirm actually reach the CrossRef call before timing the
+        # unrelated request, so this isn't racing the first thread's own setup.
+        time.sleep(0.4)
+
+        start = time.monotonic()
+        status, body = _post(port, "/api/skip", {"ref": "unrelated-ref"}, timeout=20)
+        elapsed = time.monotonic() - start
+
+        assert status == 200, body
+        assert elapsed < 2, (
+            f"an unrelated POST took {elapsed:.2f}s while a confirm waited on "
+            "CrossRef -- the lock is still held across an outbound network call"
+        )
+
+        t.join(timeout=30)
+    finally:
+        srv.shutdown()
+
+    # Control: the confirm really did go through the stalled dependency. If it
+    # had failed fast, the assertion above would have proved nothing.
+    assert confirm_result.get("elapsed", 0) >= STALL, (
+        f"the confirm finished in {confirm_result.get('elapsed')!r}s -- it never "
+        "reached the stubbed CrossRef call, so this test proved nothing"
+    )
+    assert confirm_result["res"][0] == 200, confirm_result["res"]
 
 
 @pytest.mark.live

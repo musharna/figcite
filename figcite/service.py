@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import json
+import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -40,6 +41,25 @@ class LibraryFileMissing(LookupError):
 
 
 _skipped: list[str] = []  # deferred for this process only; never persisted
+
+# Round-4 finding I1. The web server is threaded, so "file this capture into
+# the library" needs to be atomic against another thread doing the same thing.
+# That used to be arranged one layer up, by `web.py` holding its module lock
+# across the whole `/api/confirm` route -- but the CrossRef lookup happens
+# INSIDE `confirm()`, so that lock spanned a 25s-timeout HTTP request plus a
+# 429 retry that sleeps up to 15s and re-requests (~65s worst case, against a
+# handler socket timeout of 30). A lock serializes SHARED-STATE MUTATION, not
+# slow work; the shared state here is the library + manifest, and it is
+# touched only in the final few milliseconds of a confirm.
+#
+# So the lock lives here, where the state is, and covers only the mutation:
+# `finalize()` (embed + `store.put`'s manifest append) and `_clear_staged()`.
+# The network round-trip that builds the Record runs OUTSIDE it. Deliberately
+# NOT pushed further down into `store.put` itself: a `threading.Lock` there
+# would imply the manifest is protected against concurrent writers in general,
+# and it is not -- `figcite watch` is a separate PROCESS, which no in-process
+# lock can serialize. Its scope is honestly "this process's threads".
+_WRITE_LOCK = threading.RLock()
 
 
 @dataclass
@@ -115,8 +135,11 @@ def _context_of(cap: dict[str, Any]) -> str:
 
 
 def skip(ref: str) -> None:
-    if ref not in _skipped:
-        _skipped.append(ref)
+    # Check-then-act on a process-global list, so it is shared state like the
+    # manifest is. Nothing here does I/O, so holding the lock costs nothing.
+    with _WRITE_LOCK:
+        if ref not in _skipped:
+            _skipped.append(ref)
 
 
 def confirm(
@@ -182,6 +205,9 @@ def confirm(
         "inference_kind": inf.get("kind", ""),
         "doi_evidence": inf.get("doi_evidence", ""),
     }
+    # I1: this is the slow part -- `record_for` reaches CrossRef for anything
+    # with a DOI. It reads no shared state and writes none, so it runs before
+    # the critical section rather than inside it.
     rec = record_for(
         doi,
         cite,
@@ -193,8 +219,17 @@ def confirm(
         note=note or "",
     )
     png = Path(raw["png"])
-    dest = finalize(png, rec, out)
-    _clear_staged(png, dest)
+    with _WRITE_LOCK:
+        # Re-resolve under the lock. `raw` was read before a network call that
+        # can take a minute; another thread confirming the same ref meanwhile
+        # would already have filed this capture and deleted its pending.json,
+        # and filing it twice means two library files and two manifest records
+        # for one image. `_raw_staged` raises KeyError when that has happened
+        # -- the same KeyError an unknown ref raises, which the CLI and the
+        # web route already turn into "no such pending item".
+        _raw_staged(ref)
+        dest = finalize(png, rec, out)
+        _clear_staged(png, dest)
     return ConfirmResult(record=rec, path=dest)
 
 
@@ -235,6 +270,8 @@ def _confirm_filed(item, *, doi, adapted_from, note):
     target = store.get(item.ref.split(":", 1)[1])
     if target is None:
         raise KeyError(f"no filed record {item.ref!r}")
+    # I1, as in confirm(): the CrossRef lookup inside `record_for` runs before
+    # the critical section, which covers only the manifest append.
     rec = record_for(
         doi,
         None,
@@ -247,7 +284,8 @@ def _confirm_filed(item, *, doi, adapted_from, note):
     )
     rec.sha256, rec.dhash = target.sha256, target.dhash
     rec.captured_utc, rec.captured_local = target.captured_utc, target.captured_local
-    store.put(rec)
+    with _WRITE_LOCK:
+        store.put(rec)
     # No path: the bytes were already in the library, so nothing was filed here
     # and there is no new file for the caller to point the user at.
     return ConfirmResult(record=rec, path=None)
