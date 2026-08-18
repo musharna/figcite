@@ -958,6 +958,11 @@ class _Handler(BaseHTTPRequestHandler):
             ref = (parse_qs(u.query).get("ref") or [""])[0]
             try:
                 blob, mime = service.thumbnail(ref)
+            except service.LibraryFileMissing:
+                # Ruling 10. The ref is real; its bytes are not. 410 rather than
+                # 404, because "this never existed" and "this existed and its
+                # file is gone" are different problems for whoever is debugging.
+                return self._json({"error": "image file missing"}, 410)
             except KeyError:
                 return self._json({"error": "unknown ref"}, 404)
             self.send_response(200)
