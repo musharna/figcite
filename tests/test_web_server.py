@@ -70,7 +70,7 @@ def _stage(tmp_path, monkeypatch, name="clip-1"):
     return png
 
 
-def _post(port, path, payload, headers=None):
+def _post(port, path, payload, headers=None, timeout=None):
     data = json.dumps(payload).encode()
     req = urllib.request.Request(
         f"http://127.0.0.1:{port}{path}",
@@ -79,7 +79,7 @@ def _post(port, path, payload, headers=None):
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.status, json.loads(r.read())
     except urllib.error.HTTPError as e:
         return e.code, json.loads(e.read())
@@ -571,5 +571,94 @@ def test_concurrent_posts_are_serialized_so_skip_never_double_appends(monkeypatc
             f"expected exactly one entry, got {count}: {service._skipped!r} "
             "-- two POST threads raced service.skip()"
         )
+    finally:
+        srv.shutdown()
+
+
+# --- round 3 security fixes ---------------------------------------------
+
+
+@pytest.mark.live
+def test_a_slow_client_does_not_stall_other_clients(tmp_path, monkeypatch):
+    """N1. `_LOCK` used to be held across `self.rfile.read(n)` -- unbounded,
+    client-paced socket I/O -- and every response write. A lock protects
+    SHARED STATE, not the request lifecycle: a client that promises a
+    Content-Length and then goes silent parks its handler thread inside
+    that read, and (pre-fix) held the lock the whole time, so every OTHER
+    mutating request queued behind it. Before the M5 lock existed, a slow
+    client only blocked its own thread -- the concurrency fix turned a
+    local stall into a global one.
+
+    Reproduces the reviewer's exact probe: a client sends
+    `Content-Length: 1000`, delivers 5 bytes, then goes silent. A second,
+    complete request must still finish quickly.
+    """
+    _stage(tmp_path, monkeypatch, name="clip-slow-client-victim")
+
+    srv = web.make_server(0)
+    port = srv.server_address[1]
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    slow_sock = None
+    try:
+        # First client: claims a 1000-byte body, sends 5 bytes, goes silent.
+        # Stays open (never closed, never completes) so the server's
+        # `self.rfile.read(n)` truly blocks for the life of this test.
+        slow_sock = socket.create_connection(("127.0.0.1", port), timeout=10)
+        slow_sock.sendall(
+            b"POST /api/skip HTTP/1.1\r\n"
+            + f"Host: 127.0.0.1:{port}\r\n".encode()
+            + b"Content-Type: application/json\r\n"
+            b"Content-Length: 1000\r\n"
+            b"\r\n"
+            b"12345"  # far short of 1000; the rest never arrives
+        )
+        # Let the server actually enter the handler and start its read,
+        # so the timing assertion below isn't racing the slow client's own
+        # connection setup.
+        time.sleep(0.3)
+
+        # Second client: a normal, complete request, bounded so a pre-fix
+        # stall fails this test within a few seconds instead of hanging the
+        # whole run.
+        start = time.monotonic()
+        status, body = _post(
+            port,
+            "/api/skip",
+            {"ref": "staged:clip-slow-client-victim.png"},
+            timeout=8,
+        )
+        elapsed = time.monotonic() - start
+
+        assert status == 200, body
+        assert elapsed < 3, (
+            f"second client took {elapsed:.2f}s -- it was blocked behind "
+            "the slow client's socket read, meaning the lock (or something "
+            "else) is still held across body I/O"
+        )
+    finally:
+        if slow_sock is not None:
+            slow_sock.close()
+        srv.shutdown()
+
+
+@pytest.mark.live
+def test_host_header_comparison_is_case_insensitive():
+    """N2. `Host` matching is case-insensitive per RFC 9110; comparing it
+    case-sensitively fails closed (not a security hole -- an attacker
+    gains nothing from case-shuffling their OWN forged Host) but produces
+    an unnecessary 403 for a legitimate client that happens to send a
+    differently-cased Host, such as `LOCALHOST`.
+    """
+    srv = web.make_server(0)
+    port = srv.server_address[1]
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        resp = _raw_request(
+            port,
+            b"GET /api/pending HTTP/1.1\r\n"
+            + f"Host: LOCALHOST:{port}\r\n".encode()
+            + b"Connection: close\r\n\r\n",
+        )
+        assert b" 200 " in _status_of(resp), resp
     finally:
         srv.shutdown()

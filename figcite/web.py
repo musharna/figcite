@@ -54,8 +54,19 @@ APPLY_FIELDS = {"path", "out", "force"}
 # to prevent between two SERVERS: "two [writers] writing one manifest is a
 # corruption path." `store.put` is an unlocked append and `service._skipped`
 # is an unsynchronized module global with a check-then-act read-modify-write
-# in `service.skip`. Every mutating request is serialized behind this lock so
-# that invariant is actually enforced, not merely asserted in a docstring.
+# in `service.skip`. The service dispatch for each mutating route is
+# serialized behind this lock so that invariant is actually enforced, not
+# merely asserted in a docstring.
+#
+# Round-3 finding N1: a lock protects SHARED STATE, not the request
+# lifecycle. This used to be held across `self.rfile.read(n)` -- unbounded,
+# client-paced socket I/O -- and every response write. A client that sent a
+# Content-Length promise and then went silent parked its handler thread
+# inside that read while holding the lock, and every OTHER mutating request
+# queued behind it: one slow client turned into a stall for the whole
+# server, when before this lock existed a slow client only blocked its own
+# thread. `do_POST` now takes `_LOCK` only around the service call itself;
+# reading and parsing the body, and writing the response, happen outside it.
 _LOCK = threading.Lock()
 
 
@@ -105,8 +116,14 @@ class _Handler(BaseHTTPRequestHandler):
         on GET). `/api/pending` leaks capture titles and process names;
         `/api/thumb` leaks the actual figure bytes. Applied to every
         request, GET included.
+
+        Round-3 finding N2: `Host` header matching is case-insensitive per
+        RFC 9110 -- a client sending `Host: LOCALHOST:<port>` is legitimate,
+        not forged, and got an unnecessary 403 when this compared case-
+        sensitively. `_own_origins()`'s two spellings are already lowercase,
+        so lowering only the incoming header is enough.
         """
-        return self.headers.get("Host", "") in self._own_origins()
+        return self.headers.get("Host", "").lower() in self._own_origins()
 
     def _same_origin(self) -> bool:
         """CSRF guard: refuse a POST carrying a foreign `Origin`.
@@ -173,56 +190,77 @@ class _Handler(BaseHTTPRequestHandler):
         # malformed request (bad Content-Length, unparsable JSON) dropped the
         # connection with no HTTP response at all -- strictly worse than the
         # bare 500 this handler otherwise exists to prevent. Everything that
-        # can fail on untrusted input, including reading the body, now runs
-        # inside the try. The whole dispatch is under the module lock (M5):
-        # cheap to hold across one small JSON body, and it is what actually
-        # serializes the manifest/skip-list writes below.
-        with _LOCK:
-            try:
-                n = int(self.headers.get("Content-Length") or 0)
-                if n < 0 or n > MAX_BODY:
-                    raise ValueError(f"invalid Content-Length: {n}")
-                raw = self.rfile.read(n) if n else b"{}"
-                payload = json.loads(raw or b"{}")
-                if not isinstance(payload, dict):
-                    # Round-2 finding M3: a JSON body that parses but isn't
-                    # an object (e.g. `[1, 2]`) used to reach `payload.items()`
-                    # / `payload["ref"]` and 500 with an AttributeError.
-                    raise ValueError("request body must be a JSON object")
+        # can fail on untrusted input still runs inside this try.
+        #
+        # Round-3 finding N1: reading the body used to happen under `_LOCK`
+        # too. `self.rfile.read(n)` is unbounded, client-paced socket I/O --
+        # a client that promised a Content-Length and then went silent
+        # parked its thread there while holding the lock, stalling every
+        # OTHER mutating request behind it. `_LOCK` now covers only the
+        # service call for the matched route (the actual shared-state
+        # mutation); reading/parsing the body and writing the response
+        # happen outside it. `_fields()` touches no shared state, so it can
+        # run outside the lock too.
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+            if n < 0 or n > MAX_BODY:
+                raise ValueError(f"invalid Content-Length: {n}")
+            raw = self.rfile.read(n) if n else b"{}"
+            payload = json.loads(raw or b"{}")
+            if not isinstance(payload, dict):
+                # Round-2 finding M3: a JSON body that parses but isn't
+                # an object (e.g. `[1, 2]`) used to reach `payload.items()`
+                # / `payload["ref"]` and 500 with an AttributeError.
+                raise ValueError("request body must be a JSON object")
 
-                u = urlparse(self.path)
-                if u.path == "/api/confirm":
-                    fields = _fields(payload, CONFIRM_FIELDS)
-                    ref = fields.pop("ref")
+            u = urlparse(self.path)
+            if u.path == "/api/confirm":
+                fields = _fields(payload, CONFIRM_FIELDS)
+                ref = fields.pop("ref")
+                with _LOCK:
                     res = service.confirm(ref, **fields)
-                    self._json({"ok": True, "citation": res.record.display()})
-                elif u.path == "/api/skip":
-                    fields = _fields(payload, SKIP_FIELDS)
+                self._json({"ok": True, "citation": res.record.display()})
+            elif u.path == "/api/skip":
+                fields = _fields(payload, SKIP_FIELDS)
+                with _LOCK:
                     service.skip(fields["ref"])
-                    self._json({"ok": True})
-                elif u.path == "/api/audit":
-                    fields = _fields(payload, AUDIT_FIELDS)
-                    self._json(service.audit(fields["path"]))
-                elif u.path == "/api/apply":
-                    fields = _fields(payload, APPLY_FIELDS)
-                    self._json(
-                        service.apply(
-                            fields["path"],
-                            fields.get("out"),
-                            force=bool(fields.get("force", False)),
-                        )
+                self._json({"ok": True})
+            elif u.path == "/api/audit":
+                fields = _fields(payload, AUDIT_FIELDS)
+                with _LOCK:
+                    report = service.audit(fields["path"])
+                self._json(report)
+            elif u.path == "/api/apply":
+                fields = _fields(payload, APPLY_FIELDS)
+                with _LOCK:
+                    result = service.apply(
+                        fields["path"],
+                        fields.get("out"),
+                        force=bool(fields.get("force", False)),
                     )
-                else:
-                    self._json({"error": "not found"}, 404)
-            except service.NotGrounded as e:
-                self._json({"error": str(e), "kind": "not-grounded"}, 409)
-            except (ValueError, KeyError) as e:
-                self._json({"error": str(e)}, 400)
-            except Exception as e:  # fail loud, with the real reason
-                self._json({"error": f"{type(e).__name__}: {e}"}, 500)
+                self._json(result)
+            else:
+                self._json({"error": "not found"}, 404)
+        except service.NotGrounded as e:
+            self._json({"error": str(e), "kind": "not-grounded"}, 409)
+        except (ValueError, KeyError) as e:
+            self._json({"error": str(e)}, 400)
+        except Exception as e:  # fail loud, with the real reason
+            self._json({"error": f"{type(e).__name__}: {e}"}, 500)
 
     def log_message(self, format, *args):  # noqa: A002 - matches base signature
         pass
+
+    # Round-3 finding N1: without a timeout, `BaseHTTPRequestHandler`'s
+    # socket operations (including our own `self.rfile.read(n)` above) block
+    # for as long as a client holds the connection open and stays silent.
+    # I2 already bounds how MUCH a client may claim to send; this bounds how
+    # LONG any single request may take, independent of the lock change
+    # above -- a silent client can no longer park a thread indefinitely even
+    # if it isn't holding `_LOCK`. `StreamRequestHandler` (a base of
+    # `BaseHTTPRequestHandler`) reads this class attribute and applies it as
+    # the socket timeout for the whole request.
+    timeout = 30
 
 
 class _Server(ThreadingHTTPServer):
