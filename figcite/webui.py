@@ -9,9 +9,10 @@ PAGE = r"""<!doctype html>
 <title>figcite</title>
 <style>
   :root { color-scheme: light dark; --bg:#fff; --fg:#111; --mut:#666;
-          --line:#8a8a8a; --warn:#a40000; }
+          --line:#8a8a8a; --warn:#a40000; --warnbg:#a40000; --warnfg:#fff; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#151515; --fg:#eee; --mut:#999; --line:#6b6b6b; --warn:#ff8a80; }
+    :root { --bg:#151515; --fg:#eee; --mut:#999; --line:#6b6b6b; --warn:#ff8a80;
+            --warnbg:#ff8a80; --warnfg:#1a0000; }
   }
   body { background:var(--bg); color:var(--fg); font:14px/1.5 system-ui, sans-serif;
          margin:0; padding:1.5rem; }
@@ -34,6 +35,15 @@ PAGE = r"""<!doctype html>
            border-radius:3px; font-size:12px; }
   .badge.warn { color:var(--warn); border-color:var(--warn); }
   .retracted { color:var(--warn); font-weight:700; }
+  /* I5: the deck screen's inline RETRACTED flag is a table cell, read only
+     if you go looking. This one fires at the moment the citation is
+     attached, so it is sized to be impossible to skim past. */
+  .retracted-banner { background:var(--warnbg); color:var(--warnfg);
+                      border:2px solid var(--warnfg); font-weight:700;
+                      font-size:1.15rem; letter-spacing:.02em;
+                      padding:.6rem .8rem; margin:0 0 .6rem; }
+  .confirmed { border:1px solid var(--line); padding:.75rem 1rem; margin:1rem 0; }
+  .confirmed p { margin:.3rem 0; }
   table { border-collapse:collapse; width:100%; }
   td, th { border-bottom:1px solid var(--line); padding:.4rem; text-align:left;
            vertical-align:top; }
@@ -42,7 +52,13 @@ PAGE = r"""<!doctype html>
   <button id="tab-pending" data-tab="pending" aria-selected="true">Pending</button>
   <button id="tab-deck" data-tab="deck" aria-selected="false">Deck</button>
 </nav>
-<section id="pending"></section>
+<section id="pending">
+  <!-- I5: a separate element from the list, because loadPending() replaces
+       #pendinglist's innerHTML on every refresh and would otherwise wipe the
+       result of the confirm that triggered the refresh. -->
+  <div id="lastconfirm"></div>
+  <div id="pendinglist"></div>
+</section>
 <section id="deck" hidden>
   <p>
     <input id="deckpath" size="60" placeholder="/path/to/deck.pptx">
@@ -94,7 +110,7 @@ async function errMsg(r) {
 }
 
 async function loadPending() {
-  const el = $("#pending");
+  const el = $("#pendinglist");
   try {
     const r = await fetch("/api/pending");
     if (!r.ok) throw new Error(await errMsg(r));
@@ -192,6 +208,55 @@ async function post(url, payload) {
   return r.json();
 }
 
+// I5. Everything `figcite confirm` prints, on the screen where the decision
+// was actually made. `/api/confirm` used to answer {ok, citation} and this
+// page discarded even that, so confirming a RETRACTED paper in the browser
+// was completely silent -- the deck screen flags retraction, but only after
+// the citation is already attached to a slide.
+//
+// Pure string-building, deliberately: it takes the server's JSON and returns
+// HTML, touching no DOM, so tests/test_webui_confirm_result.py can run this
+// exact shipped function under node against a real /api/confirm response
+// instead of pattern-matching the page's source text.
+function confirmedHtml(res) {
+  const bits = [];
+  if (res.retracted) {
+    // First, full width, its own colours, role=alert. Not a line of small
+    // print next to the citation: the whole promise of this tool is that it
+    // never states a citation it cannot support, and "supported by a paper
+    // that has been retracted" is the one case where the citation is
+    // perfectly real and still wrong to use.
+    bits.push(`<p class="retracted-banner" role="alert">` +
+      `** THIS WORK IS FLAGGED AS RETRACTED IN CROSSREF **</p>`);
+  }
+  bits.push(`<p><strong>confirmed:</strong> ${esc(res.citation)}</p>`);
+  if (res.path) {
+    bits.push(`<p>filed &rarr; <code>${esc(res.path)}</code></p>`);
+  } else {
+    // A `filed:` ref: the bytes were already in the library, so there is no
+    // destination to name -- what cli.cmd_confirm says in the same case.
+    bits.push(`<p class="ctx">the image file itself is unchanged; ` +
+      `the manifest now carries the citation</p>`);
+  }
+  // Rendered as text, never as an <a href>: this URL comes from CrossRef,
+  // and a link would make a `javascript:` value in a licence field one
+  // click from executing. esc() already stops it breaking out of the
+  // attribute; not building the attribute at all stops the rest.
+  const lic = res.license_url
+    ? `<code>${esc(res.license_url)}</code>`
+    : "not stated by publisher";
+  bits.push(`<p>licence: ${lic} (${esc(res.reuse || "unknown")})</p>`);
+  if (res.sha256) {
+    bits.push(`<p>sha256: <code>${esc(String(res.sha256).slice(0, 16))}…</code>` +
+      ` (insert THIS file into your deck)</p>`);
+  }
+  return `<div class="confirmed">${bits.join("")}</div>`;
+}
+
+function renderConfirmed(res) {
+  $("#lastconfirm").innerHTML = confirmedHtml(res);
+}
+
 async function confirmRef(cardEl) {
   const ref = cardEl.dataset.ref;
   const typed = cardEl.querySelector(".doi-input").value.trim();
@@ -202,7 +267,7 @@ async function confirmRef(cardEl) {
   else if (picked) body = {ref, pick: Number(picked.value)};
   else if (grounded) body = {ref};
   else return; // Confirm should not be reachable in this state.
-  await post("/api/confirm", body);
+  renderConfirmed(await post("/api/confirm", body));
   loadPending();
 }
 
@@ -239,7 +304,7 @@ pendingSection.addEventListener("click", async (e) => {
   if (e.target.classList.contains("ok-btn")) {
     await confirmRef(cardEl);
   } else if (e.target.classList.contains("own-work-btn")) {
-    await post("/api/confirm", {ref, own_work: true});
+    renderConfirmed(await post("/api/confirm", {ref, own_work: true}));
     loadPending();
   } else if (e.target.classList.contains("skip-btn")) {
     await post("/api/skip", {ref});

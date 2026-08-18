@@ -115,6 +115,41 @@ def _fields(payload: dict, allowed: set) -> dict:
     return dict(payload)
 
 
+def _confirm_payload(res) -> dict:
+    """Everything the CLI prints after a confirm, as JSON.
+
+    Round-4 finding I5. This route used to answer `{"ok": True, "citation":
+    ...}` and nothing else, so the browser was SILENT about confirming a
+    retracted paper -- while `figcite confirm` printed `** THIS WORK IS
+    FLAGGED AS RETRACTED IN CROSSREF **` for the same DOI. An earlier ruling
+    (6) restored those four lines to the CLI on the grounds that a
+    destination path, a licence verdict, a retraction flag and the sha256
+    that names which file to insert are correctness information, not
+    decoration -- and created `ConfirmResult` carrying `.record` and `.path`
+    so BOTH front ends could show them. Only one did.
+
+    The deck screen does flag retraction, but only once the citation is
+    already attached to a slide: that is a check the user runs later, if they
+    run it, not a warning at the moment of the decision.
+
+    Field-for-field this is `cli._print_filed` (figcite/cli.py): destination
+    path, `Record.display()`, licence + reuse verdict, retraction, sha256.
+    `path` is empty for a `filed:` ref, where the bytes were already in the
+    library and nothing new was written -- the same case the CLI answers with
+    "the image file itself is unchanged".
+    """
+    rec = res.record
+    return {
+        "ok": True,
+        "citation": rec.display(),
+        "retracted": bool(rec.retracted),
+        "license_url": rec.license_url or "",
+        "reuse": rec.reuse or "unknown",
+        "path": str(res.path) if res.path else "",
+        "sha256": rec.sha256 or "",
+    }
+
+
 class _Handler(BaseHTTPRequestHandler):
     def _own_origins(self) -> set[str]:
         """Both loopback spellings, at this server's actual bound port.
@@ -243,7 +278,7 @@ class _Handler(BaseHTTPRequestHandler):
                 # and it takes `service._WRITE_LOCK` itself around the part
                 # that actually mutates the library and the manifest.
                 res = service.confirm(ref, **fields)
-                self._json({"ok": True, "citation": res.record.display()})
+                self._json(_confirm_payload(res))
             elif u.path == "/api/skip":
                 fields = _fields(payload, SKIP_FIELDS)
                 with _LOCK:
