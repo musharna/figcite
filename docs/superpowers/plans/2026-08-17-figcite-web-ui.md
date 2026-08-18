@@ -1712,3 +1712,39 @@ git commit -m "fix: a lookup that could not run is not a lookup that found nothi
 ```
 
 **Known gap, deliberately out of scope.** If `enrich()` itself raises, the watcher's handler (`clipboard.py:~386`) prints `(inference failed: ...)` and writes no `pending.json` at all; `list_pending()` then surfaces the bare png as `kind: "unenriched"` with no error text. That is a watcher-lifecycle concern rather than an inference-result one, and the capture is still visible with its context. Recorded in the ledger as deferred.
+
+---
+
+## Amendment — Rulings 6, 7, 8 (mid-execution, after Task 3)
+
+Task 3's refactor surfaced that `service.confirm()` returns only the `Record`, so `cmd_confirm` lost output it used to print. These rulings supersede the corresponding code in Tasks 1, 2, 6 and 10.
+
+**Ruling 6 — `confirm()` returns a `ConfirmResult`, not a bare `Record`.**
+
+`cmd_confirm` previously printed the destination path, the license line, a retraction warning, and the sha256 hint telling you which file to insert into your deck. All four were lost, because the destination is known only to `finalize()` and `confirm()` discarded it. The sha256 hint and the retraction warning are not cosmetic: one tells you which file to use, the other is a correctness warning about the source.
+
+```python
+@dataclass
+class ConfirmResult:
+    record: Record
+    path: Optional[Path] = None      # where the image was filed; None for `filed:` refs,
+                                     # whose bytes are already in the library
+```
+
+`confirm()` returns `ConfirmResult(record=rec, path=dest)`; `_confirm_filed()` returns `ConfirmResult(record=rec, path=None)`.
+
+Call sites that change:
+- `cli.cmd_confirm` — uses `res.record` and `res.path`, and restores the four printed lines, gated on `res.path` being present.
+- Task 6 `web.py` `/api/confirm` — `res = service.confirm(...)`; respond with `res.record.display()`.
+- Task 10 parity test — compares `vars(res.record)`, not `vars(res)`.
+
+**Ruling 7 — `PendingItem` gains `note: str = ""`.**
+
+`cmd_pending` used to print `why: <note>` under a filed capture, explaining why it could not be cited (e.g. "citation lookup failed: ..."). `PendingItem` has no `note`, so that line vanished. This is the same class of defect as the missing `error` field: information figcite deliberately recorded, dropped on the way to the surface. Populate it from `rec.note` in the `filed` branch of `pending_items()`, and restore the `why:` line in `cmd_pending`.
+
+**Ruling 8 — two behaviour changes are ACCEPTED as improvements, not regressions.**
+
+1. `--cite` on an item carrying a guessed DOI now succeeds, where the old CLI refused. An explicit human-supplied citation is the strongest signal available; refusing it because a *machine guess* also existed was the wrong precedence.
+2. `--doi` together with `--cite` now exits 2, where the old CLI silently ignored `--cite`. Silently discarding one of two conflicting citations is exactly the behaviour this project exists to prevent.
+
+Both are recorded rather than reverted. Neither is covered by an existing test; Task 3's fix round adds one for each.
