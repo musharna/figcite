@@ -97,11 +97,26 @@ def pending_items() -> list[PendingItem]:
     for rec in store.all_records().values():
         if rec.confirmed or rec.source_kind != "clipboard":
             continue
+        detail = rec.source_detail or {}
+        cap = detail.get("clipboard_capture") or {}
         out.append(
             PendingItem(
                 ref=f"filed:{rec.sha256}",
                 kind="filed",
                 context=rec.context_line(),
+                # All already on disk and previously dropped on the floor. The
+                # card lays its thumbnail out from the dimensions, and the
+                # evidence string is the user's only account of why nothing
+                # resolved -- an inference improvement upstream is inert until
+                # these are read back.
+                width=cap.get("width"),
+                height=cap.get("height"),
+                doi_evidence=detail.get("doi_evidence", "") or "",
+                candidates=list(detail.get("candidates") or []),
+                # `doi` and `grounded` are deliberately NOT read back. A filed
+                # record is in this list precisely because no human accepted
+                # it, so a stored grounded=True must not be able to become an
+                # auto-confirm on the read path.
                 error=None,
                 note=rec.note or "",
             )
@@ -170,7 +185,9 @@ def confirm(
         raise KeyError(f"no pending item {ref!r}")
 
     if item.kind == "filed":
-        return _confirm_filed(item, doi=doi, adapted_from=adapted_from, note=note)
+        return _confirm_filed(
+            item, doi=doi, pick=pick, adapted_from=adapted_from, note=note
+        )
 
     raw = _raw_staged(ref)
     inf = raw.get("inference", {}) or {}
@@ -259,14 +276,21 @@ def _clear_staged(png: Path, dest: Path) -> None:
         png.unlink()
 
 
-def _confirm_filed(item, *, doi, adapted_from, note):
+def _confirm_filed(item, *, doi, pick=None, adapted_from, note):
     """A capture already in the manifest, still unconfirmed.
 
-    Only a DOI can resolve one: the image bytes are already filed, so there is
-    nothing to finalize -- the manifest simply gains a citation for that sha.
+    The image bytes are already filed, so there is nothing to finalize -- the
+    manifest simply gains a citation for that sha. What resolves one is a DOI,
+    either typed or chosen from the candidates the item is displaying: rendering
+    a radio button the Confirm click cannot act on is worse than not offering it.
     """
+    if pick is not None:
+        try:
+            doi = item.candidates[pick]["doi"]
+        except (IndexError, KeyError, TypeError):
+            raise KeyError(f"no candidate {pick} on {item.ref}")
     if not doi:
-        raise ValueError("a filed capture can only be resolved with doi=")
+        raise ValueError("a filed capture can only be resolved with doi= or pick=")
     target = store.get(item.ref.split(":", 1)[1])
     if target is None:
         raise KeyError(f"no filed record {item.ref!r}")

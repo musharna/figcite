@@ -15,7 +15,7 @@ import subprocess
 from pathlib import Path
 from typing import Iterable, Optional
 
-from . import zotero
+from . import session_tabs, zotero
 from .browser import resolve_from_capture as browser_resolve
 from .crossref import search_bibliographic
 from .pdfgrab import discover_doi
@@ -35,6 +35,28 @@ PDF_APPS = {
     "mupdf",
 }
 BROWSERS = {"msedge", "chrome", "firefox", "brave", "opera", "vivaldi"}
+
+# Apps whose job is to take a picture of some OTHER app. Under Win+Shift+S the
+# foreground window at the moment the clipboard changes is the snipping tool,
+# never the thing being snipped -- so for these, and only these, the focus
+# signal carries no information about the source and must not be consulted.
+#
+# Do NOT "fix" a missing tool here by adding it to BROWSERS. That routes the
+# capture into browser_resolve, whose exact-title match sets grounded=True and
+# auto-files without a click; a history page merely TITLED "Snipping Tool"
+# would then become the cited source of the figure.
+CAPTURE_TOOLS = {
+    "snippingtool",
+    "screenclippinghost",
+    "screensketch",
+    "sharex",
+    "greenshot",
+    "snagit32",
+    "snagiteditor",
+    "lightshot",
+    "flameshot",
+    "gyazo",
+}
 
 # Where a PDF named in a window title might actually live.
 SEARCH_ROOTS = [
@@ -171,6 +193,41 @@ def find_pdf_on_disk(
     return None
 
 
+def _infer_from_open_tabs(out: dict, proc: str) -> dict:
+    """Candidates for a snip taken through a screenshot utility.
+
+    Never grounds and never sets a DOI, however few candidates come back. One
+    candidate reads as certainty and is not: a snip may be of a PDF reader, a
+    slide, or the desktop, and an open-tab list cannot say which window was on
+    screen. What it can say is "these are the papers you had open", which is
+    exactly the shortlist a human needs to pick from -- measured on a real
+    profile, 45 open tabs narrowed to 2.
+    """
+    out["kind"] = "clipboard-from-capture-tool"
+    why = (
+        f"'{proc}' held focus at the snip, so the window title names the "
+        "capture tool and not the source"
+    )
+    try:
+        cands = session_tabs.tab_candidates()
+    except Exception as e:
+        # Fail loud: "could not look" is a different answer from "looked and
+        # found nothing", and the card renders them differently.
+        out["error"] = f"could not read the browser session store: {e}"
+        out["doi_evidence"] = f"{why}; {out['error']}"
+        return out
+
+    out["candidates"] = cands
+    if cands:
+        out["doi_evidence"] = (
+            f"{why}. These are the {len(cands)} open browser tab(s) with a "
+            "resolvable DOI -- which one was on screen is a guess, so pick one."
+        )
+    else:
+        out["doi_evidence"] = f"{why}; no open browser tab has a resolvable DOI"
+    return out
+
+
 def infer_source(capture: dict) -> dict:
     """Best-effort provenance guess for one clipboard capture.
 
@@ -193,6 +250,12 @@ def infer_source(capture: dict) -> dict:
         "grounded": False,
         "error": None,
     }
+
+    # A screenshot utility before anything else: its window title is its own
+    # name, so every title-driven branch below would be searching for the wrong
+    # string. What the user was looking at is in the open tabs, not the title.
+    if proc in CAPTURE_TOOLS:
+        return _infer_from_open_tabs(out, proc)
 
     # Browser first. A web-hosted PDF puts "<accession>.pdf" in the window title,
     # which would otherwise be sent down the find-it-on-disk path and dead-end
@@ -471,6 +534,11 @@ def auto_finalize(png: str | os.PathLike, pending: dict) -> Optional[Path]:
         "url": inf.get("url"),
         "pdf": inf.get("pdf"),
         "doi_evidence": inf.get("doi_evidence", ""),
+        # Computed once, at capture time, when the browser's open tabs still
+        # reflected what was on screen. Dropping them here meant re-deriving
+        # them later from a session that has since moved on -- or, in practice,
+        # never showing them at all.
+        "candidates": inf.get("candidates") or [],
     }
 
     if inf.get("grounded") and inf.get("doi"):
