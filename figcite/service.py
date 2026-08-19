@@ -16,7 +16,7 @@ from typing import Any, Optional
 
 from PIL import Image
 
-from . import clipboard, deck, pdfdeck, store
+from . import clipboard, corpus, deck, match, pdfdeck, session_tabs, store
 from ._actions import finalize, record_for
 from .provenance import Record, sidecar_path
 
@@ -584,3 +584,63 @@ def apply(path, out=None, force: bool = False, **opts) -> dict:
 def _default_out(path) -> str:
     p = Path(path)
     return str(p.with_name(p.stem + ".cited" + p.suffix))
+
+
+def whereis(ref_or_path) -> dict:
+    """Where might this figure have come from?
+
+    dhash first (free), ORB second (handles crops), open tabs last. The verdict
+    distinguishes "searched and found nothing" from "could not look", because
+    they license different next actions: the first means the figure is not in
+    your corpus, the second means you learned nothing at all.
+    """
+    path = Path(ref_or_path)
+    if not path.exists():
+        path = _resolve_ref_to_path(str(ref_or_path))
+    blob = path.read_bytes()
+
+    conn = corpus.connect()
+    rows = corpus.all_rows(conn)
+
+    verdict = match.by_dhash(blob, rows)
+    if not isinstance(verdict, match.Match):
+        orb = match.by_orb(blob, rows, corpus.IMAGE_DIR)
+        # An ORB NoMatch is a real search of the corpus, so it outranks dhash's
+        # could-not-decide -- which only ever meant "a crop is invisible to me".
+        if isinstance(orb, (match.Match, match.NoMatch)):
+            verdict = orb
+        elif isinstance(verdict, match.CouldNotDecide):
+            verdict = match.CouldNotDecide(f"{verdict.reason}; {orb.reason}")
+
+    matches: list[dict] = []
+    if isinstance(verdict, match.Match):
+        row = next(
+            (r for r in rows
+             if getattr(r, "pmcid", None) == verdict.pmcid
+             and getattr(r, "label", None) == verdict.label),
+            None,
+        )
+        matches.append({
+            "source": verdict.method,
+            "score": round(verdict.score, 1),
+            "doi": verdict.doi,
+            "title": (getattr(row, "caption", "")[:120] if row else verdict.label),
+            "container": verdict.pmcid,
+            "year": "",
+            "type": "figure",
+        })
+
+    # Open tabs are a garnish: a lead about what you were reading, never
+    # evidence. A failure to read them must not lose a real pixel match.
+    try:
+        matches.extend(session_tabs.tab_candidates())
+    except Exception:
+        pass
+
+    if isinstance(verdict, match.Match):
+        name, reason = "match", ""
+    elif isinstance(verdict, match.NoMatch):
+        name, reason = "no-match", ""
+    else:
+        name, reason = "could-not-decide", verdict.reason
+    return {"verdict": name, "matches": matches, "reason": reason}
