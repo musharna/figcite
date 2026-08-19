@@ -1,7 +1,7 @@
 # figcite figure corpus (SP2): reverse sourcing and duplication
 
 Date: 2026-08-19
-Status: approved, not yet implemented
+Status: approved; implementation in progress on `feat/figure-corpus`
 
 Answers two questions off one index:
 
@@ -70,8 +70,8 @@ removes.
 Three new modules and one service entry point.
 
 - **`figcite/pmc.py`** — fetching only. DOI → PMCID (Europe PMC REST search,
-  batched), PMCID → figure list with captions (`fullTextXML`), PMCID → CDN
-  image URLs (article page), image download. Throttled, no index knowledge.
+  batched), PMCID → figure list with captions (`fullTextXML`), PMCID → image
+  URLs (AWS Open Data bucket), image download. Throttled, no index knowledge.
 - **`figcite/corpus.py`** — the index. `build()`, `status()`, `find(image)`,
   `duplicates_of(doi, image)`. Owns storage; knows nothing about HTTP.
 - **`figcite/match.py`** — the two-stage matcher over image bytes. No I/O.
@@ -137,8 +137,8 @@ arrives with its reuse verdict already attached and feeds the existing badges.
 2. Batch Europe PMC search by DOI (8 per request) → PMCID, `isOpenAccess`,
    title, year.
 3. For each open-access PMCID not already complete: `fullTextXML` → figure
-   labels and captions; article page → href-to-CDN-URL map; download each
-   image; compute dhash; compute ORB descriptors if opencv is present.
+   labels and captions; the article's S3 prefix → filename-to-URL map; download
+   each image; compute dhash; compute ORB descriptors if opencv is present.
 4. Record per-article outcome. A re-run retries only failures and new DOIs.
 
 Politeness: single-threaded, <= 3 requests/second to NCBI (their documented
