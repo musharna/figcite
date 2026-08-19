@@ -191,6 +191,7 @@ def infer_source(capture: dict) -> dict:
         "pdf": None,
         "url": None,
         "grounded": False,
+        "error": None,
     }
 
     # Browser first. A web-hosted PDF puts "<accession>.pdf" in the window title,
@@ -200,6 +201,7 @@ def infer_source(capture: dict) -> dict:
         try:
             b = browser_resolve(capture)
         except Exception as e:
+            out["error"] = f"browser grounding failed: {e}"
             b = {
                 "doi": None,
                 "url": None,
@@ -227,6 +229,7 @@ def infer_source(capture: dict) -> dict:
             try:
                 doi, where = discover_doi(path)
             except Exception as e:
+                out["error"] = f"could not read {path}: {e}"
                 doi, where = None, f"could not read {path}: {e}"
             out.update(
                 kind="clipboard-from-pdf",
@@ -265,6 +268,7 @@ def infer_source(capture: dict) -> dict:
             try:
                 out["candidates"] = search_bibliographic(q, rows=5)
             except Exception as e:
+                out["error"] = f"CrossRef search failed: {e}"
                 out["doi_evidence"] = f"CrossRef search failed: {e}"
         out["doi_evidence"] = out["doi_evidence"] or (
             "title-derived candidates only -- CrossRef title search is unreliable "
@@ -303,6 +307,7 @@ def _zotero_try(query: str, out: dict, page_title: bool = False) -> str:
     try:
         z = zotero.resolve_page_title(query) if page_title else zotero.resolve(query)
     except Exception as e:  # defensive: resolve() already swallows the known cases
+        out["error"] = f"Zotero lookup errored: {e}"
         return f"Zotero lookup errored: {e}"
     if z.get("doi") and z.get("grounded"):
         out.update(doi=z["doi"], grounded=True)

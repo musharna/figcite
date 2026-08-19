@@ -6,6 +6,7 @@ figure caption is not, and is returned unconfirmed. This is not paranoia --
 querying CrossRef for the exact title "Array programming with NumPy" returns a
 *review of* that paper as the top hit, not the paper.
 """
+
 from __future__ import annotations
 
 import json
@@ -19,10 +20,13 @@ import requests
 
 from .provenance import Record, now_stamps
 
-CACHE = Path(os.environ.get("FIGCITE_CACHE", Path.home() / ".cache" / "figcite" / "crossref"))
+CACHE = Path(
+    os.environ.get("FIGCITE_CACHE", Path.home() / ".cache" / "figcite" / "crossref")
+)
 MAILTO = os.environ.get("FIGCITE_MAILTO", "advertisingemailhaha@gmail.com")
 UA = f"figcite/0.1 (https://github.com/; mailto:{MAILTO})"
 TIMEOUT = 25
+
 
 class LookupUnavailable(RuntimeError):
     """The lookup could not be performed. NOT the same as 'no such record'.
@@ -72,7 +76,7 @@ def find_dois(text: str) -> list[str]:
     for m in DOI_RE.finditer(text or ""):
         d = normalize_doi(m.group(0))
         # A trailing ')' is far more often prose punctuation than part of the DOI.
-        while d and d[-1] in ".,;:" :
+        while d and d[-1] in ".,;:":
             d = d[:-1]
         if d.lower() not in seen:
             seen.add(d.lower())
@@ -96,8 +100,11 @@ def fetch_work(doi: str, *, use_cache: bool = True) -> Optional[dict[str, Any]]:
         except Exception:
             pass
     try:
-        r = throttled_get(f"https://api.crossref.org/works/{doi}",
-                          headers={"User-Agent": UA}, timeout=TIMEOUT)
+        r = throttled_get(
+            f"https://api.crossref.org/works/{doi}",
+            headers={"User-Agent": UA},
+            timeout=TIMEOUT,
+        )
     except Exception as e:
         raise RuntimeError(f"CrossRef request failed for {doi}: {e}") from e
     if r.status_code == 404:
@@ -112,22 +119,28 @@ def fetch_work(doi: str, *, use_cache: bool = True) -> Optional[dict[str, Any]]:
 def search_bibliographic(query: str, rows: int = 5) -> list[dict[str, Any]]:
     """Title/citation search. Results are CANDIDATES, never answers."""
     try:
-        r = throttled_get("https://api.crossref.org/works",
-                          params={"query.bibliographic": query, "rows": rows},
-                          headers={"User-Agent": UA}, timeout=TIMEOUT)
+        r = throttled_get(
+            "https://api.crossref.org/works",
+            params={"query.bibliographic": query, "rows": rows},
+            headers={"User-Agent": UA},
+            timeout=TIMEOUT,
+        )
         r.raise_for_status()
     except Exception as e:
         raise RuntimeError(f"CrossRef search failed: {e}") from e
     out = []
     for it in r.json()["message"]["items"]:
-        out.append({
-            "doi": it.get("DOI", ""),
-            "score": round(float(it.get("score", 0)), 1),
-            "title": (it.get("title") or [""])[0],
-            "year": _year(it),
-            "container": (it.get("container-title") or [""])[0],
-            "type": it.get("type", ""),
-        })
+        out.append(
+            {
+                "doi": it.get("DOI", ""),
+                "score": round(float(it.get("score", 0)), 1),
+                "title": (it.get("title") or [""])[0],
+                "year": _year(it),
+                "container": (it.get("container-title") or [""])[0],
+                "type": it.get("type", ""),
+                "source": "crossref",
+            }
+        )
     return out
 
 
@@ -153,23 +166,64 @@ def _authors(msg: dict) -> list[str]:
     return out
 
 
+# Named so `classify_reuse` cannot drift from `REUSE_VERDICTS` by typo --
+# every branch below returns one of these names, never a bare string
+# literal, and the assertion at the bottom of `classify_reuse` makes that a
+# runtime-enforced contract rather than a convention someone can forget.
+# Task-8 review (C2): the web UI's badge map (figcite/webui.py's `REUSE`)
+# and this test suite's coverage check both read `REUSE_VERDICTS` directly
+# now -- one source of truth, no regex parsing of this function's source
+# (which a review found could be fooled by a verdict returned via a
+# variable or a differently-named constant instead of a bare string).
+_PUBLIC_DOMAIN = "public-domain"
+_ATTRIBUTION_REQUIRED = "reuse-ok-attribution-required"
+_SHARE_ALIKE_ATTRIBUTION_REQUIRED = "reuse-ok-share-alike-attribution-required"
+_NONCOMMERCIAL_ONLY = "noncommercial-only"
+_RESTRICTED_NO_DERIVATIVES = "restricted-no-derivatives"
+_PUBLISHER_TERMS_CHECK_REQUIRED = "publisher-terms-check-required"
+_UNKNOWN_ASK_PUBLISHER = "unknown-ask-publisher"
+
+REUSE_VERDICTS: frozenset[str] = frozenset(
+    {
+        _PUBLIC_DOMAIN,
+        _ATTRIBUTION_REQUIRED,
+        _SHARE_ALIKE_ATTRIBUTION_REQUIRED,
+        _NONCOMMERCIAL_ONLY,
+        _RESTRICTED_NO_DERIVATIVES,
+        _PUBLISHER_TERMS_CHECK_REQUIRED,
+        _UNKNOWN_ASK_PUBLISHER,
+    }
+)
+
+
 def classify_reuse(license_urls: list[str]) -> tuple[Optional[str], str]:
-    """(chosen license url, reuse verdict). Deliberately conservative."""
+    """(chosen license url, reuse verdict). Deliberately conservative.
+
+    The verdict half of the return is always a `REUSE_VERDICTS` member --
+    the assertion below enforces that at the one place a new verdict could
+    ever be introduced, so a future branch added with a raw string that was
+    never added to `REUSE_VERDICTS` (and therefore never given a badge in
+    `webui.py`) fails loudly here instead of silently reaching the UI as an
+    unmapped verdict.
+    """
     urls = [u for u in license_urls if u]
     joined = " ".join(urls).lower()
     if not urls:
-        return None, "unknown-ask-publisher"
-    if "creativecommons.org/publicdomain" in joined or "/cc0" in joined:
-        return urls[0], "public-domain"
-    if "/by-nc-nd" in joined or "/by-nd" in joined:
-        return urls[0], "restricted-no-derivatives"
-    if "/by-nc" in joined:
-        return urls[0], "noncommercial-only"
-    if "/by-sa" in joined:
-        return urls[0], "reuse-ok-share-alike-attribution-required"
-    if "/licenses/by" in joined:
-        return urls[0], "reuse-ok-attribution-required"
-    return urls[0], "publisher-terms-check-required"
+        lic, verdict = None, _UNKNOWN_ASK_PUBLISHER
+    elif "creativecommons.org/publicdomain" in joined or "/cc0" in joined:
+        lic, verdict = urls[0], _PUBLIC_DOMAIN
+    elif "/by-nc-nd" in joined or "/by-nd" in joined:
+        lic, verdict = urls[0], _RESTRICTED_NO_DERIVATIVES
+    elif "/by-nc" in joined:
+        lic, verdict = urls[0], _NONCOMMERCIAL_ONLY
+    elif "/by-sa" in joined:
+        lic, verdict = urls[0], _SHARE_ALIKE_ATTRIBUTION_REQUIRED
+    elif "/licenses/by" in joined:
+        lic, verdict = urls[0], _ATTRIBUTION_REQUIRED
+    else:
+        lic, verdict = urls[0], _PUBLISHER_TERMS_CHECK_REQUIRED
+    assert verdict in REUSE_VERDICTS, f"{verdict!r} is not a REUSE_VERDICTS member"
+    return lic, verdict
 
 
 def format_citation(msg: dict) -> tuple[str, str]:
@@ -177,7 +231,7 @@ def format_citation(msg: dict) -> tuple[str, str]:
     auth = _authors(msg)
     yr = _year(msg)
     if not auth:
-        who = (msg.get("publisher") or "Anon.")
+        who = msg.get("publisher") or "Anon."
         short_who = who
     elif len(auth) == 1:
         who = auth[0]
@@ -214,8 +268,13 @@ def is_retracted(msg: dict) -> bool:
     return str(msg.get("type", "")).lower() == "retraction"
 
 
-def record_from_doi(doi: str, *, confirmed: bool, source_kind: str = "manual",
-                    source_detail: Optional[dict] = None) -> Record:
+def record_from_doi(
+    doi: str,
+    *,
+    confirmed: bool,
+    source_kind: str = "manual",
+    source_detail: Optional[dict] = None,
+) -> Record:
     """Build a Record from a DOI, with the citation coming from CrossRef itself.
 
     Because the byline is read from CrossRef rather than recalled, the

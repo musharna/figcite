@@ -192,6 +192,54 @@ def test_powerpoint_opens_figcite_output_without_repairing_it(workdir, figures):
 
 
 @requires_powerpoint
+def test_powerpoint_opens_a_deck_applied_through_the_web_path(workdir, figures):
+    """Spec success criterion 4, task 8. `service.apply()` is the function
+    `/api/apply` actually calls -- it wraps `deck.apply` with the web
+    route's own guard-rails (out-suffix match, no clobbering an existing
+    `out` without `force=True`) before delegating. Every other test in this
+    file drives `deck.apply` directly, which proves the CLI's write path
+    opens cleanly but says nothing about a deck that went through the
+    wrapper the browser's Apply button uses -- that path has never been
+    opened by PowerPoint until this test.
+
+    Deviates from the brief's own snippet for this test on two points, both
+    load-bearing: the brief passed a bare `tmp_path` (lives under /tmp)
+    straight into the Windows-side COM call, which `workdir`'s docstring
+    above says fails outright (Windows cannot open a WSL /tmp path); and it
+    pointed at `demo/auxin_talk-COPY.pptx`, whose figures only match against
+    the REAL library, not this test's isolated FIGCITE_HOME -- so under the
+    suite's own manifest that deck would apply with zero citations, proving
+    only that an uncited file opens. Reusing this file's own `workdir` +
+    `figures` fixtures and `_make_plain_deck` helper keeps the WSL/Windows
+    path handling that the other three tests already rely on, and confirms
+    a citation actually round-trips through `service.apply()`, not just
+    that some file opens.
+    """
+    win, wsl = workdir
+    from figcite import service
+
+    _make_plain_deck(win, wsl, "src.pptx")
+    out = wsl / "web-applied.pptx"
+    rep = service.apply(
+        str(wsl / "src.pptx"), str(out), caption_own_work=True, manifest_path=None
+    )
+    assert rep["cited"] >= 1
+
+    r = _ps(
+        f"$ppt = New-Object -ComObject PowerPoint.Application; $ppt.Visible = -1; "
+        f"$pres = $ppt.Presentations.Open('{win}\\web-applied.pptx', -1, 0, -1); "
+        f"Write-Output ('SLIDES=' + $pres.Slides.Count); "
+        f"$pres.Close(); $ppt.Quit(); Write-Output OPENED_CLEAN"
+    )
+    assert "OPENED_CLEAN" in r.stdout, (
+        f"PowerPoint could not open a deck applied through service.apply(): "
+        f"{r.stderr[:400]}"
+    )
+    assert "SLIDES=4" in r.stdout, "the credits slide did not survive"
+    assert "repair" not in (r.stdout + r.stderr).lower()
+
+
+@requires_powerpoint
 def test_provenance_survives_a_powerpoint_edit_and_save(workdir, figures):
     """Direction 3. Opening a cited deck, moving something and saving is the
     normal workflow, and it makes PowerPoint rewrite the entire package."""

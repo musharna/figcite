@@ -2,76 +2,59 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
 
 from . import store
-from .crossref import normalize_doi, record_from_doi, search_bibliographic
-from .provenance import Record, embed, now_stamps
+from ._actions import finalize as _finalize_no_print
+from ._actions import record_for as _record_for
+from .crossref import record_from_doi, search_bibliographic
+from .provenance import Record, now_stamps
 
 
-def _slug(s: str, n: int = 60) -> str:
-    return re.sub(r"[^A-Za-z0-9._-]+", "-", s or "").strip("-")[:n] or "image"
+def _print_filed(rec: Record, dest: Path) -> None:
+    """What the CLI says after an image lands in the library.
+
+    M2. This block used to exist twice -- here and copied into cmd_confirm --
+    and only one copy had a test, so a mutation to the other stayed green.
+    One copy, one net.
+    """
+    print(f"tagged -> {dest}")
+    print(f"  {rec.display()}")
+    if rec.license_url:
+        print(f"  license: {rec.license_url}  ({rec.reuse})")
+    else:
+        print(f"  license: not stated by publisher ({rec.reuse})")
+    if rec.retracted:
+        print("  ** THIS WORK IS FLAGGED AS RETRACTED IN CROSSREF **")
+    print(f"  sha256: {rec.sha256[:16]}...  (insert THIS file into your deck)")
 
 
-def _library_dest(rec: Record, src: Path) -> Path:
-    store._ensure()
-    base = _slug(rec.doi or rec.short_cite or src.stem)
-    stamp = (rec.captured_local or "")[:19].replace(":", "").replace("-", "")
-    return store.LIBRARY / f"{base}--{stamp or 'na'}{src.suffix.lower() or '.png'}"
+def _in_cli_words(msg: str) -> str:
+    """Translate the service's kwarg vocabulary into CLI flags.
+
+    I3. The service speaks kwargs because the web UI is its other consumer and
+    kwargs are correct there. Passed through verbatim, the CLI told the user to
+    "pass doi=, pick=, cite=, or own_work=True" -- three names no shell accepts,
+    and own_work has no `figcite confirm` flag at all, so it is dropped rather
+    than renamed. A CLI that advertises an option it does not have is worse
+    than one that says nothing.
+    """
+    msg = msg.replace(", or own_work=True", "").replace(", own_work=True", "")
+    for kwarg, flag in (("doi=", "--doi"), ("pick=", "--pick N"), ("cite=", "--cite")):
+        msg = msg.replace(kwarg, flag)
+    return msg
 
 
 def _finalize(src: Path, rec: Record, out: Optional[str], quiet: bool = False) -> Path:
-    dest = Path(out) if out else _library_dest(rec, src)
-    rec = embed(src, dest, rec)
-    store.put(rec)
+    """CLI-side wrapper: the service's finalize() no longer prints, so the CLI
+    prints here instead -- the one place that still needs to."""
+    dest = _finalize_no_print(src, rec, out)
     if not quiet:
-        print(f"tagged -> {dest}")
-        print(f"  {rec.display()}")
-        if rec.license_url:
-            print(f"  license: {rec.license_url}  ({rec.reuse})")
-        else:
-            print(f"  license: not stated by publisher ({rec.reuse})")
-        if rec.retracted:
-            print("  ** THIS WORK IS FLAGGED AS RETRACTED IN CROSSREF **")
-        print(f"  sha256: {rec.sha256[:16]}...  (insert THIS file into your deck)")
+        _print_filed(rec, dest)
     return dest
-
-
-def _record_for(
-    doi: Optional[str],
-    cite: Optional[str],
-    url: Optional[str],
-    confirmed: bool,
-    kind: str,
-    detail: dict,
-    adapted_from: Optional[str] = None,
-    note: str = "",
-) -> Record:
-    if doi:
-        rec = record_from_doi(
-            doi, confirmed=confirmed, source_kind=kind, source_detail=detail
-        )
-    else:
-        u, loc = now_stamps()
-        rec = Record(
-            citation=cite or "",
-            short_cite=(cite or "")[:40],
-            url=url,
-            source_kind=kind,
-            source_detail=detail,
-            captured_utc=u,
-            captured_local=loc,
-            confirmed=bool(cite or url),
-        )
-    if adapted_from:
-        rec.adapted_from = normalize_doi(adapted_from)
-    if note:
-        rec.note = note
-    return rec
 
 
 # ---------------------------------------------------------------- commands
@@ -159,6 +142,13 @@ def cmd_watch(a) -> int:
     )
 
 
+def cmd_ui(a) -> int:
+    from . import web
+
+    web.serve(port=a.port, open_browser=a.open)
+    return 0
+
+
 def cmd_autostart_install(a) -> int:
     from . import autostart
 
@@ -235,134 +225,101 @@ def cmd_autostart_uninstall(a) -> int:
 
 
 def cmd_pending(a) -> int:
-    from .clipboard import list_pending
-    from . import store
+    from . import service
 
-    unconfirmed = [
-        r
-        for r in store.all_records().values()
-        if not r.confirmed and r.source_kind == "clipboard"
-    ]
-    if unconfirmed:
-        print(f"{len(unconfirmed)} filed capture(s) with context but no citation:")
-        for i, r in enumerate(unconfirmed):
-            print(f"[m{i}] {r.context_line()[:100]}")
-            if r.note:
-                print(f"      why: {r.note[:96]}")
-            print(f"      resolve: figcite confirm m{i} --doi 10.x/y")
-        print()
-    items = list_pending()
+    items = service.pending_items()
     if not items:
         print("nothing pending (run `figcite watch`, then snip something)")
         return 0
-    for i, it in enumerate(items):
-        png = Path(it["png"])
-        cap = it.get("capture", {})
-        inf = it.get("inference", {})
-        print(f"[{i}] {png.name}  {cap.get('width', '?')}x{cap.get('height', '?')}")
-        if cap.get("title"):
-            print(f"     window: {cap.get('process', '?')} — {cap['title'][:90]}")
-        if inf.get("doi"):
-            print(f"     DOI: {inf['doi']}   (from {inf.get('doi_evidence', '')})")
+    staged = [i for i in items if i.kind == "staged"]
+    filed = [i for i in items if i.kind == "filed"]
+    if filed:
+        print(f"{len(filed)} filed capture(s) with context but no citation:")
+    for i, it in enumerate(filed):
+        print(f"[m{i}] {it.context[:100]}")
+        if it.note:
+            print(f"      why: {it.note[:96]}")
+        print(f"      resolve: figcite confirm m{i} --doi 10.x/y")
+    if filed:
+        print()
+    for i, it in enumerate(staged):
+        print(f"[{i}] {it.ref.split(':', 1)[1]}  {it.width or '?'}x{it.height or '?'}")
+        if it.context:
+            print(f"     window: {it.context[:90]}")
+        if it.error:
+            print(f"     LOOKUP FAILED: {it.error}")
+        elif it.doi:
+            print(f"     DOI: {it.doi}   (from {it.doi_evidence})")
             print(f"     confirm: figcite confirm {i}")
-        elif inf.get("candidates"):
-            for ci, c in enumerate(inf["candidates"]):
+        elif it.candidates:
+            for ci, c in enumerate(it.candidates):
                 print(f"     cand {ci}: score {c['score']:>5}  {c['doi']}")
                 print(
                     f"               {c['title'][:80]} ({c.get('container', '')} {c.get('year', '')}) [{c.get('type', '')}]"
                 )
             print(f"     confirm: figcite confirm {i} --pick <n>   (or --doi 10.x/y)")
         else:
-            print(f"     no source inferred: {inf.get('doi_evidence', '')}")
+            print(f"     no source inferred: {it.doi_evidence}")
             print(f"     confirm: figcite confirm {i} --doi 10.x/y")
     return 0
 
 
 def cmd_confirm(a) -> int:
-    from .clipboard import list_pending
-    from . import store
+    from . import service
 
-    if isinstance(a.index, str) and a.index.startswith("m"):
-        recs = [
-            r
-            for r in store.all_records().values()
-            if not r.confirmed and r.source_kind == "clipboard"
-        ]
-        try:
-            target = recs[int(a.index[1:])]
-        except (ValueError, IndexError):
-            print(f"no filed capture {a.index} (have {len(recs)})", file=sys.stderr)
-            return 2
-        if not a.doi:
-            print("need --doi to resolve a filed capture", file=sys.stderr)
-            return 2
-        rec = record_from_doi(
-            a.doi,
-            confirmed=True,
-            source_kind="clipboard",
-            source_detail=target.source_detail,
+    items = service.pending_items()
+    idx = str(a.index)
+    if idx.startswith("m"):
+        pool = [i for i in items if i.kind == "filed"]
+        n = idx[1:]
+    else:
+        pool = [i for i in items if i.kind == "staged"]
+        n = idx
+    try:
+        ref = pool[int(n)].ref
+    except (ValueError, IndexError):
+        print(f"no pending item {a.index} (have {len(pool)})", file=sys.stderr)
+        return 2
+
+    try:
+        res = service.confirm(
+            ref,
+            doi=a.doi,
+            pick=a.pick,
+            cite=a.cite,
+            adapted_from=a.adapted_from,
+            note=a.note or "",
+            out=a.out,
         )
-        rec.sha256, rec.dhash = target.sha256, target.dhash
-        rec.captured_utc, rec.captured_local = (
-            target.captured_utc,
-            target.captured_local,
-        )
-        store.put(rec)
+    except service.NotGrounded as e:
+        print(_in_cli_words(str(e)), file=sys.stderr)
+        return 2
+    except ValueError as e:
+        print(_in_cli_words(str(e)), file=sys.stderr)
+        return 2
+    except KeyError as e:
+        # Not in the brief. Without it `--pick 9` (or any out-of-range
+        # candidate) tracebacks, where the old cmd_confirm printed a message
+        # and exited 2 -- and the brief's own contract for this task is
+        # "output text and exit codes are unchanged".
+        print(_in_cli_words(e.args[0] if e.args else str(e)), file=sys.stderr)
+        return 2
+
+    rec = res.record
+    if res.path is None:
+        # A `filed:` ref: the bytes were already in the library, so there is no
+        # destination to name -- exactly what the pre-refactor `m` branch said.
         print(f"resolved {a.index}: {rec.display()}")
         print(
             "  (the image file itself is unchanged; the manifest now carries the citation)"
         )
         return 0
 
-    items = list_pending()
-    try:
-        it = items[int(a.index)]
-    except (IndexError, TypeError, ValueError):
-        print(f"no pending item {a.index} (have {len(items)})", file=sys.stderr)
-        return 2
-    png = Path(it["png"])
-    inf = it.get("inference", {})
-    doi = a.doi
-    if doi is None and a.pick is not None:
-        try:
-            doi = inf["candidates"][a.pick]["doi"]
-        except Exception:
-            print(f"no candidate {a.pick} on item {a.index}", file=sys.stderr)
-            return 2
-    if doi is None:
-        doi = inf.get("doi")
-        if doi and not inf.get("grounded"):
-            print(
-                "that DOI was only guessed; pass --doi explicitly to accept it",
-                file=sys.stderr,
-            )
-            return 2
-    if doi is None and not a.cite:
-        print("need --doi, --pick N, or --cite", file=sys.stderr)
-        return 2
-
-    detail = {
-        "clipboard_capture": it.get("capture", {}),
-        "inference_kind": inf.get("kind", ""),
-        "doi_evidence": inf.get("doi_evidence", ""),
-    }
-    rec = _record_for(
-        doi,
-        a.cite,
-        None,
-        confirmed=True,
-        kind="clipboard",
-        detail=detail,
-        adapted_from=a.adapted_from,
-        note=a.note or "",
-    )
-    dest = _finalize(png, rec, a.out)
-    for suffix in (".pending.json", ".capture.json"):
-        p = Path(str(png)[:-4] + suffix)
-        if p.exists():
-            p.unlink()
-    if png.exists() and png != dest:
-        png.unlink()
+    # Ruling 6. Restored verbatim from the pre-refactor `_finalize` printer
+    # (a1d6b66^:figcite/cli.py). The sha256 line names WHICH file to insert
+    # into the deck, and the retraction line is a correctness warning about
+    # the source; neither is decoration.
+    _print_filed(rec, res.path)
     return 0
 
 
@@ -765,6 +722,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="leave even GROUNDED captures pending instead of filing them",
     )
     w.set_defaults(func=cmd_watch)
+
+    ui = sub.add_parser("ui", help="open the browser UI for pending captures and decks")
+    ui.add_argument("--port", type=int, default=8765)
+    ui.add_argument("--open", action="store_true", help="open a browser window too")
+    ui.set_defaults(func=cmd_ui)
 
     pe = sub.add_parser(
         "pending", help="list captured-but-unconfirmed clipboard images"
