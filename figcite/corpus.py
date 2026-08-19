@@ -23,6 +23,7 @@ from .provenance import dhash_bytes
 CORPUS_DIR = store.DATA_DIR / "corpus"
 DB_PATH = CORPUS_DIR / "figures.sqlite"
 IMAGE_DIR = CORPUS_DIR / "images"
+DESCRIPTOR_DIR = CORPUS_DIR / "descriptors"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS figures (
@@ -146,6 +147,9 @@ def build(dois: list[str], limit: int | None = None) -> list[BuildOutcome]:
                 dest = Path(IMAGE_DIR) / rel
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(blob)
+                # Compute once here rather than on every query: a query would
+                # otherwise re-decode the whole corpus.
+                write_descriptors(rel, blob)
                 img = Image.open(io.BytesIO(blob))
                 upsert(
                     conn,
@@ -177,3 +181,41 @@ def status() -> dict:
         "figures": len(rows),
         "papers": len({r.pmcid for r in rows}),
     }
+
+
+def descriptor_path(rel: str) -> Path:
+    return Path(DESCRIPTOR_DIR) / (rel + ".npz")
+
+
+def write_descriptors(rel: str, blob: bytes) -> bool:
+    """Cache what a query needs so it does not re-decode the whole corpus.
+
+    Stores the descriptors AND the keypoint coordinates. Descriptors alone are
+    not enough: RANSAC fits a homography from point pairs, and those points are
+    not recoverable from the descriptors, so a descriptor-only cache would
+    force every candidate back through a full decode anyway.
+
+    Returns False when opencv is absent, or when the image is too smooth to
+    yield features -- both are valid states, not errors.
+    """
+    from . import match
+
+    if not match.opencv_available():
+        return False
+    import cv2
+    import numpy as np
+
+    img = match._decode(blob)
+    if img is None:
+        return False
+    kp, desc = cv2.ORB_create(nfeatures=match.ORB_FEATURES).detectAndCompute(img, None)
+    if desc is None or not kp:
+        return False
+    dest = descriptor_path(rel)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(
+        str(dest),
+        desc=desc,
+        pts=np.float32([k.pt for k in kp]).reshape(-1, 2),
+    )
+    return True

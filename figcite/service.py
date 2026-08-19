@@ -604,7 +604,7 @@ def whereis(ref_or_path) -> dict:
 
     verdict = match.by_dhash(blob, rows)
     if not isinstance(verdict, match.Match):
-        orb = match.by_orb(blob, rows, corpus.IMAGE_DIR)
+        orb = match.by_orb(blob, rows, corpus.IMAGE_DIR, corpus.DESCRIPTOR_DIR)
         # An ORB NoMatch is a real search of the corpus, so it outranks dhash's
         # could-not-decide -- which only ever meant "a crop is invisible to me".
         if isinstance(orb, (match.Match, match.NoMatch)):

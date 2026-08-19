@@ -22,6 +22,7 @@ DHASH_THRESHOLD = 6
 MIN_KEYPOINTS = 25  # below this the query is too smooth to identify at all
 MIN_INLIERS = 15  # below this nothing in the corpus is a real hit
 MIN_MARGIN = 3.0  # top must beat the runner-up by this factor to be asserted
+ORB_FEATURES = 1500  # shared by query and cache, so both sides see the same set
 
 
 @dataclass
@@ -93,7 +94,7 @@ def _decode(data: bytes):
     return cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_GRAYSCALE)
 
 
-def by_orb(query_bytes: bytes, rows, image_root) -> Verdict:
+def by_orb(query_bytes: bytes, rows, image_root, descriptor_dir=None) -> Verdict:
     """Sub-image search: find the corpus figure this crop came out of.
 
     Scored by RANSAC INLIERS, not raw match counts. Raw counts do not
@@ -115,7 +116,7 @@ def by_orb(query_bytes: bytes, rows, image_root) -> Verdict:
     if query is None:
         return CouldNotDecide("the query image could not be decoded")
 
-    orb = cv2.ORB_create(nfeatures=1500)
+    orb = cv2.ORB_create(nfeatures=ORB_FEATURES)
     kq, dq = orb.detectAndCompute(query, None)
     if dq is None or len(kq) < MIN_KEYPOINTS:
         return CouldNotDecide(
@@ -126,10 +127,7 @@ def by_orb(query_bytes: bytes, rows, image_root) -> Verdict:
     bf = cv2.BFMatcher(cv2.NORM_HAMMING)
     scored = []
     for row in rows:
-        img = cv2.imread(str(Path(image_root) / row.image_path), cv2.IMREAD_GRAYSCALE)
-        if img is None:
-            continue
-        k, d = orb.detectAndCompute(img, None)
+        d, pts = _target_features(row, image_root, descriptor_dir, orb)
         if d is None or len(d) < 10:
             continue
         pairs = [p for p in bf.knnMatch(dq, d, k=2) if len(p) == 2]
@@ -137,7 +135,7 @@ def by_orb(query_bytes: bytes, rows, image_root) -> Verdict:
         inliers = 0
         if len(good) >= 8:
             src = np.float32([kq[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
-            dst = np.float32([k[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
+            dst = np.float32([pts[m.trainIdx] for m in good]).reshape(-1, 1, 2)
             _, mask = cv2.findHomography(src, dst, cv2.RANSAC, 5.0)
             inliers = int(mask.sum()) if mask is not None else 0
         scored.append((inliers, row))
@@ -163,3 +161,30 @@ def by_orb(query_bytes: bytes, rows, image_root) -> Verdict:
         score=float(best_n),
         margin=float(margin),
     )
+
+
+def _target_features(row, image_root, descriptor_dir, orb):
+    """(descriptors, keypoint_xy) for one corpus figure.
+
+    Prefers the build-time cache and falls back to decoding the image, so a
+    corpus built before opencv was installed still works once it is -- and so
+    a missing cache entry degrades in speed, never in correctness.
+    """
+    import cv2
+    import numpy as np
+
+    if descriptor_dir is not None:
+        cached = Path(descriptor_dir) / (row.image_path + ".npz")
+        if cached.exists():
+            try:
+                with np.load(str(cached)) as z:
+                    return z["desc"], z["pts"]
+            except Exception:
+                pass  # a corrupt cache entry is a slow path, not a failure
+    img = cv2.imread(str(Path(image_root) / row.image_path), cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        return None, None
+    kp, desc = orb.detectAndCompute(img, None)
+    if desc is None or not kp:
+        return None, None
+    return desc, np.float32([k.pt for k in kp]).reshape(-1, 2)
