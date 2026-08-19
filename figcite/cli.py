@@ -37,13 +37,14 @@ def _in_cli_words(msg: str) -> str:
 
     I3. The service speaks kwargs because the web UI is its other consumer and
     kwargs are correct there. Passed through verbatim, the CLI told the user to
-    "pass doi=, pick=, cite=, or own_work=True" -- three names no shell accepts,
-    and own_work has no `figcite confirm` flag at all, so it is dropped rather
-    than renamed. A CLI that advertises an option it does not have is worse
-    than one that says nothing.
+    "pass doi=, pick=, cite=, or own_work=True" -- names no shell accepts.
+    own_work used to be DELETED from the advice rather than renamed, because
+    `figcite confirm` had no such flag and advertising an option that does not
+    exist is worse than saying nothing. It has one now, so it is translated
+    like the others.
     """
-    msg = msg.replace(", or own_work=True", "").replace(", own_work=True", "")
-    for kwarg, flag in (("doi=", "--doi"), ("pick=", "--pick N"), ("cite=", "--cite")):
+    for kwarg, flag in (("doi=", "--doi"), ("pick=", "--pick N"), ("cite=", "--cite"),
+                        ("own_work=True", "--own-work")):
         msg = msg.replace(kwarg, flag)
     return msg
 
@@ -235,8 +236,11 @@ def cmd_pending(a) -> int:
     filed = [i for i in items if i.kind == "filed"]
     if filed:
         print(f"{len(filed)} filed capture(s) with context but no citation:")
-    for i, it in enumerate(filed):
-        print(f"[m{i}] {it.context[:100]}")
+    for it in filed:
+        # The service assigns the label, so the terminal and the browser cannot
+        # disagree about which capture "m0" names.
+        i = it.cli_ref
+        print(f"[{i}] {it.context[:100]}")
         # `note` and `doi_evidence` carry the same sentence on an auto-filed
         # capture, so the read path blanks the duplicate -- printing only
         # `note` therefore left rows with no reason at all.
@@ -250,9 +254,9 @@ def cmd_pending(a) -> int:
                 f"({c.get('container', '')} {c.get('year', '')})"
             )
         if it.candidates:
-            print(f"      resolve: figcite confirm m{i} --pick N")
+            print(f"      resolve: figcite confirm {i} --pick N")
         else:
-            print(f"      resolve: figcite confirm m{i} --doi 10.x/y")
+            print(f"      resolve: figcite confirm {i} --doi 10.x/y")
     if filed:
         print()
     for i, it in enumerate(staged):
@@ -300,6 +304,7 @@ def cmd_confirm(a) -> int:
             doi=a.doi,
             pick=a.pick,
             cite=a.cite,
+            own_work=a.own_work,
             adapted_from=a.adapted_from,
             note=a.note or "",
             out=a.out,
@@ -773,6 +778,11 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--doi")
     c.add_argument("--pick", type=int, help="accept candidate N from `figcite pending`")
     c.add_argument("--cite")
+    c.add_argument(
+        "--own-work",
+        action="store_true",
+        help="this figure is yours; cite it as 'This work'",
+    )
     c.add_argument("--adapted-from")
     c.add_argument("--note", default="")
     c.add_argument("-o", "--out")

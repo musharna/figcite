@@ -90,16 +90,31 @@ def test_picking_a_radio_clears_the_typed_doi_and_vice_versa():
 
 
 # ---------------------------------------------------------------------------
-# I3 -- "This is my own work" always 400s on a filed capture
-# (service._confirm_filed only accepts doi=). Must not render there.
+# I3 -- "This is my own work" used to 400 on a filed capture, because
+# service._confirm_filed accepted only doi=, so the card hid the button.
+# The service handles own_work on that path now, so it renders everywhere.
 # ---------------------------------------------------------------------------
 
 
-def test_own_work_button_is_hidden_on_filed_captures():
-    assert 'item.kind !== "filed"' in PAGE, (
-        "'This is my own work' renders unconditionally -- it always 400s "
-        "on a filed:<sha256> item, whose only resolution path is doi="
+def test_own_work_button_is_offered_on_every_pending_capture():
+    """This test used to assert the opposite, and its premise is now false.
+
+    It read: "'This is my own work' renders unconditionally -- it always 400s
+    on a filed:<sha256> item, whose only resolution path is doi=". True at the
+    time: _confirm_filed took a DOI and nothing else, so the card hid a button
+    to compensate for a gap one layer down. The service resolves a filed
+    capture with own_work=True now, so hiding it would remove the only path a
+    plot of your own has -- snip one with a capture tool and it files unstaged.
+
+    The behavioural half of this is test_own_work_on_a_filed_capture_succeeds
+    in test_web_server.py, which drives a real socket rather than reading the
+    page source.
+    """
+    assert 'item.kind !== "filed"' not in PAGE, (
+        "the own-work button is still conditioned on kind; a filed capture "
+        "cannot be marked as your own work"
     )
+    assert "own-work-btn" in PAGE
 
 
 # ---------------------------------------------------------------------------

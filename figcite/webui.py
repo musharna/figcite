@@ -197,8 +197,11 @@ function card(item) {
       <p><input class="doi-input" placeholder="10.xxxx/yyyy" value="${esc(prefillDoi)}"></p>
       <p>
         <button class="ok-btn" type="button" ${canConfirm ? "" : "disabled"}>Confirm</button>
-        ${item.kind !== "filed"
-          ? '<button class="own-work-btn" type="button">This is my own work</button>' : ""}
+        <!-- This was hidden for kind==="filed" because _confirm_filed took only
+             a DOI, so a plot of your own snipped with a capture tool had no
+             path through either front end. The service does it now; hiding a
+             button was the card compensating for a gap one layer down. -->
+        <button class="own-work-btn" type="button">This is my own work</button>
         <button class="skip-btn" type="button">Skip</button>
       </p>
     </div></form>`;

@@ -75,6 +75,12 @@ class PendingItem:
     candidates: list[dict] = field(default_factory=list)
     error: Optional[str] = None  # None + empty candidates == "looked, found nothing"
     note: str = ""  # why the capture is still unresolved, as figcite recorded it
+    # The short name a human types: "m0" for filed, "0" for staged. Assigned
+    # here, after the skip-ordering sort, because the CLI used to derive it by
+    # enumerating its own re-filtered lists -- so the label the terminal prints
+    # existed nowhere the browser could read, and the two front ends could
+    # disagree about which item "m0" meant.
+    cli_ref: str = ""
 
 
 @dataclass
@@ -149,6 +155,16 @@ def pending_items() -> list[PendingItem]:
             )
         )
     out.sort(key=lambda i: i.ref in _skipped)
+    # After the sort, because skipping moves an item to the back of the queue
+    # and therefore renumbers everything behind it.
+    filed_n = staged_n = 0
+    for it in out:
+        if it.kind == "filed":
+            it.cli_ref = f"m{filed_n}"
+            filed_n += 1
+        else:
+            it.cli_ref = str(staged_n)
+            staged_n += 1
     return out
 
 
@@ -194,7 +210,13 @@ def confirm(
 
     if item.kind == "filed":
         return _confirm_filed(
-            item, doi=doi, pick=pick, adapted_from=adapted_from, note=note
+            item,
+            doi=doi,
+            pick=pick,
+            cite=cite,
+            own_work=own_work,
+            adapted_from=adapted_from,
+            note=note,
         )
 
     raw = _raw_staged(ref)
@@ -284,21 +306,28 @@ def _clear_staged(png: Path, dest: Path) -> None:
         png.unlink()
 
 
-def _confirm_filed(item, *, doi, pick=None, adapted_from, note):
+def _confirm_filed(
+    item, *, doi, pick=None, cite=None, own_work=False, adapted_from, note
+):
     """A capture already in the manifest, still unconfirmed.
 
     The image bytes are already filed, so there is nothing to finalize -- the
-    manifest simply gains a citation for that sha. What resolves one is a DOI,
-    either typed or chosen from the candidates the item is displaying: rendering
-    a radio button the Confirm click cannot act on is worse than not offering it.
+    manifest simply gains a citation for that sha. Everything that resolves a
+    staged capture resolves one of these too: a typed DOI, a candidate chosen
+    from the ones the item is displaying, a free-text citation, or "this is
+    mine". Taking only a DOI meant a plot of your own, snipped with a capture
+    tool, had no path through either front end -- and it made the web card hide
+    a button rather than the service grow one.
     """
     if pick is not None:
         try:
             doi = item.candidates[pick]["doi"]
         except (IndexError, KeyError, TypeError):
             raise KeyError(f"no candidate {pick} on {item.ref}")
-    if not doi:
-        raise ValueError("a filed capture can only be resolved with doi= or pick=")
+    elif own_work:
+        cite = "This work"
+    if not doi and not cite:
+        raise ValueError("a filed capture needs doi=, pick=, cite=, or own_work=True")
     target = store.get(item.ref.split(":", 1)[1])
     if target is None:
         raise KeyError(f"no filed record {item.ref!r}")
@@ -306,7 +335,7 @@ def _confirm_filed(item, *, doi, pick=None, adapted_from, note):
     # the critical section, which covers only the manifest append.
     rec = record_for(
         doi,
-        None,
+        cite,
         None,
         confirmed=True,
         kind="clipboard",

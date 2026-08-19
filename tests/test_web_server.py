@@ -851,3 +851,53 @@ def test_the_network_block_lets_loopback_through():
             assert s.getpeername()[1] == port
     finally:
         listener.close()
+
+
+def test_own_work_on_a_filed_capture_succeeds_over_a_real_socket(monkeypatch):
+    """The behaviour the page test used to encode as "hide the button".
+
+    Asserting the markup lacks a condition proves nothing about whether the
+    request works. This drives the actual route, and its negative twin below
+    proves the harness can fail.
+    """
+    from figcite import store
+    from figcite.provenance import Record, now_stamps
+
+    u, loc = now_stamps()
+    sha = "9a" * 32
+    store.put(
+        Record(
+            sha256=sha, dhash="0" * 16, source_kind="clipboard", confirmed=False,
+            captured_utc=u, captured_local=loc,
+            source_detail={"clipboard_capture": {"process": "SnippingTool",
+                                                 "title": "Snipping Tool"}},
+        )
+    )
+    srv = web.make_server(0)
+    port = srv.server_address[1]
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/confirm",
+            data=json.dumps({"ref": f"filed:{sha}", "own_work": True}).encode(),
+            headers={"Content-Type": "application/json",
+                     "Origin": f"http://127.0.0.1:{port}"},
+        )
+        with urllib.request.urlopen(req) as r:
+            assert r.status == 200
+            body = json.loads(r.read())
+        assert body.get("ok") is True, body
+
+        # Positive control on the OTHER side: the same route must still refuse
+        # a request with nothing to confirm by, or the 200 above means nothing.
+        bad = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/confirm",
+            data=json.dumps({"ref": f"filed:{sha}"}).encode(),
+            headers={"Content-Type": "application/json",
+                     "Origin": f"http://127.0.0.1:{port}"},
+        )
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(bad)
+        assert e.value.code in (400, 404)
+    finally:
+        srv.shutdown()
