@@ -398,7 +398,23 @@ def _resolve_ref_to_path(ref: str) -> Path:
         rec = store.all_records().get(sha)
         if rec is None:
             raise KeyError(f"no manifest record {ref!r}")
-        return _library_path_for(rec.sha256)
+        try:
+            return _library_path_for(rec.sha256)
+        except LibraryFileMissing:
+            # `figcite register` and the matplotlib hook record provenance for
+            # an image WITHOUT copying it -- that is the documented point of
+            # register -- so these records have no library file and never will.
+            # Treating "not in the library" as "gone" made the deck screen
+            # render "(image unavailable)" on every row for the figures the
+            # user made themselves, while the files sat untouched at the path
+            # the record itself stores.
+            #
+            # The path comes from our own manifest, not from the request: the
+            # caller supplies only a sha256, so this cannot be steered.
+            original = (rec.source_detail or {}).get("original_file")
+            if original and Path(original).is_file():
+                return Path(original)
+            raise
 
     raise KeyError(f"unrecognized ref {ref!r}")
 
