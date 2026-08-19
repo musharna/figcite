@@ -237,9 +237,22 @@ def cmd_pending(a) -> int:
         print(f"{len(filed)} filed capture(s) with context but no citation:")
     for i, it in enumerate(filed):
         print(f"[m{i}] {it.context[:100]}")
-        if it.note:
-            print(f"      why: {it.note[:96]}")
-        print(f"      resolve: figcite confirm m{i} --doi 10.x/y")
+        # `note` and `doi_evidence` carry the same sentence on an auto-filed
+        # capture, so the read path blanks the duplicate -- printing only
+        # `note` therefore left rows with no reason at all.
+        why = it.doi_evidence or it.note
+        if why:
+            print(f"      why: {why[:96]}")
+        for ci, c in enumerate(it.candidates):
+            print(f"      cand {ci}: {c['doi']}  [{c.get('source', '')}]")
+            print(
+                f"               {c['title'][:80]} "
+                f"({c.get('container', '')} {c.get('year', '')})"
+            )
+        if it.candidates:
+            print(f"      resolve: figcite confirm m{i} --pick N")
+        else:
+            print(f"      resolve: figcite confirm m{i} --doi 10.x/y")
     if filed:
         print()
     for i, it in enumerate(staged):
