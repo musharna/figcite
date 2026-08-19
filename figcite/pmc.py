@@ -9,14 +9,31 @@ it would make NCBI politeness a side effect of an unrelated rate limit.
 from __future__ import annotations
 
 import json
+import re
 import socket
 import time
 import urllib.parse
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
 import requests
 
 EUROPE_PMC = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+FULLTEXT = "https://www.ebi.ac.uk/europepmc/webservices/rest/{pmcid}/fullTextXML"
+OA_SERVICE = "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi?id={pmcid}"
+XLINK = "{http://www.w3.org/1999/xlink}href"
+
+# NCBI publishes the open-access subset through the AWS Open Data programme,
+# one prefix per article VERSION, holding the figure images beside the XML:
+#   PMC5383700.1/fpls-08-00491-g0001.jpg
+#
+# The article page was tried first and is a dead end: PMC answers a non-browser
+# client with a "Checking your browser - reCAPTCHA" interstitial that no header
+# set clears. Scraping the human-facing site was the wrong idea anyway; this is
+# the channel NCBI publishes FOR programmatic use.
+S3_BUCKET = "https://pmc-oa-opendata.s3.amazonaws.com"
+IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".gif", ".tif", ".tiff")
+USER_AGENT = "figcite/0.1 (https://github.com/musharna/figcite)"
 MIN_INTERVAL = 1.0 / 3.0
 _last_call = 0.0
 
@@ -98,3 +115,81 @@ def lookup_dois(dois: list[str], batch: int = 8) -> list[PmcRecord]:
                 )
             )
     return out
+
+
+@dataclass
+class FigureRef:
+    label: str
+    filename: str
+    caption: str
+
+
+def figures_of(pmcid: str) -> list[FigureRef]:
+    """Every figure of an article, with its label and caption."""
+    root = ET.fromstring(_get(FULLTEXT.format(pmcid=pmcid)))
+    out: list[FigureRef] = []
+    for fig in root.iter("fig"):
+        label = (fig.findtext("label") or "").strip()
+        caption = " ".join(t.strip() for t in fig.itertext() if t.strip())
+        for g in fig.iter("graphic"):
+            # A <graphic content-type="thumb"> is a preview of the SAME figure.
+            # Counting it would double every row and index a downsampled copy.
+            if g.get("content-type") == "thumb":
+                continue
+            href = g.get(XLINK)
+            if href:
+                out.append(FigureRef(label=label, filename=href, caption=caption))
+                break
+    return out
+
+
+def s3_prefix(pmcid: str) -> str | None:
+    """The newest versioned key prefix for an article, e.g. "PMC5383700.1/".
+
+    Articles get revised. Pinning .1 when .2 exists would silently index the
+    figures of a superseded version, which is exactly the sort of quiet
+    wrongness this project exists to avoid.
+    """
+    url = f"{S3_BUCKET}/?list-type=2&delimiter=/&prefix={urllib.parse.quote(pmcid)}."
+    xml = _get(url).decode("utf8", "replace")
+    versioned = []
+    for pfx in re.findall(r"<Prefix>([^<]+)</Prefix>", xml):
+        tail = pfx.rstrip("/").rsplit(".", 1)[-1]
+        if tail.isdigit():
+            versioned.append((int(tail), pfx))
+    if not versioned:
+        return None
+    return max(versioned)[1]
+
+
+def image_urls(pmcid: str) -> dict[str, str]:
+    """filename -> servable URL for every figure image of an article.
+
+    Keyed by bare filename because that is exactly what fullTextXML's
+    `xlink:href` gives, so the two line up without any mapping.
+    """
+    prefix = s3_prefix(pmcid)
+    if prefix is None:
+        return {}
+    url = f"{S3_BUCKET}/?list-type=2&prefix={urllib.parse.quote(prefix)}"
+    xml = _get(url).decode("utf8", "replace")
+    out: dict[str, str] = {}
+    for key in re.findall(r"<Key>([^<]+)</Key>", xml):
+        name = key.rsplit("/", 1)[-1]
+        if name.lower().endswith(IMAGE_SUFFIXES):
+            out[name] = f"{S3_BUCKET}/{urllib.parse.quote(key)}"
+    return out
+
+
+def licence_of(pmcid: str) -> str:
+    """The reuse licence PMC records for an article, or "" if unavailable.
+
+    Worth storing with each figure: a reverse-sourced match then arrives with
+    its reuse terms already attached, and feeds the badges figcite renders.
+    """
+    try:
+        xml = _get(OA_SERVICE.format(pmcid=pmcid)).decode("utf8", "replace")
+    except Exception:
+        return ""
+    m = re.search(r'license="([^"]+)"', xml)
+    return m.group(1) if m else ""
