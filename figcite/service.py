@@ -644,3 +644,36 @@ def whereis(ref_or_path) -> dict:
     else:
         name, reason = "could-not-decide", verdict.reason
     return {"verdict": name, "matches": matches, "reason": reason}
+
+
+def duplicates(ref_or_path, credited_doi: str = "") -> dict:
+    """Has this figure appeared in a paper other than the one credited?
+
+    Reports only. Nothing here rewrites a record: a hit is a question for the
+    user, not a correction to apply on their behalf.
+
+    `reason` carries WHY the answer is empty when it is, because "no other
+    paper has this figure" and "this image has no gradient for the hash to
+    work with" are different facts and only one of them is about the figure.
+    """
+    path = Path(ref_or_path)
+    if not path.exists():
+        path = _resolve_ref_to_path(str(ref_or_path))
+    blob = path.read_bytes()
+
+    if not corpus.can_compare(blob):
+        return {
+            "others": [],
+            "reason": "this image has too little gradient to compare -- a flat "
+            "fill hashes the same as any other flat fill, so a match would "
+            "mean nothing",
+        }
+
+    rows = corpus.duplicates_of(blob, credited_doi)
+    return {
+        "others": [
+            {"doi": r.doi, "pmcid": r.pmcid, "label": r.label, "licence": r.licence}
+            for r in rows
+        ],
+        "reason": "" if rows else "no other indexed paper carries this figure",
+    }
