@@ -99,6 +99,14 @@ def pending_items() -> list[PendingItem]:
             continue
         detail = rec.source_detail or {}
         cap = detail.get("clipboard_capture") or {}
+        evidence = detail.get("doi_evidence", "") or ""
+        # An auto-filed capture stores the same sentence in both `note` and
+        # `doi_evidence`, so surfacing the evidence made the card print its own
+        # failure reason twice, verbatim, one line apart. Nothing asserted on
+        # it; it was visible only by looking at the rendered page.
+        note = rec.note or ""
+        if note.strip() == evidence.strip():
+            note = ""
         out.append(
             PendingItem(
                 ref=f"filed:{rec.sha256}",
@@ -111,14 +119,14 @@ def pending_items() -> list[PendingItem]:
                 # these are read back.
                 width=cap.get("width"),
                 height=cap.get("height"),
-                doi_evidence=detail.get("doi_evidence", "") or "",
+                doi_evidence=evidence,
                 candidates=list(detail.get("candidates") or []),
                 # `doi` and `grounded` are deliberately NOT read back. A filed
                 # record is in this list precisely because no human accepted
                 # it, so a stored grounded=True must not be able to become an
                 # auto-confirm on the read path.
                 error=None,
-                note=rec.note or "",
+                note=note,
             )
         )
 

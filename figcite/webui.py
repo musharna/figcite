@@ -21,10 +21,18 @@ PAGE = r"""<!doctype html>
   nav button[aria-selected=true] { border-bottom:2px solid var(--fg); font-weight:600; }
   .card { display:flex; gap:1rem; border:1px solid var(--line); padding:1rem;
           margin:1rem 0; align-items:flex-start; }
-  .card img { max-width:260px; max-height:260px; border:1px solid var(--line); }
+  /* Deciding by looking is the whole point of this screen, and at 260px a
+     figure's own caption is unreadable -- /api/thumb already serves 480, so
+     the cap was discarding pixels we had paid for. Click opens the full one. */
+  .card img { max-width:460px; max-height:460px; border:1px solid var(--line);
+              cursor:zoom-in; }
   .info { min-width:0; }
-  .ctx { color:var(--mut); }
-  .note { color:var(--mut); }
+  /* The context line, the reason nothing resolved, and what to do about it
+     rendered at identical size, weight and colour -- no hierarchy at all
+     between what happened and what the reader is being asked to decide. */
+  .ctx { color:var(--mut); font-size:.9em; margin:.1rem 0; }
+  .note { color:var(--mut); font-size:.9em; margin:.1rem 0; }
+  .nosrc { font-weight:600; margin:.5rem 0 .1rem; }
   .fail { color:var(--warn); font-weight:600; }
   .ev { color:var(--mut); font-style:italic; }
   label { display:block; margin:.2rem 0; }
@@ -162,8 +170,11 @@ function card(item) {
         ${esc(c.title)} (${esc(c.container || "")} ${esc(c.year || "")})
       </label>`).join("");
   } else {
-    body = `<p class="ctx">no source inferred${
-      item.doi_evidence ? ": " + esc(item.doi_evidence) : ""}</p>`;
+    // The state and the reason for it are two different things and the reader
+    // needs both, so they get two lines with different weight rather than one
+    // muted run-on the eye slides off.
+    body = `<p class="nosrc">no source inferred</p>${
+      item.doi_evidence ? `<p class="ev">${esc(item.doi_evidence)}</p>` : ""}`;
   }
   // A grounded DOI needs no radio and no typed text: confirmRef() sends
   // {ref} alone, and service.confirm() resolves zero selectors to "use this
@@ -174,7 +185,10 @@ function card(item) {
   return `<form class="card" data-ref="${esc(item.ref)}"
                 data-grounded="${item.doi && item.grounded ? "1" : "0"}"
                 onsubmit="return false">
-    <img src="/api/thumb?ref=${encodeURIComponent(item.ref)}" alt="">
+    <a href="/api/thumb?ref=${encodeURIComponent(item.ref)}"
+       target="_blank" rel="noopener"
+       title="open the full-size capture"><img
+       src="/api/thumb?ref=${encodeURIComponent(item.ref)}" alt=""></a>
     <div class="info">
       <p class="ctx">${esc(item.context)}</p>
       ${item.note ? `<p class="note">${esc(item.note)}</p>` : ""}

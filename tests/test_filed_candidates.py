@@ -25,7 +25,7 @@ TAB = {
 OTHER = dict(TAB, doi="10.3389/fpls.2017.00491", title="Metabolic Investigation")
 
 
-def _file_one(sha, detail):
+def _file_one(sha, detail, note=""):
     u, loc = now_stamps()
     store.put(
         Record(
@@ -36,6 +36,7 @@ def _file_one(sha, detail):
             captured_utc=u,
             captured_local=loc,
             source_detail=detail,
+            note=note,
         )
     )
     return f"filed:{sha}"
@@ -168,3 +169,38 @@ def test_a_filed_capture_with_no_selector_is_still_refused():
     )
     with pytest.raises(ValueError):
         service.confirm(ref)
+
+
+def test_the_same_reason_is_not_printed_twice():  # IRON_LAW_OK
+    """`note` and `doi_evidence` hold the same string on an auto-filed capture.
+
+    Surfacing the evidence made the card print its own failure reason twice,
+    verbatim, one line apart -- invisible to every assertion in this file until
+    someone looked at the rendered page.
+    """
+    reason = "no rule for process 'snippingtool' with title 'Snipping Tool'"
+    ref = _file_one(
+        "2" * 64,
+        {
+            "clipboard_capture": {"process": "SnippingTool", "title": "Snipping Tool"},
+            "doi_evidence": reason,
+        },
+        note=reason,
+    )
+    it = _item(ref)
+    assert it.doi_evidence == reason
+    assert it.note != reason, "the same sentence is rendered twice on the card"
+
+
+def test_a_note_that_says_something_else_is_kept():  # IRON_LAW_OK
+    """Positive control: the dedupe must not degrade into 'drop the note'."""
+    ref = _file_one(
+        "3" * 64,
+        {
+            "clipboard_capture": {"process": "SnippingTool", "title": "Snipping Tool"},
+            "doi_evidence": "held focus, so the title is the tool's own",
+        },
+        note="adapted from figure 2",
+    )
+    it = _item(ref)
+    assert it.note == "adapted from figure 2"

@@ -35,8 +35,10 @@ def test_an_ungrounded_doi_gets_its_own_branch_before_the_catch_all():
         "item.doi && item.grounded",
         "else if (item.doi) {",
         "else if (item.candidates.length)",
-        '<p class="ctx">no source inferred${',  # the actual catch-all render,
-        # not this test file's own vocabulary echoed back in a code comment
+        '<p class="nosrc">no source inferred</p>',  # the actual catch-all
+        # render, not this test file's own vocabulary echoed back in a comment.
+        # The state and its reason were split onto two lines of differing
+        # weight; the branch ORDER this test exists to pin is unchanged.
     ]
     positions = [PAGE.index(s) for s in order]
     assert positions == sorted(positions), (
@@ -114,7 +116,7 @@ def test_loadpending_has_a_catch_that_renders_the_real_error():
     assert "e.message" in body or "String(e)" in body, (
         "loadPending's catch must render the actual error, not a generic message"
     )
-    assert '"nothing pending' not in body[body.index("catch"):], (
+    assert '"nothing pending' not in body[body.index("catch") :], (
         "the catch branch must not reuse the empty-state message"
     )
 
