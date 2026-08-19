@@ -143,6 +143,69 @@ def cmd_watch(a) -> int:
     )
 
 
+def _corpus_dois() -> list[str]:
+    """Every DOI in the Zotero library, which is what bounds the corpus."""
+    from . import zotero
+
+    out = []
+    for item in zotero.library(max_age_hours=None):
+        doi, _how = zotero._doi_of(item)
+        if doi:
+            out.append(doi)
+    return out
+
+
+def cmd_corpus_build(a) -> int:
+    from . import corpus
+
+    dois = _corpus_dois()
+    print(f"{len(dois)} DOI(s) in your library; indexing the open-access ones...")
+    outcomes = corpus.build(dois, limit=getattr(a, "limit", None))
+
+    # Failures are printed individually, with their reason: a tally alone would
+    # tell you five things went wrong and nothing about what to do next.
+    for o in outcomes:
+        if o.status == "failed":
+            print(f"  FAILED   {o.doi}  {o.detail[:90]}")
+
+    tally: dict[str, int] = {}
+    for o in outcomes:
+        tally[o.status] = tally.get(o.status, 0) + 1
+    print()
+    for status_name in sorted(tally):
+        print(f"  {status_name:20} {tally[status_name]}")
+    if tally.get("not-in-europe-pmc"):
+        print("\n  'not-in-europe-pmc' can also mean a DOI is wrong -- unlike")
+        print("  'no-pmc-copy', which means the paper is known but paywalled.")
+    return 0
+
+
+def cmd_corpus_status(a) -> int:
+    from . import corpus
+
+    st = corpus.status()
+    print(f"corpus: {st['figures']} figure(s) from {st['papers']} paper(s)")
+    return 0
+
+
+def cmd_whereis(a) -> int:
+    from . import service
+
+    res = service.whereis(a.image)
+    if res["verdict"] == "match":
+        for i, m in enumerate(res["matches"]):
+            score = m.get("score", "")
+            print(f"  [{i}] {m['doi']}  [{m.get('source', '')}] {score}")
+            print(f"      {str(m.get('title', ''))[:76]}")
+        print()
+        print("  accept one with: figcite confirm <ref> --doi <the DOI above>")
+    elif res["verdict"] == "no-match":
+        print("  no match: this figure is not in your corpus")
+    else:
+        print(f"  could not decide: {res['reason']}")
+    return 0
+
+
 def cmd_ui(a) -> int:
     from . import web
 
@@ -740,6 +803,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="leave even GROUNDED captures pending instead of filing them",
     )
     w.set_defaults(func=cmd_watch)
+
+    cp = sub.add_parser("corpus", help="the local figure index `whereis` searches")
+    csub = cp.add_subparsers(dest="corpus_cmd", required=True)
+    cb = csub.add_parser("build", help="index figures for your Zotero DOIs")
+    cb.add_argument("--limit", type=int, default=None)
+    cb.set_defaults(func=cmd_corpus_build)
+    cs = csub.add_parser("status", help="what the corpus covers")
+    cs.set_defaults(func=cmd_corpus_status)
+
+    wi = sub.add_parser("whereis", help="find which paper a figure came from")
+    wi.add_argument("image")
+    wi.set_defaults(func=cmd_whereis)
 
     ui = sub.add_parser("ui", help="open the browser UI for pending captures and decks")
     ui.add_argument("--port", type=int, default=8765)

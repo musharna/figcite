@@ -118,3 +118,19 @@ def test_a_broken_tab_scan_does_not_sink_a_good_pixel_match(tmp_path, monkeypatc
     out = service.whereis(str(_png(tmp_path / "q.png")))
     assert out["verdict"] == "match"
     assert [m["doi"] for m in out["matches"]] == ["10.1/pixel"]
+
+
+def test_an_empty_corpus_says_so_once_and_actionably(tmp_path, monkeypatch):
+    """The first message a new user sees, so it must not compound reasons.
+
+    Running ORB over zero rows adds "no corpus figure could be read for
+    comparison", which implies the files are unreadable rather than absent.
+    """
+    monkeypatch.setattr(corpus, "connect", lambda: None)
+    monkeypatch.setattr(corpus, "all_rows", lambda conn: [])
+    monkeypatch.setattr(session_tabs, "tab_candidates", lambda path=None: [])
+
+    out = service.whereis(str(_png(tmp_path / "q.png")))
+    assert out["verdict"] == "could-not-decide"
+    assert "corpus build" in out["reason"], "the reason must say what to do"
+    assert "could be read" not in out["reason"], out["reason"]

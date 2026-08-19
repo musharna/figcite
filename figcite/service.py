@@ -603,6 +603,12 @@ def whereis(ref_or_path) -> dict:
     rows = corpus.all_rows(conn)
 
     verdict = match.by_dhash(blob, rows)
+    # With nothing indexed there is no second opinion to seek, and running ORB
+    # over zero rows only appends "no corpus figure could be read", which reads
+    # as "your files are broken" rather than "you have not built it yet".
+    if not rows:
+        return {"verdict": "could-not-decide", "matches": [],
+                "reason": getattr(verdict, "reason", "the corpus is empty")}
     if not isinstance(verdict, match.Match):
         orb = match.by_orb(blob, rows, corpus.IMAGE_DIR, corpus.DESCRIPTOR_DIR)
         # An ORB NoMatch is a real search of the corpus, so it outranks dhash's
