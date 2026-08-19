@@ -7,7 +7,9 @@ single-user localhost tool buys nothing it does not also cost in friction.
 
 from __future__ import annotations
 
+import errno
 import json
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -337,11 +339,36 @@ def make_server(port: int) -> ThreadingHTTPServer:
     return _Server((HOST, port), _Handler)
 
 
-def serve(port: int = 8765, open_browser: bool = False) -> None:
-    srv = make_server(port)
+def serve(port: int = 8765, open_browser: bool = False) -> int:
+    try:
+        srv = make_server(port)
+    except OSError as e:
+        # Refusing a taken port is the point -- `allow_reuse_address = False`
+        # above, because two servers writing one manifest is a corruption path.
+        # Only the presentation changes here: this surfaced as an unhandled
+        # traceback, and the commonest way to reach it is restarting the UI
+        # within TIME_WAIT of stopping it, which resolves itself in under a
+        # minute. Any other OSError still propagates -- a permission error is
+        # not a busy port, and disguising it as one would be the fail-quiet
+        # this project refuses.
+        if e.errno != errno.EADDRINUSE:
+            raise
+        print(
+            f"figcite ui: port {port} is already in use.\n"
+            "  Another figcite ui may be running -- or, if you just stopped "
+            "one, the\n"
+            "  socket is still in TIME_WAIT and frees itself within about a "
+            "minute.\n"
+            "  figcite will not quietly move to another port: two servers "
+            "writing one\n"
+            "  manifest would corrupt it. Retry, or pass --port <n>.",
+            file=sys.stderr,
+        )
+        return 2
     print(f"figcite ui: http://{HOST}:{srv.server_address[1]}")
     if open_browser:
         import webbrowser
 
         webbrowser.open(f"http://{HOST}:{srv.server_address[1]}")
     srv.serve_forever()
+    return 0

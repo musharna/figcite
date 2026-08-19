@@ -33,6 +33,12 @@ PAGE = r"""<!doctype html>
   .ctx { color:var(--mut); font-size:.9em; margin:.1rem 0; }
   .note { color:var(--mut); font-size:.9em; margin:.1rem 0; }
   .nosrc { font-weight:600; margin:.5rem 0 .1rem; }
+  /* Deliberately NOT .src: that style uppercases, and this is a name the user
+     is meant to RETYPE (`figcite confirm m0`). Rendering it as M0 shows a
+     label that does not match the one the CLI prints. */
+  .ref { display:inline-block; font-family:ui-monospace, monospace;
+         font-size:.8em; padding:.05rem .4rem; margin-right:.4em;
+         border:1px solid var(--line); border-radius:.25rem; color:var(--mut); }
   .fail { color:var(--warn); font-weight:600; }
   .ev { color:var(--mut); font-style:italic; }
   label { display:block; margin:.2rem 0; }
@@ -190,7 +196,7 @@ function card(item) {
        title="open the full-size capture"><img
        src="/api/thumb?ref=${encodeURIComponent(item.ref)}" alt=""></a>
     <div class="info">
-      <p class="ctx">${esc(item.context)}</p>
+      <p class="ctx"><span class="ref">${esc(item.cli_ref || "")}</span>${esc(item.context)}</p>
       ${item.note ? `<p class="note">${esc(item.note)}</p>` : ""}
       ${banner}
       ${body}

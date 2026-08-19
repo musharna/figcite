@@ -146,8 +146,8 @@ def cmd_watch(a) -> int:
 def cmd_ui(a) -> int:
     from . import web
 
-    web.serve(port=a.port, open_browser=a.open)
-    return 0
+    # Returned 0 unconditionally, so a refused bind exited success.
+    return web.serve(port=a.port, open_browser=a.open)
 
 
 def cmd_autostart_install(a) -> int:
