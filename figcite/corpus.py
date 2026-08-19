@@ -108,7 +108,14 @@ def build(dois: list[str], limit: int | None = None) -> list[BuildOutcome]:
     first bad article is not resumable in any useful sense.
     """
     conn = connect()
-    records = pmc.lookup_dois(dois)
+    try:
+        records = pmc.lookup_dois(dois)
+    except Exception as e:
+        # An upstream outage is exactly the case a resumable build exists for.
+        # Europe PMC's /search endpoint 404'd every query mid-run once; letting
+        # that propagate loses every outcome already gathered and reports a
+        # traceback where the user needs a per-DOI status they can act on.
+        return [BuildOutcome(d, "", "failed", f"DOI lookup failed: {e}") for d in dois]
     found = {r.doi: r for r in records}
     outcomes: list[BuildOutcome] = []
     indexed_papers = 0

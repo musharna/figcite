@@ -105,3 +105,26 @@ def test_status_reports_what_is_indexed(wired):
     st = corpus.status()
     assert st["figures"] == 1
     assert st["papers"] == 1
+
+
+def test_an_upstream_outage_is_reported_per_doi_not_a_traceback(wired, monkeypatch):
+    """Europe PMC's /search endpoint returned 404 for everything mid-build.
+
+    build() propagated the HTTPError and died, so a ten-minute run over 535
+    DOIs would lose every outcome it had already gathered. An upstream outage
+    is exactly the case a resumable build exists for.
+    """
+
+    def boom(dois, batch=8):
+        raise RuntimeError("404 Client Error: Not Found for url: .../rest/search")
+
+    monkeypatch.setattr(pmc, "lookup_dois", boom)
+    out = corpus.build(["10.1/a", "10.1/b"])
+    assert [o.status for o in out] == ["failed", "failed"]
+    assert "404" in out[0].detail
+
+
+def test_a_working_lookup_is_not_reported_as_failed(wired):
+    """Positive control: the catch must not swallow the healthy path."""
+    out = corpus.build(["10.1/oa"])
+    assert out[0].status == "indexed"
