@@ -80,6 +80,15 @@ rather than stacking a second copy.
 Resolve pending captures and audit a deck by looking at the pictures rather
 than reading paths. Loopback only (127.0.0.1), no auth, single user.
 
+**On WSL, open the printed `http://127.0.0.1:<port>` literally -- not
+`localhost`.** Windows resolves `localhost` to the IPv6 `::1` first, and WSL2
+mirrored networking does not forward the host's IPv6 loopback into the VM, so
+`localhost:<port>` hangs until it times out with nothing logged. Measured on
+`networkingMode=mirrored`: a Windows client reaches a WSL listener on
+`127.0.0.1` but times out against one bound to `::1`. This is a platform
+property, not something the server can bind its way out of -- `figcite ui`
+already prints and opens the address that works.
+
 ## Your Zotero library resolves first
 
 A window title is searched against your own library before CrossRef, because
