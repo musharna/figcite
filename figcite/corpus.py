@@ -10,11 +10,15 @@ re-run overwrite instead of duplicating every figure.
 
 from __future__ import annotations
 
+import io
 import sqlite3
 from dataclasses import dataclass, fields
 from pathlib import Path
 
-from . import store
+from PIL import Image
+
+from . import pmc, store
+from .provenance import dhash_bytes
 
 CORPUS_DIR = store.DATA_DIR / "corpus"
 DB_PATH = CORPUS_DIR / "figures.sqlite"
@@ -79,3 +83,87 @@ def all_rows(conn: sqlite3.Connection) -> list[FigureRow]:
 
 def count(conn: sqlite3.Connection) -> int:
     return conn.execute("SELECT COUNT(*) FROM figures").fetchone()[0]
+
+
+@dataclass
+class BuildOutcome:
+    doi: str
+    pmcid: str
+    status: str  # indexed | not-in-pmc | not-open-access | failed
+    detail: str = ""
+
+
+def _download(url: str) -> bytes:
+    return pmc._get(url, headers={"User-Agent": pmc.USER_AGENT})
+
+
+def build(dois: list[str], limit: int | None = None) -> list[BuildOutcome]:
+    """Index the open-access subset of `dois`.
+
+    EVERY doi produces an outcome, including the ones that cannot be indexed.
+    A coverage count without the reasons is the number that hides the bug: you
+    cannot tell "not in PMC" from "the fetch broke" from "I forgot to run it".
+
+    One article's failure never stops the rest -- a build that aborts on the
+    first bad article is not resumable in any useful sense.
+    """
+    conn = connect()
+    records = pmc.lookup_dois(dois)
+    found = {r.doi: r for r in records}
+    outcomes: list[BuildOutcome] = []
+    indexed_papers = 0
+
+    for doi in dois:
+        rec = found.get(doi.lower())
+        if rec is None:
+            outcomes.append(BuildOutcome(doi, "", "not-in-pmc"))
+            continue
+        if not rec.is_open_access:
+            outcomes.append(BuildOutcome(doi, rec.pmcid, "not-open-access"))
+            continue
+        if limit is not None and indexed_papers >= limit:
+            break
+        try:
+            figures = pmc.figures_of(rec.pmcid)
+            urls = pmc.image_urls(rec.pmcid)
+            licence = pmc.licence_of(rec.pmcid)
+            for fig in figures:
+                url = urls.get(fig.filename)
+                if not url:
+                    continue
+                blob = _download(url)
+                rel = f"{rec.pmcid}/{fig.filename}"
+                dest = Path(IMAGE_DIR) / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(blob)
+                img = Image.open(io.BytesIO(blob))
+                upsert(
+                    conn,
+                    FigureRow(
+                        pmcid=rec.pmcid,
+                        doi=rec.doi,
+                        label=fig.label,
+                        caption=fig.caption,
+                        licence=licence,
+                        source_url=url,
+                        dhash=dhash_bytes(blob),
+                        width=img.width,
+                        height=img.height,
+                        image_path=rel,
+                    ),
+                )
+        except Exception as e:
+            outcomes.append(BuildOutcome(doi, rec.pmcid, "failed", str(e)))
+            continue
+        indexed_papers += 1
+        outcomes.append(BuildOutcome(doi, rec.pmcid, "indexed"))
+    return outcomes
+
+
+def status() -> dict:
+    conn = connect()
+    rows = all_rows(conn)
+    return {
+        "figures": len(rows),
+        "papers": len({r.pmcid for r in rows}),
+    }
