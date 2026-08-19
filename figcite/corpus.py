@@ -123,7 +123,10 @@ def build(dois: list[str], limit: int | None = None) -> list[BuildOutcome]:
     for doi in dois:
         rec = found.get(doi.lower())
         if rec is None:
-            outcomes.append(BuildOutcome(doi, "", "not-in-pmc"))
+            outcomes.append(BuildOutcome(doi, "", "not-in-europe-pmc"))
+            continue
+        if not rec.pmcid:
+            outcomes.append(BuildOutcome(doi, "", "no-pmc-copy"))
             continue
         if not rec.is_open_access:
             outcomes.append(BuildOutcome(doi, rec.pmcid, "not-open-access"))

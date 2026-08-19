@@ -55,10 +55,11 @@ def test_a_closed_access_paper_is_reported_not_silently_skipped(wired):
     assert by["10.1/closed"] == "not-open-access"
 
 
-def test_a_doi_with_no_pmc_record_is_reported(wired, monkeypatch):
+def test_a_doi_europe_pmc_has_never_seen_is_reported(wired, monkeypatch):
+    """Renamed from not-in-pmc: that name covered two different facts."""
     monkeypatch.setattr(pmc, "lookup_dois", lambda dois, batch=8: [])
     out = corpus.build(["10.1/ghost"])
-    assert [o.status for o in out] == ["not-in-pmc"]
+    assert [o.status for o in out] == ["not-in-europe-pmc"]
 
 
 def test_a_rerun_does_not_duplicate_figures(wired):
@@ -128,3 +129,37 @@ def test_a_working_lookup_is_not_reported_as_failed(wired):
     """Positive control: the catch must not swallow the healthy path."""
     out = corpus.build(["10.1/oa"])
     assert out[0].status == "indexed"
+
+
+def test_found_but_paywalled_is_distinct_from_never_heard_of_it(wired, monkeypatch):
+    """Two very different facts were collapsing into one status.
+
+    Measured on the real library: 10.1111/nph.20145 IS in Europe PMC but has
+    no PMC copy, while 10.1029/2024MS004308 is absent entirely. The first says
+    "the paper exists, its figures are not reachable"; the second may mean the
+    DOI is wrong. Reporting both as "not-in-pmc" throws that away.
+    """
+    monkeypatch.setattr(
+        pmc,
+        "lookup_dois",
+        lambda dois, batch=8: [
+            pmc.PmcRecord("10.1/paywalled", "", "Paywalled", "2024", False),
+        ],
+    )
+    out = corpus.build(["10.1/paywalled", "10.1/unknown"])
+    by = {o.doi: o.status for o in out}
+    assert by["10.1/paywalled"] == "no-pmc-copy"
+    assert by["10.1/unknown"] == "not-in-europe-pmc"
+
+
+def test_a_pmc_copy_that_is_not_open_access_keeps_its_own_status(wired, monkeypatch):
+    """Positive control: the third case must not collapse into the other two."""
+    monkeypatch.setattr(
+        pmc,
+        "lookup_dois",
+        lambda dois, batch=8: [
+            pmc.PmcRecord("10.1/closed", "PMC9", "Closed", "2024", False),
+        ],
+    )
+    out = corpus.build(["10.1/closed"])
+    assert out[0].status == "not-open-access"

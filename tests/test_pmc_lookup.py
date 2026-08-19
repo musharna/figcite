@@ -73,3 +73,39 @@ def test_a_doi_with_no_pmc_record_simply_returns_nothing(monkeypatch):
     """Positive control: absence here is data, not an error."""
     monkeypatch.setattr(pmc, "_get", lambda url, **kw: _fake_response([]))
     assert pmc.lookup_dois(["10.1/none"]) == []
+
+
+def test_a_result_with_no_pmcid_is_kept_not_crashed_on(monkeypatch):
+    """Europe PMC omits `pmcid` entirely for a paper with no PMC copy.
+
+    Keeping those records is deliberate -- it is what distinguishes "known but
+    paywalled" from "never heard of it". The first version of that change left
+    `it["pmcid"]` in place and raised KeyError on every such record, which the
+    build reported as `failed` for the entire library. No unit test caught it:
+    they all stubbed lookup_dois, the function containing the bug.
+    """
+    monkeypatch.setattr(
+        pmc,
+        "_get",
+        lambda url, **kw: _fake_response(
+            [{"doi": "10.1/paywalled", "title": "P", "pubYear": "2024",
+              "isOpenAccess": "N"}]
+        ),
+    )
+    out = pmc.lookup_dois(["10.1/paywalled"])
+    assert len(out) == 1
+    assert out[0].pmcid == ""
+    assert out[0].doi == "10.1/paywalled"
+
+
+def test_a_result_with_a_pmcid_still_carries_it(monkeypatch):
+    """Positive control: the fix must not blank every pmcid."""
+    monkeypatch.setattr(
+        pmc,
+        "_get",
+        lambda url, **kw: _fake_response(
+            [{"doi": "10.1/oa", "pmcid": "PMC7", "title": "O", "pubYear": "2024",
+              "isOpenAccess": "Y"}]
+        ),
+    )
+    assert pmc.lookup_dois(["10.1/oa"])[0].pmcid == "PMC7"

@@ -103,12 +103,14 @@ def lookup_dois(dois: list[str], batch: int = 8) -> list[PmcRecord]:
         )
         payload = json.loads(_get(url))
         for it in payload.get("resultList", {}).get("result", []) or []:
-            if not it.get("pmcid"):
-                continue
+            # Records WITHOUT a pmcid are kept, with pmcid="". Dropping them
+            # made "Europe PMC knows this paper but there is no PMC copy"
+            # indistinguishable from "Europe PMC has never heard of this DOI",
+            # and only the second of those suggests the DOI might be wrong.
             out.append(
                 PmcRecord(
                     doi=(it.get("doi") or "").lower(),
-                    pmcid=it["pmcid"],
+                    pmcid=it.get("pmcid") or "",
                     title=it.get("title", ""),
                     year=str(it.get("pubYear", "")),
                     is_open_access=it.get("isOpenAccess") == "Y",
