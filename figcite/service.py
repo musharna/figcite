@@ -451,6 +451,33 @@ def _is_pdf(path) -> bool:
     return str(path).lower().endswith(".pdf")
 
 
+def _duplicate_dois(dhash: str, credited_doi: str) -> list[str]:
+    """DOIs other than the credited one whose corpus figures match this hash.
+
+    Takes the stored hash rather than the image: audit rows carry
+    `record.dhash` from capture time but not the bytes, and re-reading every
+    picture out of a deck to recompute a value already on hand would be work
+    for nothing.
+
+    Corpus failures are deliberately swallowed. This flag is an extra on a
+    report that is useful without it, and an unbuilt or unreadable index must
+    not stop you reviewing a talk -- the cost of failing is a lost hint, the
+    cost of raising is the whole report. Nothing here rewrites a record: a hit
+    is a question for the user, never a correction applied on their behalf.
+
+    Reloads the corpus per row rather than caching it across the audit.
+    Measured at the design corpus size (1,200 figures): 2.1 ms per picture,
+    so a 100-picture deck pays 0.2 s. Linear in rows x pictures -- revisit if
+    the corpus grows an order of magnitude, not before.
+    """
+    if not dhash:
+        return []
+    try:
+        return [r.doi for r in corpus.duplicates_of_dhash(dhash, credited_doi)]
+    except Exception:
+        return []
+
+
 def audit(path, min_inches: float = 1.0) -> dict:
     """One report shape for a deck OR a PDF, so the UI needs none of its own.
 
@@ -510,6 +537,13 @@ def audit(path, min_inches: float = 1.0) -> dict:
                 # and only source_kind distinguishes them. Matches
                 # deck.py's own `own_work = rec.source_kind == "generated"`.
                 "source_kind": (rec.source_kind or "") if rec else "",
+                # Reporting only: "this same figure also appears under these
+                # DOIs". Republication, a reused panel and a genuine
+                # miscredit are indistinguishable from here, and only the
+                # user knows which -- so it is surfaced as a question.
+                "duplicate_of": (
+                    _duplicate_dois(rec.dhash or "", rec.doi or "") if rec else []
+                ),
             }
         )
     return {

@@ -222,24 +222,38 @@ def write_descriptors(rel: str, blob: bytes) -> bool:
     return True
 
 
-def can_compare(image_bytes: bytes) -> bool:
-    """Whether this image has enough gradient for dhash to mean anything.
+def can_compare_dhash(dh: str) -> bool:
+    """Whether a dhash carries enough signal to mean anything.
 
     A flat fill has no gradients at all, so its dhash is all zeros -- a red
     square and a blue square hash IDENTICALLY. Comparing such an image would
     report every other featureless figure as a duplicate of it, which is a
-    confident and wrong accusation about someone's citation.
+    confident and wrong accusation about someone's citation. An all-ones hash
+    is the same degeneracy from the other end.
 
-    Same rule as the ORB keypoint floor: refuse rather than guess.
+    Same rule as the ORB keypoint floor: refuse rather than guess. The
+    predicate lives on the HASH rather than the bytes because that is what it
+    was always really about, and because callers holding a stored hash (an
+    audit row) must be able to apply the guard without re-reading the image.
     """
-    from .provenance import dhash_bytes
-
-    bits = bin(int(dhash_bytes(image_bytes), 16)).count("1")
+    if not dh:
+        return False
+    try:
+        bits = bin(int(dh, 16)).count("1")
+    except ValueError:
+        return False
     return 0 < bits < 64
 
 
-def duplicates_of(image_bytes: bytes, credited_doi: str = "") -> list[FigureRow]:
-    """Corpus figures matching these bytes but carrying a different DOI.
+def can_compare(image_bytes: bytes) -> bool:
+    """`can_compare_dhash` for a caller holding the image itself."""
+    from .provenance import dhash_bytes
+
+    return can_compare_dhash(dhash_bytes(image_bytes))
+
+
+def duplicates_of_dhash(dh: str, credited_doi: str = "") -> list[FigureRow]:
+    """Corpus figures matching this hash but carrying a different DOI.
 
     dhash only, deliberately. A figure republished elsewhere is normally the
     same image re-encoded or rescaled, which dhash sees exactly; ORB would also
@@ -249,17 +263,23 @@ def duplicates_of(image_bytes: bytes, credited_doi: str = "") -> list[FigureRow]
     Reporting is the whole job. Nothing here rewrites a record: a hit is a
     question for the user, not a correction.
     """
-    from .provenance import dhash_bytes, hamming
+    from .provenance import hamming
 
-    if not can_compare(image_bytes):
+    if not can_compare_dhash(dh):
         return []
-    dh = dhash_bytes(image_bytes)
     credited = (credited_doi or "").strip().lower()
     conn = connect()
     out = []
     for row in all_rows(conn):
         if credited and row.doi.strip().lower() == credited:
             continue
-        if hamming(dh, row.dhash) <= DHASH_THRESHOLD:
+        if can_compare_dhash(row.dhash) and hamming(dh, row.dhash) <= DHASH_THRESHOLD:
             out.append(row)
     return out
+
+
+def duplicates_of(image_bytes: bytes, credited_doi: str = "") -> list[FigureRow]:
+    """`duplicates_of_dhash` for a caller holding the image itself."""
+    from .provenance import dhash_bytes
+
+    return duplicates_of_dhash(dhash_bytes(image_bytes), credited_doi)
