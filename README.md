@@ -299,14 +299,88 @@ retraction flag is checked too, and a retracted source is labelled as such.
 Use `--adapted-from <DOI>` when the figure you cropped was itself reproduced
 from an earlier paper — the PDF's own DOI cannot tell you that.
 
+## Finding where a figure came from
+
+The reverse of the usual direction. You have an image — a crop from a talk, a
+figure with no sidecar, something a collaborator sent — and you want to know
+which paper it is from.
+
+```bash
+figcite corpus build          # index the open-access figures of your library
+figcite corpus status         # how much is indexed
+figcite whereis fig.png       # which paper is this from?
+```
+
+`corpus build` walks the DOIs already in your library, asks Europe PMC which
+have an open-access PMC copy, and downloads those figures with their captions
+and licences. Every DOI produces an outcome, including the ones that cannot be
+indexed, because a coverage count without the reasons is the number that hides
+the bug — you cannot tell "not in PMC" from "the fetch broke" from "I never
+ran it".
+
+**Only open-access papers can be indexed at all.** Measured against this
+author's 535-DOI library:
+
+| | |
+|---:|:---|
+| 226 (42%) | open access — indexable |
+| 143 (27%) | in Europe PMC, no PMC copy |
+| 115 (22%) | not in Europe PMC |
+| 51 (10%) | PMC copy, but not open access |
+
+So expect to reverse-source a bit under half your library, and expect the
+misses to be the paywalled half. A figure that is not found is very often a
+figure that could never have been indexed, which is why `whereis` reports
+*why* it could not answer rather than a bare "no".
+
+### It answers in three ways, never two
+
+`match`, `no-match`, and `could-not-decide` are kept apart everywhere in this
+feature. "I searched your corpus and this figure is not in it" and "I could
+not look" license completely different next actions, and collapsing them is
+how a tool ends up asserting an absence it never observed. A `could-not-decide`
+always carries its reason — the corpus is empty, the image is too smooth to
+identify, the two best candidates are too close to call.
+
+**A match is a candidate, never a citation.** `whereis` prints DOIs for you to
+confirm; nothing is written to a record on the strength of a pixel match.
+
+### opencv is optional
+
+```bash
+pip install 'figcite[match]'
+```
+
+Without it, matching is perceptual-hash only, which recognises the same figure
+rescaled or re-encoded but is blind to **crops** — a panel cut out of a figure
+hashes to something unrelated. With opencv, cropped panels are matched by ORB
+keypoints scored on RANSAC inliers, which measured a median 38.9x separation
+between the true source and an unrelated document where raw match counts gave
+only 1.5x. Measured end to end on a real six-figure paper, two crop positions
+each: 11 matched, 1 declined for too few features, 0 wrong.
+
+Zero wrong is the number that matters. A tool whose whole premise is refusing
+to guess must not confidently name the wrong paper.
+
+### The same index, queried backwards
+
+Because the corpus knows which figures appear in which papers, a deck audit
+can also flag a figure you credited to one paper that appears in another:
+
+> also published under 10.1234/other
+
+It reports and never rewrites. Republication, a reused panel and a genuine
+miscredit are indistinguishable from the pixels, and only you know which.
+
 ## Tests
 
 ```bash
-python3 -m pytest tests/ -q -m "not live"   # 208 tests, no network
-python3 -m pytest tests/ -q -m live         # 42 tests (1 skipped): real CrossRef, real PDF,
+python3 -m pytest tests/ -q -m "not live"   # 383 tests, no network
+python3 -m pytest tests/ -q -m live         # 28 tests (1 skipped): real CrossRef, real PDF,
                                             # real clipboard, real ghostcite,
                                             # real Ghostscript/ImageMagick,
-                                            # real Microsoft PowerPoint via COM
+                                            # real Microsoft PowerPoint via COM,
+                                            # real Europe PMC + PMC Open Data
 ```
 
 The live tests drive the actual system boundaries — they are the only ones that
@@ -327,7 +401,7 @@ git config core.hooksPath .githooks   # once per clone; hooks are not cloned
 This is deliberately not GitHub Actions. The repository is private, so
 GitHub-hosted minutes bill against the account's free tier, and a pre-push hook
 gives a one-developer repo the same signal in six seconds for nothing. It runs
-the 208 non-live tests and refuses the push if any fail; `git push --no-verify`
+the 383 non-live tests and refuses the push if any fail; `git push --no-verify`
 overrides it when you mean to.
 
 ## Known limits

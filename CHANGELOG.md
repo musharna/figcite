@@ -3,6 +3,52 @@
 Notable changes to figcite. Backfilled at the first entry; no releases are
 tagged yet, so sections are dated by the commit that closed the milestone.
 
+## Unreleased — figure corpus and reverse sourcing (2026-08-20)
+
+Branch `feat/figure-corpus`, 17 commits. Suite 258 -> 383 non-live + 28 live.
+
+### Added
+
+- `figcite corpus build` / `corpus status` — indexes the open-access figures
+  of the papers already in your library via Europe PMC and the PMC Open Data
+  bucket, with captions and licences. Every DOI produces an outcome
+  (`indexed`, `not-in-europe-pmc`, `no-pmc-copy`, `not-open-access`,
+  `failed`), because a coverage count without reasons hides the bug. Measured
+  on a 535-DOI library: 226 indexable (42%).
+- `figcite whereis <image>` — which paper is this figure from? dhash first,
+  ORB second for crops, open browser tabs last and always ranked below any
+  pixel match. Answers `match` / `no-match` / `could-not-decide`, never two of
+  the three, and a `could-not-decide` always carries its reason. Measured end
+  to end on a real six-figure paper at two crop positions each: 11 matched,
+  1 declined, 0 wrong.
+- `figcite/corpus.py`, `figcite/match.py`, `figcite/pmc.py`.
+- ORB descriptors *and keypoints* cached at build time — 4.6x faster queries.
+  Keypoints matter: RANSAC cannot fit a homography without the coordinates,
+  and they are not recoverable from descriptors.
+- Duplicate detection on the deck audit — a figure credited to one paper that
+  also appears under another DOI is flagged on its row. Reports only.
+- `tests/test_pmc_live.py` — the real Europe PMC and S3 boundary, the only
+  test that would notice PMC changing its published layout.
+
+### Fixed
+
+- **One failing request no longer erases every other answer.** A single
+  transient 504 on batch 3 of 67 made all 535 DOIs report `failed`, because
+  the error boundary enclosed the whole lookup loop rather than one request.
+  `lookup_dois` now survives a bad batch and names the DOIs it could not
+  reach, and those are reported `failed`-with-reason, never
+  `not-in-europe-pmc` — an outage must never read as an absence.
+- Bounded retries on transient HTTP codes (429/500/502/503/504) only.
+- `python -m figcite.cli` printed nothing and exited 0.
+
+### Notes
+
+- `opencv` is optional (`pip install 'figcite[match]'`). Without it, crops
+  cannot be matched; everything else works.
+- Mutation testing found that the two featureless-image guards each masked the
+  other, so removing either left the suite green. Their real coverage is the
+  mirrored near-flat cases, now pinned.
+
 ## Unreleased — web UI and service layer (2026-08-18)
 
 Branch `feat/web-ui`, 35 commits. Suite 130 -> 258 passing.
