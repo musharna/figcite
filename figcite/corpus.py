@@ -111,18 +111,27 @@ def build(dois: list[str], limit: int | None = None) -> list[BuildOutcome]:
     """
     conn = connect()
     try:
-        records = pmc.lookup_dois(dois)
+        result = pmc.lookup_dois(dois)
     except Exception as e:
-        # An upstream outage is exactly the case a resumable build exists for.
-        # Europe PMC's /search endpoint 404'd every query mid-run once; letting
-        # that propagate loses every outcome already gathered and reports a
+        # A TOTAL failure -- DNS gone, or something unforeseen. Europe PMC's
+        # /search endpoint 404'd every query mid-run once; letting that
+        # propagate loses every outcome already gathered and reports a
         # traceback where the user needs a per-DOI status they can act on.
+        # Per-REQUEST failures no longer arrive here: `lookup_dois` survives
+        # them and names the DOIs it could not reach, because one 504 on
+        # batch 3 of 67 used to mark all 535 DOIs failed.
         return [BuildOutcome(d, "", "failed", f"DOI lookup failed: {e}") for d in dois]
-    found = {r.doi: r for r in records}
+    found = {r.doi: r for r in result.records}
     outcomes: list[BuildOutcome] = []
     indexed_papers = 0
 
     for doi in dois:
+        # Order matters: an unreachable DOI must never fall through to
+        # "not-in-europe-pmc", which asserts we asked and it was not there.
+        why = result.unreachable.get(doi.lower())
+        if why:
+            outcomes.append(BuildOutcome(doi, "", "failed", why))
+            continue
         rec = found.get(doi.lower())
         if rec is None:
             outcomes.append(BuildOutcome(doi, "", "not-in-europe-pmc"))

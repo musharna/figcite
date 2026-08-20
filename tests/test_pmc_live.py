@@ -23,7 +23,7 @@ pytestmark = pytest.mark.live
 
 
 def test_a_real_doi_resolves_to_a_pmcid():
-    recs = pmc.lookup_dois([DOI])
+    recs = pmc.lookup_dois([DOI]).records
     assert recs, "Europe PMC returned nothing for a known indexed DOI"
     assert recs[0].pmcid == PMCID
     assert recs[0].is_open_access is True
@@ -35,7 +35,7 @@ def test_a_nonexistent_doi_comes_back_absent_not_invented():
     Without this, a lookup that returned a hit for literally any input would
     pass the test above and quietly attach the wrong paper to every figure.
     """
-    recs = pmc.lookup_dois(["10.9999/this-doi-does-not-exist-figcite"])
+    recs = pmc.lookup_dois(["10.9999/this-doi-does-not-exist-figcite"]).records
     invented = [r.pmcid for r in recs if r.pmcid]
     assert invented == [], f"a made-up DOI resolved to {invented}"
 

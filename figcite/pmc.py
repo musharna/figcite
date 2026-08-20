@@ -79,13 +79,61 @@ def _get(url: str, **kw) -> bytes:
     return r.content
 
 
-def lookup_dois(dois: list[str], batch: int = 8) -> list[PmcRecord]:
+MAX_ATTEMPTS = 3
+_RETRY_WAIT = 2.0  # seconds, doubled per attempt
+RETRY_CODES = {429, 500, 502, 503, 504}
+
+
+def _get_with_retry(url: str, **kw) -> bytes:
+    """`_get` with bounded retries on the codes that mean "ask again".
+
+    A 504 is by definition transient -- it is the gateway saying the backend
+    was slow, not that the answer is no. Failing on the first one throws away
+    an answer the server was willing to give; one turned up within 25 requests
+    of a real library sweep.
+
+    Only transient codes. A 404 is a definite answer and retrying it just
+    spends the rate limit to arrive at the same place. DnsUnreachable is not
+    retried either: nothing about a name that does not resolve improves by
+    asking three times.
+    """
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            return _get(url, **kw)
+        except requests.exceptions.HTTPError as e:
+            code = getattr(e.response, "status_code", None)
+            if code not in RETRY_CODES or attempt == MAX_ATTEMPTS:
+                raise
+            time.sleep(_RETRY_WAIT * (2 ** (attempt - 1)))
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+@dataclass
+class Lookup:
+    """What a sweep found, AND what it could not look at.
+
+    Two channels, deliberately. Folding an unreachable DOI into "no record"
+    would make an outage indistinguishable from a paper Europe PMC has never
+    heard of, and only the second of those says anything about the DOI.
+
+    A dataclass rather than a NamedTuple on purpose: a tuple is iterable and
+    sized, so a caller still written against the old `list[PmcRecord]` would
+    quietly iterate two fields or measure a length of 2 instead of failing.
+    This way a stale caller raises immediately.
+    """
+
+    records: list[PmcRecord]
+    unreachable: dict[str, str]  # doi -> why the lookup did not happen
+
+
+def lookup_dois(dois: list[str], batch: int = 8) -> Lookup:
     """Resolve DOIs to PMC records, several per request.
 
     A library has hundreds of DOIs and Europe PMC accepts an OR query, so
     one-at-a-time would be hundreds of round trips at 3/s for no reason.
     """
     out: list[PmcRecord] = []
+    unreachable: dict[str, str] = {}
     for i in range(0, len(dois), batch):
         chunk = dois[i : i + batch]
         query = " OR ".join(f'DOI:"{d}"' for d in chunk)
@@ -101,7 +149,20 @@ def lookup_dois(dois: list[str], batch: int = 8) -> list[PmcRecord]:
                 }
             )
         )
-        payload = json.loads(_get(url))
+        # The boundary belongs HERE, around one request, because one request
+        # is the unit of independent failure. Wrapping the whole loop (which
+        # is what `build` used to do) means a single blip on batch 3 of 67
+        # discards the 66 batches that already succeeded. DnsUnreachable is
+        # allowed through: it is total, and retrying every remaining batch
+        # against a name that does not resolve only wastes minutes.
+        try:
+            payload = json.loads(_get_with_retry(url))
+        except DnsUnreachable:
+            raise
+        except Exception as e:
+            for d in chunk:
+                unreachable[d.lower()] = f"lookup did not complete: {e}"
+            continue
         for it in payload.get("resultList", {}).get("result", []) or []:
             # Records WITHOUT a pmcid are kept, with pmcid="". Dropping them
             # made "Europe PMC knows this paper but there is no PMC copy"
@@ -116,7 +177,7 @@ def lookup_dois(dois: list[str], batch: int = 8) -> list[PmcRecord]:
                     is_open_access=it.get("isOpenAccess") == "Y",
                 )
             )
-    return out
+    return Lookup(records=out, unreachable=unreachable)
 
 
 @dataclass

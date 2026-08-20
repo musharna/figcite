@@ -977,3 +977,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     except (LookupError, RuntimeError, ValueError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
+
+
+if __name__ == "__main__":  # `python -m figcite.cli` silently did nothing
+    sys.exit(main())

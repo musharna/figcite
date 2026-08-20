@@ -32,7 +32,7 @@ def test_a_doi_that_is_open_access_is_reported_as_such(monkeypatch):
         )
 
     monkeypatch.setattr(pmc, "_get", fake_get)
-    out = pmc.lookup_dois(["10.1/aa"])
+    out = pmc.lookup_dois(["10.1/aa"]).records
     assert len(out) == 1
     assert out[0].pmcid == "PMC1"
     assert out[0].is_open_access is True
@@ -56,7 +56,7 @@ def test_a_closed_access_hit_is_kept_but_flagged(monkeypatch):
             ]
         ),
     )
-    out = pmc.lookup_dois(["10.1/bb"])
+    out = pmc.lookup_dois(["10.1/bb"]).records
     assert out[0].is_open_access is False
 
 
@@ -72,7 +72,7 @@ def test_dois_are_batched_not_queried_one_at_a_time(monkeypatch):
 def test_a_doi_with_no_pmc_record_simply_returns_nothing(monkeypatch):
     """Positive control: absence here is data, not an error."""
     monkeypatch.setattr(pmc, "_get", lambda url, **kw: _fake_response([]))
-    assert pmc.lookup_dois(["10.1/none"]) == []
+    assert pmc.lookup_dois(["10.1/none"]).records == []
 
 
 def test_a_result_with_no_pmcid_is_kept_not_crashed_on(monkeypatch):
@@ -92,7 +92,7 @@ def test_a_result_with_no_pmcid_is_kept_not_crashed_on(monkeypatch):
               "isOpenAccess": "N"}]
         ),
     )
-    out = pmc.lookup_dois(["10.1/paywalled"])
+    out = pmc.lookup_dois(["10.1/paywalled"]).records
     assert len(out) == 1
     assert out[0].pmcid == ""
     assert out[0].doi == "10.1/paywalled"
@@ -108,4 +108,4 @@ def test_a_result_with_a_pmcid_still_carries_it(monkeypatch):
               "isOpenAccess": "Y"}]
         ),
     )
-    assert pmc.lookup_dois(["10.1/oa"])[0].pmcid == "PMC7"
+    assert pmc.lookup_dois(["10.1/oa"]).records[0].pmcid == "PMC7"

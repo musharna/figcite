@@ -8,6 +8,15 @@ from PIL import Image
 from figcite import corpus, pmc
 
 
+def _lookup(records):
+    """`lookup_dois` returns records AND the DOIs it could not reach.
+
+    These stubs all describe a lookup that completed, so nothing is
+    unreachable -- tests/test_pmc_resilience.py covers the other channel.
+    """
+    return pmc.Lookup(records=records, unreachable={})
+
+
 @pytest.fixture()
 def wired(tmp_path, monkeypatch):
     monkeypatch.setattr(corpus, "CORPUS_DIR", tmp_path / "corpus")
@@ -22,10 +31,10 @@ def wired(tmp_path, monkeypatch):
     monkeypatch.setattr(
         pmc,
         "lookup_dois",
-        lambda dois, batch=8: [
+        lambda dois, batch=8: _lookup([
             pmc.PmcRecord("10.1/oa", "PMC1", "Open paper", "2020", True),
             pmc.PmcRecord("10.1/closed", "PMC2", "Closed paper", "2021", False),
-        ],
+        ]),
     )
     monkeypatch.setattr(
         pmc,
@@ -57,7 +66,7 @@ def test_a_closed_access_paper_is_reported_not_silently_skipped(wired):
 
 def test_a_doi_europe_pmc_has_never_seen_is_reported(wired, monkeypatch):
     """Renamed from not-in-pmc: that name covered two different facts."""
-    monkeypatch.setattr(pmc, "lookup_dois", lambda dois, batch=8: [])
+    monkeypatch.setattr(pmc, "lookup_dois", lambda dois, batch=8: _lookup([]))
     out = corpus.build(["10.1/ghost"])
     assert [o.status for o in out] == ["not-in-europe-pmc"]
 
@@ -83,10 +92,10 @@ def test_one_bad_article_does_not_stop_the_others(wired, monkeypatch):
     monkeypatch.setattr(
         pmc,
         "lookup_dois",
-        lambda dois, batch=8: [
+        lambda dois, batch=8: _lookup([
             pmc.PmcRecord("10.1/bad", "PMCBAD", "Bad", "2020", True),
             pmc.PmcRecord("10.1/good", "PMCGOOD", "Good", "2020", True),
-        ],
+        ]),
     )
 
     def figures(pmcid):
@@ -142,9 +151,9 @@ def test_found_but_paywalled_is_distinct_from_never_heard_of_it(wired, monkeypat
     monkeypatch.setattr(
         pmc,
         "lookup_dois",
-        lambda dois, batch=8: [
+        lambda dois, batch=8: _lookup([
             pmc.PmcRecord("10.1/paywalled", "", "Paywalled", "2024", False),
-        ],
+        ]),
     )
     out = corpus.build(["10.1/paywalled", "10.1/unknown"])
     by = {o.doi: o.status for o in out}
@@ -157,9 +166,9 @@ def test_a_pmc_copy_that_is_not_open_access_keeps_its_own_status(wired, monkeypa
     monkeypatch.setattr(
         pmc,
         "lookup_dois",
-        lambda dois, batch=8: [
+        lambda dois, batch=8: _lookup([
             pmc.PmcRecord("10.1/closed", "PMC9", "Closed", "2024", False),
-        ],
+        ]),
     )
     out = corpus.build(["10.1/closed"])
     assert out[0].status == "not-open-access"
