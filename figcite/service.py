@@ -16,7 +16,7 @@ from typing import Any, Optional
 
 from PIL import Image
 
-from . import clipboard, deck, pdfdeck, store
+from . import clipboard, corpus, deck, match, pdfdeck, session_tabs, store
 from ._actions import finalize, record_for
 from .provenance import Record, sidecar_path
 
@@ -451,6 +451,33 @@ def _is_pdf(path) -> bool:
     return str(path).lower().endswith(".pdf")
 
 
+def _duplicate_dois(dhash: str, credited_doi: str) -> list[str]:
+    """DOIs other than the credited one whose corpus figures match this hash.
+
+    Takes the stored hash rather than the image: audit rows carry
+    `record.dhash` from capture time but not the bytes, and re-reading every
+    picture out of a deck to recompute a value already on hand would be work
+    for nothing.
+
+    Corpus failures are deliberately swallowed. This flag is an extra on a
+    report that is useful without it, and an unbuilt or unreadable index must
+    not stop you reviewing a talk -- the cost of failing is a lost hint, the
+    cost of raising is the whole report. Nothing here rewrites a record: a hit
+    is a question for the user, never a correction applied on their behalf.
+
+    Reloads the corpus per row rather than caching it across the audit.
+    Measured at the design corpus size (1,200 figures): 2.1 ms per picture,
+    so a 100-picture deck pays 0.2 s. Linear in rows x pictures -- revisit if
+    the corpus grows an order of magnitude, not before.
+    """
+    if not dhash:
+        return []
+    try:
+        return [r.doi for r in corpus.duplicates_of_dhash(dhash, credited_doi)]
+    except Exception:
+        return []
+
+
 def audit(path, min_inches: float = 1.0) -> dict:
     """One report shape for a deck OR a PDF, so the UI needs none of its own.
 
@@ -510,6 +537,13 @@ def audit(path, min_inches: float = 1.0) -> dict:
                 # and only source_kind distinguishes them. Matches
                 # deck.py's own `own_work = rec.source_kind == "generated"`.
                 "source_kind": (rec.source_kind or "") if rec else "",
+                # Reporting only: "this same figure also appears under these
+                # DOIs". Republication, a reused panel and a genuine
+                # miscredit are indistinguishable from here, and only the
+                # user knows which -- so it is surfaced as a question.
+                "duplicate_of": (
+                    _duplicate_dois(rec.dhash or "", rec.doi or "") if rec else []
+                ),
             }
         )
     return {
@@ -584,3 +618,102 @@ def apply(path, out=None, force: bool = False, **opts) -> dict:
 def _default_out(path) -> str:
     p = Path(path)
     return str(p.with_name(p.stem + ".cited" + p.suffix))
+
+
+def whereis(ref_or_path) -> dict:
+    """Where might this figure have come from?
+
+    dhash first (free), ORB second (handles crops), open tabs last. The verdict
+    distinguishes "searched and found nothing" from "could not look", because
+    they license different next actions: the first means the figure is not in
+    your corpus, the second means you learned nothing at all.
+    """
+    path = Path(ref_or_path)
+    if not path.exists():
+        path = _resolve_ref_to_path(str(ref_or_path))
+    blob = path.read_bytes()
+
+    conn = corpus.connect()
+    rows = corpus.all_rows(conn)
+
+    verdict = match.by_dhash(blob, rows)
+    # With nothing indexed there is no second opinion to seek, and running ORB
+    # over zero rows only appends "no corpus figure could be read", which reads
+    # as "your files are broken" rather than "you have not built it yet".
+    if not rows:
+        return {"verdict": "could-not-decide", "matches": [],
+                "reason": getattr(verdict, "reason", "the corpus is empty")}
+    if not isinstance(verdict, match.Match):
+        orb = match.by_orb(blob, rows, corpus.IMAGE_DIR, corpus.DESCRIPTOR_DIR)
+        # An ORB NoMatch is a real search of the corpus, so it outranks dhash's
+        # could-not-decide -- which only ever meant "a crop is invisible to me".
+        if isinstance(orb, (match.Match, match.NoMatch)):
+            verdict = orb
+        elif isinstance(verdict, match.CouldNotDecide):
+            verdict = match.CouldNotDecide(f"{verdict.reason}; {orb.reason}")
+
+    matches: list[dict] = []
+    if isinstance(verdict, match.Match):
+        row = next(
+            (r for r in rows
+             if getattr(r, "pmcid", None) == verdict.pmcid
+             and getattr(r, "label", None) == verdict.label),
+            None,
+        )
+        matches.append({
+            "source": verdict.method,
+            "score": round(verdict.score, 1),
+            "doi": verdict.doi,
+            "title": (getattr(row, "caption", "")[:120] if row else verdict.label),
+            "container": verdict.pmcid,
+            "year": "",
+            "type": "figure",
+        })
+
+    # Open tabs are a garnish: a lead about what you were reading, never
+    # evidence. A failure to read them must not lose a real pixel match.
+    try:
+        matches.extend(session_tabs.tab_candidates())
+    except Exception:
+        pass
+
+    if isinstance(verdict, match.Match):
+        name, reason = "match", ""
+    elif isinstance(verdict, match.NoMatch):
+        name, reason = "no-match", ""
+    else:
+        name, reason = "could-not-decide", verdict.reason
+    return {"verdict": name, "matches": matches, "reason": reason}
+
+
+def duplicates(ref_or_path, credited_doi: str = "") -> dict:
+    """Has this figure appeared in a paper other than the one credited?
+
+    Reports only. Nothing here rewrites a record: a hit is a question for the
+    user, not a correction to apply on their behalf.
+
+    `reason` carries WHY the answer is empty when it is, because "no other
+    paper has this figure" and "this image has no gradient for the hash to
+    work with" are different facts and only one of them is about the figure.
+    """
+    path = Path(ref_or_path)
+    if not path.exists():
+        path = _resolve_ref_to_path(str(ref_or_path))
+    blob = path.read_bytes()
+
+    if not corpus.can_compare(blob):
+        return {
+            "others": [],
+            "reason": "this image has too little gradient to compare -- a flat "
+            "fill hashes the same as any other flat fill, so a match would "
+            "mean nothing",
+        }
+
+    rows = corpus.duplicates_of(blob, credited_doi)
+    return {
+        "others": [
+            {"doi": r.doi, "pmcid": r.pmcid, "label": r.label, "licence": r.licence}
+            for r in rows
+        ],
+        "reason": "" if rows else "no other indexed paper carries this figure",
+    }

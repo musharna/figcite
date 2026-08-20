@@ -49,6 +49,7 @@ PAGE = r"""<!doctype html>
            border-radius:3px; font-size:12px; }
   .badge.warn { color:var(--warn); border-color:var(--warn); }
   .retracted { color:var(--warn); font-weight:700; }
+  .dup { display:block; margin-top:2px; font-size:12px; color:var(--warn); }
   /* I5: the deck screen's inline RETRACTED flag is a table cell, read only
      if you go looking. This one fires at the moment the citation is
      attached, so it is sized to be impossible to skim past. */
@@ -400,12 +401,21 @@ function deckRow(r) {
   // the library manifest, reproduced live with an EXIF-credit JPEG) still
   // 404s at request time -- the capture-phase "error" listener below turns
   // that into a legible placeholder instead of a broken-image icon.
+  // "You credited this to A; it also appears in B." A QUESTION, never a
+  // correction -- republication, a reused panel and a genuine miscredit look
+  // identical from the pixels, and only the user knows which. So it sits
+  // under the citation it queries, worded as an observation, and nothing in
+  // the UI offers to "fix" it.
+  const dup = (r.duplicate_of || []).length
+    ? `<span class="dup">also published under ${
+        r.duplicate_of.map(esc).join(", ")}</span>`
+    : "";
   const thumb = r.ref
     ? `<img src="/api/thumb?ref=${encodeURIComponent(r.ref)}" alt="" height="80">`
     : "";
   return `<tr><td>${esc(r.location)}<td>${thumb}
     <td>${esc(r.status)}${decorative} <span class="ctx">[${esc(r.matched_by)}]</span>
-    <td>${esc(r.citation)}<td>${badge}${flag}</tr>`;
+    <td>${esc(r.citation)}${dup}<td>${badge}${flag}</tr>`;
 }
 
 // <img> "error" events do not bubble, so this listener must run in the

@@ -816,6 +816,15 @@ git commit -m "feat(pmc): batched DOI -> PMCID lookup with a named DNS error"
 
 ### Task 5: Figure enumeration and image URLs
 
+> **Superseded during execution (2026-08-19).** The article-page scrape this
+> task specifies does not work: PMC returns a "Checking your browser -
+> reCAPTCHA" interstitial to non-browser clients, and no header set clears it.
+> Implemented instead against the AWS Open Data bucket NCBI publishes for
+> programmatic access, which needs no HTML parsing and returns byte-identical
+> images. `image_urls` keeps its signature; `s3_prefix(pmcid)` is new. See the
+> spec's "Where the images come from" section and `tests/test_pmc_figures.py`.
+
+
 **Files:**
 
 - Modify: `figcite/pmc.py`
