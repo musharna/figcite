@@ -3,6 +3,46 @@
 Notable changes to figcite. Backfilled at the first entry; no releases are
 tagged yet, so sections are dated by the commit that closed the milestone.
 
+## Unreleased — `whereis` in the browser (2026-08-20)
+
+Branch `feat/whereis-web`. Suite 383 -> 397 non-live + 28 live.
+
+### Added
+
+- **A "Where is" tab in `figcite ui`.** `service.whereis()` was built as the
+  one entry point both front ends call and only the CLI ever called it, while
+  its sibling `service.duplicates()` did reach the browser. The asymmetry was
+  a stop, not a policy.
+- `POST /api/whereis`, allowlisted to `{"ref"}` through `_fields` like every
+  other route. Read-only, so it does not take `_LOCK`.
+- `tests/test_webui_whereis_browser.py` — the screen driven by a real
+  chromium. The node tests execute the renderer and can say nothing about
+  whether the page ever calls it: a tab that never reveals its section, or a
+  button never wired to a listener, passes all of them. Skipped when
+  playwright is absent, matching how the node tests skip without node.
+
+### Fixed
+
+- **A dhash score of 0 rendered blank.** `esc(m.score || "")` — and a dhash
+  score is a hamming distance, so 0 is a perfect match, the strongest result
+  the screen can report. Found by putting the real corpus through the real
+  route; every unit test passed because they all asserted on the DOI.
+
+### Notes
+
+- `service.whereis()` now marks each candidate `evidence: true|false`. The
+  browser must not derive that from `source in {"dhash","orb"}` — a list of
+  names standing in for an open set, where adding a third matcher silently
+  demotes its every hit to a lead.
+- Open tabs render in their own block, below the pixel matches and labelled
+  as leads. They are returned even when the corpus search found nothing, so a
+  screen that listed them together would dress an absence as an answer.
+- Eight mutants, all killed: collapsing evidence and leads into one list,
+  no-match wearing the could-not-decide wording, a reason-less
+  could-not-decide, a tab claiming to be evidence, an unwired button, a
+  `show()` that does not know the section, a blanked failure box, and the
+  score fix reverted.
+
 ## Unreleased — figure corpus and reverse sourcing (2026-08-20)
 
 Branch `feat/figure-corpus`, 17 commits. Suite 258 -> 383 non-live + 28 live.
@@ -18,11 +58,21 @@ Branch `feat/figure-corpus`, 17 commits. Suite 258 -> 383 non-live + 28 live.
 - `figcite whereis <image>` — which paper is this figure from? dhash first,
   ORB second for crops, open browser tabs last and always ranked below any
   pixel match. Answers `match` / `no-match` / `could-not-decide`, never two of
-  the three, and a `could-not-decide` always carries its reason. Measured end
-  to end on a real six-figure paper at two crop positions each: 11 matched,
-  1 declined, 0 wrong.
+  the three, and a `could-not-decide` always carries its reason.
+
+  Measured against figures fetched from an INDEPENDENT source (the publisher's
+  own render, not the bytes already in the index): **whole figures 8/8
+  correct, 4/4 correctly declined; cropped panels 2/12.** Crop retrieval does
+  not work and is not claimed to.
+
+  An earlier draft of this entry read "11 matched, 1 declined, 0 wrong" for
+  crops. That measurement was circular: it cropped the corpus's own bytes, so
+  query and index sat at a scale ratio of 1.0 — the one condition under which
+  the failure cannot appear. Retracted rather than quietly deleted, because
+  the number was published here and why it was wrong is the useful part.
+
 - `figcite/corpus.py`, `figcite/match.py`, `figcite/pmc.py`.
-- ORB descriptors *and keypoints* cached at build time — 4.6x faster queries.
+- ORB descriptors _and keypoints_ cached at build time — 4.6x faster queries.
   Keypoints matter: RANSAC cannot fit a homography without the coordinates,
   and they are not recoverable from descriptors.
 - Duplicate detection on the deck audit — a figure credited to one paper that
