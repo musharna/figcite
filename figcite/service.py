@@ -641,8 +641,11 @@ def whereis(ref_or_path) -> dict:
     # over zero rows only appends "no corpus figure could be read", which reads
     # as "your files are broken" rather than "you have not built it yet".
     if not rows:
-        return {"verdict": "could-not-decide", "matches": [],
-                "reason": getattr(verdict, "reason", "the corpus is empty")}
+        return {
+            "verdict": "could-not-decide",
+            "matches": [],
+            "reason": getattr(verdict, "reason", "the corpus is empty"),
+        }
     if not isinstance(verdict, match.Match):
         orb = match.by_orb(blob, rows, corpus.IMAGE_DIR, corpus.DESCRIPTOR_DIR)
         # An ORB NoMatch is a real search of the corpus, so it outranks dhash's
@@ -655,25 +658,36 @@ def whereis(ref_or_path) -> dict:
     matches: list[dict] = []
     if isinstance(verdict, match.Match):
         row = next(
-            (r for r in rows
-             if getattr(r, "pmcid", None) == verdict.pmcid
-             and getattr(r, "label", None) == verdict.label),
+            (
+                r
+                for r in rows
+                if getattr(r, "pmcid", None) == verdict.pmcid
+                and getattr(r, "label", None) == verdict.label
+            ),
             None,
         )
-        matches.append({
-            "source": verdict.method,
-            "score": round(verdict.score, 1),
-            "doi": verdict.doi,
-            "title": (getattr(row, "caption", "")[:120] if row else verdict.label),
-            "container": verdict.pmcid,
-            "year": "",
-            "type": "figure",
-        })
+        matches.append(
+            {
+                "source": verdict.method,
+                "score": round(verdict.score, 1),
+                "doi": verdict.doi,
+                "title": (getattr(row, "caption", "")[:120] if row else verdict.label),
+                "container": verdict.pmcid,
+                "year": "",
+                "type": "figure",
+                # Which of these two kinds of answer a candidate is, stated by the
+                # side that knows. A front end can only otherwise derive it from
+                # `source in {"dhash", "orb"}` -- a list of names standing in for
+                # an open set, so a third matcher's every hit would silently
+                # demote to a lead the moment it was added.
+                "evidence": True,
+            }
+        )
 
     # Open tabs are a garnish: a lead about what you were reading, never
     # evidence. A failure to read them must not lose a real pixel match.
     try:
-        matches.extend(session_tabs.tab_candidates())
+        matches.extend({**c, "evidence": False} for c in session_tabs.tab_candidates())
     except Exception:
         pass
 
