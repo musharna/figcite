@@ -5,7 +5,7 @@ tagged yet, so sections are dated by the commit that closed the milestone.
 
 ## Unreleased — `whereis` in the browser (2026-08-20)
 
-Branch `feat/whereis-web`. Suite 383 -> 399 non-live + 28 live.
+Branch `feat/whereis-web`. Suite 383 -> 404 non-live + 28 live.
 
 ### Added
 
@@ -23,6 +23,17 @@ Branch `feat/whereis-web`. Suite 383 -> 399 non-live + 28 live.
 
 ### Fixed
 
+- **The CLI dropped its leads on a no-match, and mixed them in on a match.**
+  `service.whereis` returns open tabs on EVERY verdict — it ranks them last,
+  it does not withhold them — but `cmd_whereis` only read `matches` inside its
+  `match` branch. So a no-match discarded leads the service had just produced,
+  while a match listed them as numbered items beside the pixel hit, under a
+  heading inviting the user to cite any of them by DOI. Both front ends now
+  separate evidence from leads, print leads on all three verdicts, and offer
+  `confirm` only when something was actually found.
+
+  An unlabelled candidate falls to the lead side: promoting an unknown thing
+  to evidence is the error that costs something.
 - **A score with no unit, and half the time the wrong one.** `by_dhash`
   scores a hamming distance (0 is perfect); `by_orb` scores inlier count
   (higher is better). Both front ends printed the bare number, so the same
