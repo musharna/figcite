@@ -536,7 +536,7 @@ function whereisHtml(res) {
       // the strongest result this screen can report -- and `0 || ""` is the
       // empty string. Caught by running the real corpus through the real
       // route: the best match it has renders its score blank.
-      `<strong>${esc(m.doi)}</strong> <span class="ev">${esc(m.score ?? "")}</span>` +
+      `<strong>${esc(m.doi)}</strong> <span class="ev">${esc(m.score_label || (m.score ?? ""))}</span>` +
       `<br><span class="ctx">${esc(m.title || "")} ` +
       `${esc(m.container || "")}</span></p>`);
   }

@@ -194,7 +194,10 @@ def cmd_whereis(a) -> int:
     res = service.whereis(a.image)
     if res["verdict"] == "match":
         for i, m in enumerate(res["matches"]):
-            score = m.get("score", "")
+            # The matcher's label ("hamming 0", "71 inliers") rather than a
+            # bare number: dhash and ORB score on opposite polarities, so the
+            # number alone reads as better-is-higher half the time.
+            score = m.get("score_label") or m.get("score", "")
             print(f"  [{i}] {m['doi']}  [{m.get('source', '')}] {score}")
             print(f"      {str(m.get('title', ''))[:76]}")
         print()

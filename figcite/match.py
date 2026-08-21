@@ -33,6 +33,14 @@ class Match:
     method: str
     score: float
     margin: float
+    # What that number MEANS, written by the matcher that produced it. The two
+    # matchers score on opposite polarities -- dhash reports a hamming
+    # distance, where 0 is a perfect hit, and ORB reports inlier count, where
+    # higher is better -- so a bare number rendered next to a DOI tells a
+    # reader nothing, and tells them the wrong thing half the time. Labelling
+    # it here rather than in a front end keeps a third matcher from inheriting
+    # whichever unit the UI happened to hard-code.
+    score_label: str = ""
 
 
 @dataclass
@@ -76,6 +84,7 @@ def by_dhash(query_bytes: bytes, rows) -> Verdict:
         method="dhash",
         score=float(best_d),
         margin=float(runner_up - best_d),
+        score_label=f"hamming {best_d}",
     )
 
 
@@ -160,6 +169,7 @@ def by_orb(query_bytes: bytes, rows, image_root, descriptor_dir=None) -> Verdict
         method="orb",
         score=float(best_n),
         margin=float(margin),
+        score_label=f"{best_n} inliers",
     )
 
 

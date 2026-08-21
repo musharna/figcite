@@ -670,6 +670,9 @@ def whereis(ref_or_path) -> dict:
             {
                 "source": verdict.method,
                 "score": round(verdict.score, 1),
+                # The matcher's own words for what `score` measures; the two
+                # matchers score on opposite polarities. See match.Match.
+                "score_label": getattr(verdict, "score_label", ""),
                 "doi": verdict.doi,
                 "title": (getattr(row, "caption", "")[:120] if row else verdict.label),
                 "container": verdict.pmcid,
@@ -687,7 +690,10 @@ def whereis(ref_or_path) -> dict:
     # Open tabs are a garnish: a lead about what you were reading, never
     # evidence. A failure to read them must not lose a real pixel match.
     try:
-        matches.extend({**c, "evidence": False} for c in session_tabs.tab_candidates())
+        matches.extend(
+            {**c, "evidence": False, "score_label": ""}
+            for c in session_tabs.tab_candidates()
+        )
     except Exception:
         pass
 

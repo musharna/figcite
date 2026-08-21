@@ -5,7 +5,7 @@ tagged yet, so sections are dated by the commit that closed the milestone.
 
 ## Unreleased — `whereis` in the browser (2026-08-20)
 
-Branch `feat/whereis-web`. Suite 383 -> 397 non-live + 28 live.
+Branch `feat/whereis-web`. Suite 383 -> 399 non-live + 28 live.
 
 ### Added
 
@@ -23,6 +23,14 @@ Branch `feat/whereis-web`. Suite 383 -> 397 non-live + 28 live.
 
 ### Fixed
 
+- **A score with no unit, and half the time the wrong one.** `by_dhash`
+  scores a hamming distance (0 is perfect); `by_orb` scores inlier count
+  (higher is better). Both front ends printed the bare number, so the same
+  digit meant opposite things depending on the matcher. `Match` now carries a
+  `score_label` written by the matcher that produced it — "hamming 0",
+  "71 inliers" — and the guard is an AST check that every `Match(...)` built
+  in `match.py` supplies one, so a matcher added later cannot inherit
+  whichever unit a front end hard-coded.
 - **A dhash score of 0 rendered blank.** `esc(m.score || "")` — and a dhash
   score is a hamming distance, so 0 is a perfect match, the strongest result
   the screen can report. Found by putting the real corpus through the real

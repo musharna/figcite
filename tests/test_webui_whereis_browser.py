@@ -101,7 +101,10 @@ def test_the_button_actually_searches(page, tmp_path, monkeypatch):
     assert page.inner_html("#whereisresult") == "", "premise: the box starts empty"
 
     page.click("#whereis-btn")
-    page.wait_for_selector("#whereisresult p", timeout=15000)
+    # NOT `#whereisresult p`: the "searching…" placeholder is a <p>, so that
+    # selector is satisfied the instant the click lands and the assertions
+    # below race the fetch. `.nosrc`/`.fail` appear only in a FINAL state.
+    page.wait_for_selector("#whereisresult .nosrc, #whereisresult .fail", timeout=15000)
 
     body = page.inner_text("#whereisresult")
     assert "10.1/pixel" in body, body
