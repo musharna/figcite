@@ -285,7 +285,18 @@ def infer_source(capture: dict) -> dict:
         browser_note = ""
 
     pdf_name = pdf_name_from_title(title)
-    if pdf_name and (proc in PDF_APPS or proc in BROWSERS or True):
+    # Was `if pdf_name and (proc in PDF_APPS or proc in BROWSERS or True):`
+    # since 0.1.0. The trailing `or True` made both membership tests dead, so
+    # the condition has always been exactly this one. Written out as what it
+    # does, rather than left looking like a process check that isn't.
+    #
+    # The widening is right, and the reason is the same one the module already
+    # gives for the publisher-suffix list in `_zotero_try`: PDF viewers are an
+    # OPEN SET, and a name list cannot guard one. A title ending in ".pdf" is
+    # the actual signal, and it is stronger than "is this app on my list".
+    # Restoring the membership test would narrow behaviour, not fix a bug --
+    # `tests/test_clipboard_grounding.py` pins the shipped contract.
+    if pdf_name:
         path = find_pdf_on_disk(pdf_name)
         if path:
             out["pdf"] = path
