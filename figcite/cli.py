@@ -192,17 +192,47 @@ def cmd_whereis(a) -> int:
     from . import service
 
     res = service.whereis(a.image)
+    matches = res.get("matches", [])
+    # `evidence` is set by the service, which knows which candidates came out
+    # of a pixel comparison and which are open browser tabs. An unlabelled
+    # candidate falls to the LEAD side deliberately: promoting an unknown
+    # thing to evidence is the error that costs something, demoting one only
+    # under-claims.
+    evidence = [m for m in matches if m.get("evidence")]
+    leads = [m for m in matches if not m.get("evidence")]
+
     if res["verdict"] == "match":
-        for i, m in enumerate(res["matches"]):
-            score = m.get("score", "")
-            print(f"  [{i}] {m['doi']}  [{m.get('source', '')}] {score}")
-            print(f"      {str(m.get('title', ''))[:76]}")
-        print()
-        print("  accept one with: figcite confirm <ref> --doi <the DOI above>")
+        print("  found in your corpus")
     elif res["verdict"] == "no-match":
         print("  no match: this figure is not in your corpus")
     else:
         print(f"  could not decide: {res['reason']}")
+
+    for i, m in enumerate(evidence):
+        # The matcher's label ("hamming 0", "71 inliers") rather than a bare
+        # number: dhash and ORB score on opposite polarities, so the number
+        # alone reads as better-is-higher half the time.
+        score = m.get("score_label") or m.get("score", "")
+        print(f"  [{i}] {m['doi']}  [{m.get('source', '')}] {score}")
+        print(f"      {str(m.get('title', ''))[:76]}")
+
+    # Only when something was actually found. Offering to cite under a
+    # verdict that found no evidence would turn an open tab into a citation.
+    if evidence:
+        print()
+        print("  accept one with: figcite confirm <ref> --doi <a DOI above>")
+
+    # Printed on EVERY verdict, because the service returns them on every
+    # verdict -- it ranks tabs last, it does not withhold them. This branch
+    # used to live inside `match`, so a no-match silently discarded leads the
+    # service had just handed over.
+    if leads:
+        print()
+        print("  leads from your open tabs -- what you had on screen, never")
+        print("  evidence that the figure came from any of them:")
+        for m in leads:
+            print(f"      {m['doi']}  [{m.get('source', '')}]")
+            print(f"      {str(m.get('title', ''))[:76]}")
     return 0
 
 

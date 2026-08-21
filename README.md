@@ -321,17 +321,17 @@ ran it".
 **Only open-access papers can be indexed at all.** Measured against this
 author's 535-DOI library:
 
-| | |
-|---:|:---|
-| 226 (42%) | open access — indexable |
-| 143 (27%) | in Europe PMC, no PMC copy |
-| 115 (22%) | not in Europe PMC |
-| 51 (10%) | PMC copy, but not open access |
+|           |                               |
+| --------: | :---------------------------- |
+| 226 (42%) | open access — indexable       |
+| 143 (27%) | in Europe PMC, no PMC copy    |
+| 115 (22%) | not in Europe PMC             |
+|  51 (10%) | PMC copy, but not open access |
 
 So expect to reverse-source a bit under half your library, and expect the
 misses to be the paywalled half. A figure that is not found is very often a
 figure that could never have been indexed, which is why `whereis` reports
-*why* it could not answer rather than a bare "no".
+_why_ it could not answer rather than a bare "no".
 
 ### It answers in three ways, never two
 
@@ -344,6 +344,19 @@ identify, the two best candidates are too close to call.
 
 **A match is a candidate, never a citation.** `whereis` prints DOIs for you to
 confirm; nothing is written to a record on the strength of a pixel match.
+
+### In the browser
+
+`figcite ui` carries the same search on its **Where is** tab — the same
+`service.whereis()` call the CLI makes, so the two front ends cannot drift.
+Give it a path or a ref and it answers with the same three verdicts.
+
+One thing the screen shows that the CLI does not: your open browser tabs are
+listed **separately, under the pixel matches, labelled as leads**. A tab is a
+note about what you had on screen, never evidence that a figure came from it —
+and since the tabs are returned even when the corpus search found nothing, a
+screen that listed them together would turn "not in your corpus" into what
+looks like a hit.
 
 ### opencv is optional
 

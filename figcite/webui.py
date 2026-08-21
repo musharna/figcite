@@ -66,6 +66,7 @@ PAGE = r"""<!doctype html>
 <nav>
   <button id="tab-pending" data-tab="pending" aria-selected="true">Pending</button>
   <button id="tab-deck" data-tab="deck" aria-selected="false">Deck</button>
+  <button id="tab-whereis" data-tab="whereis" aria-selected="false">Where is</button>
 </nav>
 <section id="pending">
   <!-- I5: a separate element from the list, because loadPending() replaces
@@ -87,11 +88,21 @@ PAGE = r"""<!doctype html>
   <p id="decksummary"></p>
   <table id="deckrows"></table>
 </section>
+<section id="whereis" hidden>
+  <p>
+    <input id="whereisref" size="60"
+           placeholder="/path/to/figure.png (or a ref like m0)">
+    <button id="whereis-btn" type="button">Where is this from?</button>
+  </p>
+  <p class="note">Searches the local figure corpus &mdash;
+    <code>figcite corpus build</code> is what fills it.</p>
+  <div id="whereisresult"></div>
+</section>
 <script>
 const $ = (s) => document.querySelector(s);
 
 function show(which) {
-  for (const t of ["pending", "deck"]) {
+  for (const t of ["pending", "deck", "whereis"]) {
     $("#" + t).hidden = (t !== which);
     $("#tab-" + t).setAttribute("aria-selected", String(t === which));
   }
@@ -480,6 +491,96 @@ async function applyDeck() {
   }
   alert("wrote " + (result.out || result.path || "the cited deck"));
 }
+
+// --- Where-is screen -------------------------------------------------------
+
+// `service.whereis()` answers with ONE list holding two different kinds of
+// thing, and the difference is the whole point. A pixel match is EVIDENCE:
+// the bytes of this figure are in your corpus, under that DOI. An open
+// browser tab is a LEAD: it is what you happened to be reading, and the
+// service ranks tabs last precisely because they are not evidence of
+// anything. Render them as one list and a no-match carrying two tabs looks
+// exactly like a hit -- an absence wearing an answer's clothes, which is the
+// one failure this whole project exists to prevent.
+//
+// Which is which comes off `m.evidence`, set by the service. Deriving it here
+// from `m.source in ["dhash", "orb"]` would be a list of names standing in
+// for an open set: add a third matcher and its every hit silently demotes.
+//
+// Pure (JSON in, HTML string out), like confirmedHtml above, so
+// tests/test_webui_whereis_screen.py runs this exact shipped function under
+// node against a real /api/whereis response instead of grepping PAGE.
+function whereisHtml(res) {
+  const all = res.matches || [];
+  const evidence = all.filter((m) => m.evidence);
+  const leads = all.filter((m) => !m.evidence);
+  const bits = [];
+
+  if (res.verdict === "match") {
+    bits.push(`<p class="nosrc">found in your corpus</p>`);
+  } else if (res.verdict === "no-match") {
+    // A finding, not a shrug: the corpus WAS searched and answered. Worded
+    // so it cannot be read as the could-not-decide case below.
+    bits.push(`<p class="nosrc">searched: this figure is not in your corpus</p>`);
+  } else {
+    // "I could not look" -- which licenses a different next action than "I
+    // looked and it is absent", so it gets warn styling and the reason.
+    bits.push(`<p class="fail">COULD NOT DECIDE: ${esc(res.reason || "")}</p>`);
+    bits.push(`<p class="note">nothing was ruled out: this is a failure to ` +
+      `look, not a finding about where the figure came from</p>`);
+  }
+
+  for (const m of evidence) {
+    bits.push(`<p><span class="src">${esc(m.source || "")}</span>` +
+      // `?? ""`, not `|| ""`: a dhash score IS a hamming distance, so 0 is
+      // the strongest result this screen can report -- and `0 || ""` is the
+      // empty string. Caught by running the real corpus through the real
+      // route: the best match it has renders its score blank.
+      `<strong>${esc(m.doi)}</strong> <span class="ev">${esc(m.score_label || (m.score ?? ""))}</span>` +
+      `<br><span class="ctx">${esc(m.title || "")} ` +
+      `${esc(m.container || "")}</span></p>`);
+  }
+
+  if (leads.length) {
+    bits.push(`<p class="note">leads from your open tabs &mdash; what you ` +
+      `had on screen, never evidence that the figure came from it:</p>`);
+    for (const m of leads) {
+      bits.push(`<p><span class="src">${esc(m.source || "")}</span>` +
+        `${esc(m.doi)} <span class="ctx">${esc(m.title || "")}</span></p>`);
+    }
+  }
+
+  if (evidence.length) {
+    // Same wording cli.cmd_whereis prints: a match is a candidate you accept,
+    // never a citation this screen attaches on your behalf.
+    bits.push(`<p class="ctx">accept one with ` +
+      `<code>figcite confirm &lt;ref&gt; --doi &lt;the DOI above&gt;</code></p>`);
+  }
+  return bits.join("");
+}
+
+async function lookupWhereis() {
+  const ref = $("#whereisref").value.trim();
+  // ORB over the whole corpus takes ~9s when dhash cannot answer (a crop),
+  // so silence here would read as a dead button.
+  $("#whereisresult").innerHTML = `<p class="ctx">searching…</p>`;
+  let res;
+  try {
+    res = await post("/api/whereis", { ref });
+  } catch (e) {
+    // post() already alerted. A blank result box after a failed search is
+    // indistinguishable from "nothing found" -- the same lie loadPending()'s
+    // catch exists to prevent, on the screen where it matters most.
+    $("#whereisresult").innerHTML =
+      `<p class="fail">COULD NOT SEARCH: ${esc(e.message || String(e))}</p>`;
+    return;
+  }
+  $("#whereisresult").innerHTML = whereisHtml(res);
+}
+
+$("#whereis").addEventListener("click", async (e) => {
+  if (e.target.id === "whereis-btn") await lookupWhereis();
+});
 
 // Delegated on the section, matching #pending: the buttons carry no
 // interpolated value, but routing clicks through one listener instead of

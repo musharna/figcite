@@ -50,6 +50,9 @@ AUDIT_FIELDS = {"path"}
 # Never "allow_unconfirmed" -- service.apply() also refuses it, but the route
 # must not even offer a path to try.
 APPLY_FIELDS = {"path", "out", "force"}
+# One field, and still routed through `_fields`: the point of that helper is
+# that no route in this file has a shape a later edit can widen by accident.
+WHEREIS_FIELDS = {"ref"}
 
 # Round-2 finding M5. `ThreadingHTTPServer` hands two THREADS in one process
 # the identical hazard the brief's `allow_reuse_address = False` guard exists
@@ -286,6 +289,15 @@ class _Handler(BaseHTTPRequestHandler):
                 with _LOCK:
                     service.skip(fields["ref"])
                 self._json({"ok": True})
+            elif u.path == "/api/whereis":
+                fields = _fields(payload, WHEREIS_FIELDS)
+                # Read-only, like /api/audit: it reads the corpus index and
+                # the query's own bytes and writes nothing, so it does not
+                # take `_LOCK`. It can also run ORB over the whole corpus
+                # (~9s measured at 1,214 figures when dhash declines), which
+                # is exactly the slow-work-under-a-lock shape round-4 I1
+                # removed from the confirm route.
+                self._json(service.whereis(fields["ref"]))
             elif u.path == "/api/audit":
                 fields = _fields(payload, AUDIT_FIELDS)
                 report = service.audit(fields["path"])  # read-only; see _LOCK
