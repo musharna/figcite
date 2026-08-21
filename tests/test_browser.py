@@ -186,9 +186,27 @@ def test_lookup_failure_is_reported_not_swallowed(monkeypatch):
     )
     assert "retry" in evidence.lower()
 
-    # positive control: with the lookup working, the SAME url resolves --
+    # positive control: with the lookup WORKING, the same url resolves --
     # otherwise the assertions above would pass on a url that simply has no DOI.
-    monkeypatch.undo()
+    #
+    # This used to be `monkeypatch.undo()` followed by a real call. Two things
+    # were wrong with that. `monkeypatch` is function-scoped and shared with
+    # conftest's autouse `_block_network` fixture, so `undo()` revoked the
+    # network guard and this line reached api.crossref.org on every non-live
+    # run -- which made the test fail intermittently under load, when CrossRef
+    # rate-limited it. And a positive control that depends on a third party
+    # being up can fail for reasons that have nothing to do with this code,
+    # which is the opposite of what a control is for.
+    class _Ok:
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def json():
+            return {"message": {"items": [{"DOI": "10.1016/j.ympev.2025.108410"}]}}
+
+    monkeypatch.setattr(B, "throttled_get", lambda *a, **kw: _Ok())
     assert B.doi_from_alternative_id(url) == "10.1016/j.ympev.2025.108410"
 
 

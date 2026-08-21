@@ -73,7 +73,7 @@ def _is_loopback(address) -> bool:
 
 
 @pytest.fixture(autouse=True)
-def _block_network(request, monkeypatch):
+def _block_network(request):
     """Non-live tests must never reach a real socket. Loopback is not one.
 
     Without this, removing a safety-critical guard (as happened with the
@@ -107,5 +107,21 @@ def _block_network(request, monkeypatch):
             "needs the network"
         )
 
-    monkeypatch.setattr(socket.socket, "connect", _blocked_connect)
-    yield
+    # A PRIVATE MonkeyPatch, deliberately not the `monkeypatch` fixture.
+    #
+    # `monkeypatch` is function-scoped, so this fixture and the test function
+    # were handed THE SAME instance -- and `undo()` is instance-wide, not
+    # per-caller. Any test calling `monkeypatch.undo()` therefore revoked this
+    # guard along with its own patches, and the rest of that test ran with the
+    # network wide open. `test_browser.py` did exactly that in its positive
+    # control and reached api.crossref.org on every non-live run, which is
+    # what made it fail intermittently under load: CrossRef rate-limited it.
+    #
+    # A guard the guarded code can revoke is not a guard. This instance is
+    # unreachable from the test, so no test can turn it off by accident.
+    mp = pytest.MonkeyPatch()
+    mp.setattr(socket.socket, "connect", _blocked_connect)
+    try:
+        yield
+    finally:
+        mp.undo()
