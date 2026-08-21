@@ -177,3 +177,57 @@ def test_the_two_surfaces_are_switched_independently(tmp_path):
     doc.close()
     assert SHORT in all_text, "credits=False also suppressed the caption"
     assert "Image credits" not in all_text, "credits=False still wrote a credits page"
+
+
+# --- the unsourced warning is a surface too ------------------------------
+
+
+def _unsourced_pdf(tmp_path, w_in, h_in, seed, name="bare.pdf"):
+    """A PDF holding one figure that is in no manifest, at a stated size."""
+    img = _figure(tmp_path / f"bare-{seed}.png", seed=seed, size=(1200, 120))
+    doc = fitz.open()
+    page = doc.new_page(width=612, height=792)
+    page.insert_image(
+        fitz.Rect(40, 40, 40 + w_in * 72, 40 + h_in * 72), filename=str(img)
+    )
+    p = tmp_path / name
+    doc.save(str(p))
+    doc.close()
+    return p
+
+
+def test_a_wide_short_unsourced_figure_is_still_warned_about(tmp_path):
+    """`apply` keeps its OWN copy of the decorative rule (pdfdeck.py:164), and
+    it survived `and -> or` separately from the copy in `audit`.
+
+    Here the consequence is on the delivered document rather than on a report:
+    a 6.0x0.6in figure with no record becomes "decorative", never reaches
+    `missing`, and the credits page stops saying anything about it. The deck
+    then reads as fully sourced while carrying an uncredited figure -- which is
+    the single outcome this tool exists to prevent.
+    """
+    pdf = _unsourced_pdf(tmp_path, 6.0, 0.6, seed=131)
+    out = tmp_path / "strip.cited.pdf"
+
+    rep = apply(pdf, out, captions=True, credits=True, min_inches=1.0)
+
+    assert rep["unsourced"] == 1, (
+        f"a 6.0x0.6in uncredited figure was written off as decorative: {rep}"
+    )
+    doc = fitz.open(str(out))
+    credits_page = doc[doc.page_count - 1].get_text()
+    doc.close()
+    assert "no recorded source" in credits_page, (
+        f"the credits page did not warn about it: {credits_page!r}"
+    )
+
+
+def test_a_small_icon_is_not_warned_about(tmp_path):
+    """Positive control. "Warn about everything" passes the test above while
+    flooding every deck's credits page with bullet icons."""
+    pdf = _unsourced_pdf(tmp_path, 0.4, 0.4, seed=132, name="icon.pdf")
+    out = tmp_path / "icon.cited.pdf"
+
+    rep = apply(pdf, out, captions=True, credits=True, min_inches=1.0)
+
+    assert rep["unsourced"] == 0, f"a 0.4x0.4in icon was reported as unsourced: {rep}"
