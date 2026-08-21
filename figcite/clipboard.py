@@ -23,17 +23,6 @@ from .pdfgrab import discover_doi
 PS1 = Path(__file__).with_name("watch_clipboard.ps1")
 PS_EXE = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 
-PDF_APPS = {
-    "acrobat",
-    "acrord32",
-    "sumatrapdf",
-    "foxitpdfreader",
-    "foxitreader",
-    "pdfxedit",
-    "zotero",
-    "okular",
-    "mupdf",
-}
 BROWSERS = {"msedge", "chrome", "firefox", "brave", "opera", "vivaldi"}
 
 # Apps whose job is to take a picture of some OTHER app. Under Win+Shift+S the
@@ -235,8 +224,9 @@ def infer_source(capture: dict) -> dict:
     is unconfirmed unless it came out of a PDF we actually located and read.
     """
     title = capture.get("title", "") or ""
-    # PowerShell's ProcessName has no ".exe", which is what BROWSERS/PDF_APPS are
-    # keyed on. Strip it anyway: if a capture ever arrives with the suffix, every
+    # PowerShell's ProcessName has no ".exe", which is what BROWSERS and
+    # CAPTURE_TOOLS are keyed on. Strip it anyway: if a capture ever arrives
+    # with the suffix, every
     # app-specific branch below silently stops matching and the only symptom is
     # worse inference -- a failure with no observable.
     proc = re.sub(r"\.exe$", "", (capture.get("process") or "").lower().strip())
@@ -296,6 +286,11 @@ def infer_source(capture: dict) -> dict:
     # the actual signal, and it is stronger than "is this app on my list".
     # Restoring the membership test would narrow behaviour, not fix a bug --
     # `tests/test_clipboard_grounding.py` pins the shipped contract.
+    #
+    # `PDF_APPS` (acrobat, sumatrapdf, foxit, okular, mupdf, ...) is therefore
+    # deleted rather than kept for reference. It had no consumer left, and an
+    # unused name list sitting beside this comment is an invitation to
+    # "restore" the check it was never able to make correctly.
     if pdf_name:
         path = find_pdf_on_disk(pdf_name)
         if path:

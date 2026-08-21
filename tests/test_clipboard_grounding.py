@@ -140,9 +140,15 @@ def test_a_pdf_title_from_an_unlisted_app_still_searches_the_disk(monkeypatch):
 
     # BROWSERS is the list that still gates a real branch (the browser route
     # above this one), and notepad must not be in it or this test would be
-    # exercising that path instead. PDF_APPS is deliberately not asserted on:
-    # with the dead predicate gone it has no consumer left in the module.
+    # exercising that path instead. `PDF_APPS` is gone entirely -- once the
+    # dead predicate was written out it had no consumer, and this test is what
+    # makes reinstating it a visible change rather than a quiet one.
     assert "notepad" not in clipboard.BROWSERS
+    assert not hasattr(clipboard, "PDF_APPS"), (
+        "PDF_APPS is back. It can only be gating this branch again, which "
+        "narrows the shipped behaviour this test pins: a PDF viewer is an open "
+        "set, and the title is the signal, not the process name."
+    )
 
     clipboard.infer_source({"process": "notepad.exe", "title": "paper.pdf"})
 
@@ -158,9 +164,7 @@ def test_a_title_that_names_no_pdf_does_not_search_the_disk(monkeypatch):
     an implementation that looked unconditionally."""
     called = []
     monkeypatch.setattr(clipboard, "pdf_name_from_title", lambda t: None)
-    monkeypatch.setattr(
-        clipboard, "find_pdf_on_disk", lambda name: called.append(name)
-    )
+    monkeypatch.setattr(clipboard, "find_pdf_on_disk", lambda name: called.append(name))
 
     clipboard.infer_source({"process": "notepad.exe", "title": "just some window"})
 
