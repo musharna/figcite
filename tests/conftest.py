@@ -1,6 +1,7 @@
 import ipaddress
 import os
 import socket
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -30,6 +31,36 @@ for _var in (
 os.environ["FIGCITE_ZOTERO_CACHE"] = str(Path(_TMP) / "zotero-cache")
 # ...including the on-disk credential file, which a real install has.
 os.environ["FIGCITE_ZOTERO_CONFIG"] = str(Path(_TMP) / "zotero-config.json")
+
+# Unit tests must never shell out to Windows. Without this, `staging_dirs()`
+# calls `_win_userprofile()`, which runs
+#
+#     powershell.exe -NoProfile -Command $env:USERPROFILE
+#
+# swallows every exception, and returns None on failure -- at which point
+# `staging_dirs` raises RuntimeError and whatever test touched
+# `service.pending_items()` fails for a reason that has nothing to do with
+# the code under test. `clipboard.py` already offers this override and
+# documents it as the way to say "I need my own queue instead of racing".
+#
+# Three things were wrong with leaving it unset:
+#
+#   1. It is a live external boundary inside the `not live` suite. PowerShell
+#      startup over WSL interop is slow and gets slower under load; the 30s
+#      timeout is generous until eight pytest processes compete for the CPU,
+#      and then it is not. Observed: a mutation-sweep worker's baseline came
+#      back red here while seven others were green.
+#   2. The failure direction is the quiet one. A harness that reads a failing
+#      test as evidence records the mutant as KILLED when no test caught it,
+#      so an interop hiccup silently manufactures coverage.
+#   3. The suite could not run at all off WSL -- no powershell.exe, so
+#      `staging_dirs()` raises on any machine without Windows interop. That
+#      is not a property a unit suite should have.
+#
+# A POSIX path is deliberate: `win_to_wsl` runs `wslpath -u`, which exits 1
+# on a path that is already POSIX and falls back to returning it unchanged,
+# so both halves of the tuple land on this directory and nothing shells out.
+os.environ["FIGCITE_STAGING_WIN"] = str(Path(_TMP) / "staging")
 
 
 # Findings I3/I4 (task-2 review, round 1). Imported down here, after the env
@@ -121,6 +152,74 @@ def _block_network(request):
     # unreachable from the test, so no test can turn it off by accident.
     mp = pytest.MonkeyPatch()
     mp.setattr(socket.socket, "connect", _blocked_connect)
+    try:
+        yield
+    finally:
+        mp.undo()
+
+
+class _InteropBlocked(BaseException):
+    """Derived from BaseException, not Exception, and that is the whole point.
+
+    The first version raised RuntimeError. `clipboard._win_userprofile` wraps
+    its PowerShell call in a bare `except Exception: pass` and returns None on
+    any failure, so it CAUGHT the guard's exception and swallowed the message;
+    what surfaced instead was `staging_dirs`'s own "is this WSL with Windows
+    interop enabled?", which sends the reader off diagnosing their machine
+    rather than the test. The block still worked -- no PowerShell was launched
+    -- but the reason for it did not survive the trip.
+
+    Same lesson as `_block_network` one fixture up, where a test's
+    `monkeypatch.undo()` revoked the network guard: a guard the guarded code
+    can neutralise is not a guard. `except Exception` cannot catch this.
+    """
+
+
+@pytest.fixture(autouse=True)
+def _block_windows_interop(request):
+    """Non-live tests must never shell out to Windows. Same shape as the
+    network block above, different boundary.
+
+    `staging_dirs()` used to reach `powershell.exe -Command $env:USERPROFILE`
+    on any test that touched `service.pending_items()` -- 24 launches per
+    `not live` run. PowerShell startup over WSL interop is slow, gets slower
+    under load, and `_win_userprofile` swallows every exception and returns
+    None, at which point `staging_dirs` raises. A mutation sweep running the
+    suite in 8 processes hit exactly that: one worker's baseline came back red
+    and it refused to run its ~231 mutants.
+
+    Setting `FIGCITE_STAGING_WIN` in this file removed all 24. This fixture is
+    what keeps it at 0 -- the difference between having fixed it once and it
+    staying fixed. The failure it prevents is quiet in the worst way: an
+    interop hiccup makes a test FAIL, and a harness that reads failure as
+    evidence records the mutant as KILLED when no test caught it.
+
+    Same private-MonkeyPatch reasoning as above: a guard the guarded code can
+    revoke is not a guard.
+    """
+    if request.node.get_closest_marker("live"):
+        yield
+        return
+
+    real_run = subprocess.run
+
+    def _blocked_run(*args, **kwargs):
+        argv = args[0] if args else kwargs.get("args")
+        parts = (
+            [argv] if isinstance(argv, (str, bytes, os.PathLike)) else list(argv or [])
+        )
+        if any("powershell" in str(p).lower() for p in parts):
+            raise _InteropBlocked(
+                f"a non-live test tried to launch PowerShell ({parts[:1]!r}). "
+                "Unit tests must not depend on Windows interop: it is slow, it "
+                "fails under load, and it makes the suite unrunnable off WSL. "
+                "Set FIGCITE_STAGING_WIN (already set here) or stub the call; "
+                "mark the test @pytest.mark.live if it genuinely needs Windows."
+            )
+        return real_run(*args, **kwargs)
+
+    mp = pytest.MonkeyPatch()
+    mp.setattr(subprocess, "run", _blocked_run)
     try:
         yield
     finally:

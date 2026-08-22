@@ -52,8 +52,18 @@ def _powerpoint_available() -> bool:
         return False
 
 
+# The condition is a STRING on purpose. pytest evaluates a string skipif
+# condition at test setup; a bare expression is evaluated when this module is
+# imported. Every test here is `live` and gets deselected by the `not live`
+# run the pre-push gate and the mutation sweep use -- but the module is still
+# IMPORTED during collection, so the eager form launched a PowerShell COM
+# probe on every single run of a suite that never executes one of these
+# tests. Over a mutation sweep that is one probe per mutant.
+#
+# Lazy means it runs when a PowerPoint test is actually about to run, which
+# is the only time the answer matters.
 requires_powerpoint = pytest.mark.skipif(
-    not _powerpoint_available(), reason="Microsoft PowerPoint COM not available"
+    "not _powerpoint_available()", reason="Microsoft PowerPoint COM not available"
 )
 
 
