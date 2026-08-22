@@ -172,9 +172,7 @@ def test_a_tagged_picture_is_not_counted_as_unsourced(tmp_path):
     tagged = _tagged(tmp_path, "has-record.png", confirmed=True, color=7)
     bare1 = _image(tmp_path / "no-record-1.png", color=41)
     bare2 = _image(tmp_path / "no-record-2.png", color=83)
-    deck = _deck(
-        tmp_path, [(tagged, 3.0, 2.2), (bare1, 3.0, 2.2), (bare2, 3.0, 2.2)]
-    )
+    deck = _deck(tmp_path, [(tagged, 3.0, 2.2), (bare1, 3.0, 2.2), (bare2, 3.0, 2.2)])
 
     rep = audit(str(deck), min_inches=1.0)
 
@@ -197,3 +195,36 @@ def test_a_figure_exactly_at_the_threshold_is_substantive(tmp_path):
     assert rep["untagged_substantive"] == 1, (
         f"a figure exactly at the threshold was dropped from the tally: {rep}"
     )
+
+
+@pytest.mark.parametrize(
+    "w_in,h_in",
+    [(1.0, 0.5), (0.5, 1.0)],
+    ids=["wide-at-threshold", "tall-at-threshold"],
+)
+def test_only_one_dimension_at_the_threshold_is_still_substantive(tmp_path, w_in, h_in):
+    """The predicate is TWO comparisons, and the square fixture above cannot
+    tell them apart.
+
+        decorative = w_in < min_inches and h_in < min_inches
+
+    Re-running the logic sweep on the current suite found `Lt -> LtE` still
+    surviving here even with the threshold test in place: at 1.0x1.0 both
+    comparisons are False, so flipping EITHER to `<=` leaves the `and` False
+    and nothing observable changes.
+
+    Asymmetric boundaries separate them -- 1.0x0.5 puts only the first
+    comparison on the boundary, 0.5x1.0 only the second -- so each case kills
+    exactly one mutant and neither covers for the other. Same rule as the
+    rest of this audit: two decisions need two observations.
+    """
+    img = _image(tmp_path / f"edge-{w_in}x{h_in}.png", color=19, size=(600, 300))
+    deck = _deck(tmp_path, [(img, w_in, h_in)])
+
+    rep = audit(str(deck), min_inches=1.0)
+
+    assert rep["rows"][0]["decorative"] is False, (
+        f"a {w_in}x{h_in}in figure with one dimension exactly at the threshold "
+        f"was written off as decorative: {rep['rows'][0]}"
+    )
+    assert rep["untagged_substantive"] == 1, rep

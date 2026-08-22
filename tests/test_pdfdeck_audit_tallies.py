@@ -160,6 +160,51 @@ def test_a_figure_exactly_at_the_threshold_is_substantive(tmp_path):
     )
 
 
+@pytest.mark.parametrize(
+    "w_in,h_in",
+    [(1.0, 0.5), (0.5, 1.0)],
+    ids=["wide-at-threshold", "tall-at-threshold"],
+)
+def test_only_one_dimension_at_the_threshold_is_still_substantive(tmp_path, w_in, h_in):
+    """The predicate is TWO comparisons, and a square fixture cannot tell them
+    apart.
+
+        decorative = bool(r) and w_in < min_inches and h_in < min_inches
+
+    The re-run of the logic sweep found `Lt -> LtE` surviving here (and in the
+    deck twin) even with the threshold test above in place. At 1.0x1.0 both
+    comparisons are False, so flipping EITHER one to `<=` leaves the `and`
+    False and nothing observable changes -- the test passes on the mutant.
+
+    Asymmetric boundaries separate them. At 1.0x0.5 only the first comparison
+    sits on the boundary; at 0.5x1.0 only the second. Each case kills exactly
+    one of the two mutants, and neither can cover for the other.
+
+    The behaviour being pinned is real: under `<=`, a figure exactly one inch
+    wide and half an inch tall -- a panel strip -- becomes decorative and
+    drops out of the unsourced tally.
+    """
+    # The source image's aspect must MATCH the target rect. `insert_image`
+    # keeps proportions, so feeding a 2:1 image into a 1:2 rect letterboxes
+    # it and the placed height comes back smaller than asked for -- which
+    # made this test fail on unmutated code, reporting a fixture bug as a
+    # defect. Derive the pixel size from the requested inches instead.
+    img = _figure(
+        tmp_path / f"edge-{w_in}x{h_in}.png",
+        seed=19,
+        size=(int(w_in * 600), int(h_in * 600)),
+    )
+    pdf = _pdf(tmp_path, [(img, w_in, h_in)])
+
+    rep = audit(pdf, min_inches=1.0)
+
+    assert rep["rows"][0]["decorative"] is False, (
+        f"a {w_in}x{h_in}in figure with one dimension exactly at the threshold "
+        f"was written off as decorative: {rep['rows'][0]}"
+    )
+    assert rep["untagged_substantive"] == 1, rep
+
+
 def test_the_two_size_rules_are_applied_per_figure(tmp_path):
     """Both kinds in one PDF, so the tally has to discriminate rather than
     apply one verdict to everything."""
