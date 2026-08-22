@@ -141,29 +141,31 @@ def test_a_flat_query_reports_no_duplicates_rather_than_false_ones(wired):
 # ------------------------------------------------------------ service layer
 
 
-def test_the_service_reports_other_dois_with_their_licence(wired):
+def test_the_service_reports_other_dois_with_their_licence(wired, tmp_path):
     from figcite import service
 
-    out = service.duplicates(_write_tmp(wired), credited_doi="10.1/credited")
+    out = service.duplicates(_write_tmp(tmp_path, wired), credited_doi="10.1/credited")
     assert [o["doi"] for o in out["others"]] == ["10.1/elsewhere"]
     assert out["others"][0]["licence"] == "CC BY"
     assert out["reason"] == ""
 
 
-def test_the_service_says_WHY_when_it_could_not_compare(wired):
-    """"No duplicates" and "I could not look" must not read the same."""
+def test_the_service_says_WHY_when_it_could_not_compare(wired, tmp_path):
+    """ "No duplicates" and "I could not look" must not read the same."""
     from figcite import service
 
-    out = service.duplicates(_write_tmp(_flat("blue")), credited_doi="10.1/x")
+    out = service.duplicates(_write_tmp(tmp_path, _flat("blue")), credited_doi="10.1/x")
     assert out["others"] == []
     assert "compare" in out["reason"].lower() or "feature" in out["reason"].lower()
 
 
-def test_the_service_distinguishes_a_genuine_absence(wired):
+def test_the_service_distinguishes_a_genuine_absence(wired, tmp_path):
     """Positive control: a real 'nothing found' must not borrow the other reason."""
     from figcite import service
 
-    out = service.duplicates(_write_tmp(_textured(999)), credited_doi="10.1/x")
+    out = service.duplicates(
+        _write_tmp(tmp_path, _textured(999)), credited_doi="10.1/x"
+    )
     assert out["others"] == []
     assert "compare" not in out["reason"].lower()
 
@@ -171,11 +173,32 @@ def test_the_service_distinguishes_a_genuine_absence(wired):
 _TMP_N = [0]
 
 
-def _write_tmp(blob):
-    import tempfile
-    from pathlib import Path
+def _write_tmp(tmp_path, blob):
+    """Write a query image where PYTEST says scratch space lives.
 
+    This used to write `tempfile.gettempdir()/figcite_dup_{N}.png`, and the
+    counter is a module global that restarts at 0 in every process -- so any
+    two concurrent pytest runs both claim `/tmp/figcite_dup_1.png`. One writes
+    a flat blue PNG while the other is reading back a textured one, and the
+    reader gets a torn file: `PIL.UnidentifiedImageError: cannot identify image
+    file`. It fails in whichever process lost the race, on whichever test got
+    there first, which is why it reads as a flake.
+
+    That is not hypothetical -- it is how this was found. A mutation sweep runs
+    the suite in 8 processes at once; one worker's baseline came back red here
+    while the other seven were green.
+
+    The collision direction that matters is not the red one. A torn read makes
+    a test FAIL, so under a mutation sweep it reports a mutant as KILLED that
+    no test actually caught, and a killed mutant is a finding that never gets
+    looked at. A shared-path flake in a suite is noise; in a harness that reads
+    failure as evidence, it manufactures false coverage.
+
+    `tmp_path` is per-test, unique per process, and pytest cleans it up, so the
+    name cannot be claimed twice. It was available all along -- `wired` already
+    takes it; this helper just could not reach it from module scope.
+    """
     _TMP_N[0] += 1
-    p = Path(tempfile.gettempdir()) / f"figcite_dup_{_TMP_N[0]}.png"
+    p = tmp_path / f"figcite_dup_{_TMP_N[0]}.png"
     p.write_bytes(blob)
     return str(p)

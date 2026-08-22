@@ -42,7 +42,7 @@ def test_a_could_not_decide_reason_has_somewhere_to_land():
     )
 
 
-def test_the_two_kinds_of_candidate_carry_different_labels(monkeypatch):
+def test_the_two_kinds_of_candidate_carry_different_labels(monkeypatch, tmp_path):
     """The badge is only worth rendering if the values it shows differ.
 
     Positive control on the whole guard: if every candidate reported the same
@@ -52,27 +52,43 @@ def test_the_two_kinds_of_candidate_carry_different_labels(monkeypatch):
     monkeypatch.setattr(
         session_tabs,
         "tab_candidates",
-        lambda: [{"source": "open-tab", "doi": "10.1/tab", "title": "t",
-                  "container": "", "year": "", "score": ""}],
+        lambda: [
+            {
+                "source": "open-tab",
+                "doi": "10.1/tab",
+                "title": "t",
+                "container": "",
+                "year": "",
+                "score": "",
+            }
+        ],
     )
-    labels = {c["source"] for c in _candidates_with_a_pixel_match(monkeypatch)}
+    labels = {
+        c["source"] for c in _candidates_with_a_pixel_match(monkeypatch, tmp_path)
+    }
     assert "open-tab" in labels
     assert labels - {"open-tab"}, "a pixel match reported the same source as a tab"
 
 
-def _candidates_with_a_pixel_match(monkeypatch):
+def _candidates_with_a_pixel_match(monkeypatch, tmp_path):
     from figcite import corpus, match
 
     monkeypatch.setattr(corpus, "connect", lambda: None)
     monkeypatch.setattr(corpus, "all_rows", lambda conn: [_Row()])
     monkeypatch.setattr(
-        match, "by_dhash",
-        lambda b, rows: match.Match("10.1/pixel", "PMC1", "Figure 1", "dhash", 1.0, 9.0),
+        match,
+        "by_dhash",
+        lambda b, rows: match.Match(
+            "10.1/pixel", "PMC1", "Figure 1", "dhash", 1.0, 9.0
+        ),
     )
-    import tempfile
-    from pathlib import Path
-
-    p = Path(tempfile.gettempdir()) / "figcite_badge_probe.png"
+    # `tempfile.gettempdir()/figcite_badge_probe.png` -- a FIXED name in the
+    # shared temp dir -- is the same escape that made test_corpus_duplicates
+    # tear under concurrent runs. Identical content makes a torn read less
+    # likely here, not impossible, and "less likely" is the property that
+    # turns a defect into an intermittent one. pytest's tmp_path cannot be
+    # claimed by another process.
+    p = tmp_path / "figcite_badge_probe.png"
     p.write_bytes(b"not really a png")
     return service.whereis(str(p))["matches"]
 
