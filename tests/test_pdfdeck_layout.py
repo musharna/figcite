@@ -598,3 +598,67 @@ def test_a_caption_with_no_room_below_is_moved_up_rather_than_dropped():
         )
     finally:
         doc.close()
+
+
+def test_a_zero_width_image_does_not_disable_the_mask_filter(tmp_path):
+    """The equivalence proof I got WRONG, and the case that falsifies it.
+
+    `masks = {info[1] for info in infos if info[1]}` -- the FILTER's `info[1]`
+    mutated to `info[2]` (the width). I argued this was equivalent by
+    construction: the filter only exists to drop the sentinel 0, and adding 0
+    to the mask set is harmless because PDF object 0 is the free-list head, so
+    no image can have xref 0.
+
+    That reasoning is sound and INCOMPLETE. It only covers the direction where
+    the mutant ADDS 0 to the set. The mutant also REMOVES entries: any image
+    whose width is 0 stops contributing its soft-mask xref, so a real mask is
+    no longer recognised. `/Width 0` is degenerate but it parses, and
+    `get_images(full=True)` reports it faithfully.
+
+    The falsifying document needs both halves at once -- a zero-width image
+    carrying an SMask, AND that mask promoted to a top-level XObject (the
+    Ghostscript shape this whole function exists for). The zero-width image
+    itself then fails extraction and is skipped either way, so the observable
+    difference is the MASK: correct code recognises xref 5 as a mask and
+    yields nothing, while the mutant does not and yields the alpha channel as
+    a figure -- precisely the defect the filter was written to prevent.
+
+    Written by hand rather than through PyMuPDF's writer, which will not
+    produce a zero-width image on request.
+    """
+    pdf = (
+        b"%PDF-1.4\n"
+        b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+        b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+        b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]"
+        b"/Resources<</XObject<</Im0 4 0 R/Im1 5 0 R>>>>/Contents 6 0 R>>endobj\n"
+        b"4 0 obj<</Type/XObject/Subtype/Image/Width 0/Height 10"
+        b"/ColorSpace/DeviceGray/BitsPerComponent 8/SMask 5 0 R/Length 0>>stream\n"
+        b"endstream\nendobj\n"
+        b"5 0 obj<</Type/XObject/Subtype/Image/Width 10/Height 10"
+        b"/ColorSpace/DeviceGray/BitsPerComponent 8/Length 100>>stream\n"
+        + b"\x80"
+        * 100
+        + b"\nendstream\nendobj\n"
+        b"6 0 obj<</Length 60>>stream\n"
+        b"q 100 0 0 100 10 10 cm /Im0 Do Q q 50 0 0 50 10 120 cm /Im1 Do Q\n"
+        b"endstream\nendobj\n"
+        b"trailer<</Root 1 0 R/Size 7>>\n"
+    )
+    p = tmp_path / "promoted.pdf"
+    p.write_bytes(pdf)
+
+    with fitz.open(str(p)) as doc:
+        infos = list(doc[0].get_images(full=True))
+        assert [i[2] for i in infos] == [0, 10], (
+            f"the fixture no longer carries a zero-width image: {infos}"
+        )
+
+        got = [g["xref"] for g in pdfdeck.iter_pdf_images(doc)]
+
+    assert 5 not in got, (
+        f"the promoted soft mask (xref 5) was counted as a figure: {got}. The "
+        f"mask filter stopped recognising it because the image carrying it "
+        f"has zero width."
+    )
+    assert got == [], got

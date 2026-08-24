@@ -4,3 +4,6 @@ __pycache__/
 demo/*.pptx
 demo/*.csv
 demo/*.json
+
+# codex-consult session traces -- tool scratch, not source
+.codex-consult/
