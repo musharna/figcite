@@ -179,6 +179,12 @@ def _target_features(row, image_root, descriptor_dir, orb):
     Prefers the build-time cache and falls back to decoding the image, so a
     corpus built before opencv was installed still works once it is -- and so
     a missing cache entry degrades in speed, never in correctness.
+
+    Returning `(None, None)` is this function's ONE way of saying "this row is
+    unusable"; the caller skips such rows, and if every row is unusable
+    `by_orb` returns CouldNotDecide. Every way a row can fail has to arrive
+    there, or it escapes as an exception and the query gets no verdict at all
+    -- neither Match, nor NoMatch, nor CouldNotDecide.
     """
     import cv2
     import numpy as np
@@ -194,7 +200,16 @@ def _target_features(row, image_root, descriptor_dir, orb):
     img = cv2.imread(str(Path(image_root) / row.image_path), cv2.IMREAD_GRAYSCALE)
     if img is None:
         return None, None
-    kp, desc = orb.detectAndCompute(img, None)
+    try:
+        kp, desc = orb.detectAndCompute(img, None)
+    except cv2.error:
+        # OpenCV REFUSES some decodable images rather than returning nothing
+        # for them -- a 1x1 PNG raises out of `resize`, because the detector
+        # needs a patch larger than the whole image. Found by this module's
+        # own audit: one such figure anywhere in the corpus crashed the entire
+        # query. Narrow on purpose: cv2's own refusal is the recoverable case,
+        # and anything else (a MemoryError, a bad `orb`) still fails loudly.
+        return None, None
     if desc is None or not kp:
         return None, None
     return desc, np.float32([k.pt for k in kp]).reshape(-1, 2)
