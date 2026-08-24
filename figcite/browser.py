@@ -374,18 +374,6 @@ def url_to_doi(url: str, *, allow_fetch: bool = True) -> tuple[Optional[str], st
             except Exception as e:
                 unavailable.append(f"CrossRef verification failed for {cand}: {e}")
 
-    cand = None
-    if cand:
-        tried.append(f"{cand} from a publisher article ID (PII)")
-        try:
-            if fetch_work(cand) is not None:
-                return cand, (
-                    "the publisher article ID in the URL, resolved through "
-                    "CrossRef alternative-id (verified in CrossRef)"
-                )
-        except Exception:
-            pass
-
     if allow_fetch:
         cand = doi_from_page_meta(url)
         if cand:
