@@ -676,3 +676,38 @@ def test_a_corpus_of_only_unreadable_figures_is_could_not_decide(tmp_path):
 
     assert isinstance(v, match.CouldNotDecide), v
     assert "no corpus figure could be read" in v.reason, v.reason
+
+
+def test_a_lone_candidate_too_close_to_call_reports_a_runner_up_of_zero(
+    tmp_path, monkeypatch
+):
+    """The second equivalence proof I got wrong.
+
+    `second = scored[1][0] if len(scored) > 1 else 0` -- mutated to `else 1`.
+    I argued this was equivalent because the value only feeds
+    `max(second, 1)`, and max(0,1) == max(1,1).
+
+    It does not only feed that. Four lines down `second` is interpolated INTO
+    the CouldNotDecide message: "the two best candidates are too close to call
+    ({best_n} vs {second})". With one corpus row the mutant makes that read
+    "(8 vs 1)" -- naming a runner-up that does not exist.
+
+    Reaching it needs `MIN_INLIERS <= best_n < MIN_MARGIN`, which the shipped
+    constants (15 and 3.0) make impossible -- so the proof was true of
+    PRODUCTION and false of the code. A test may set those constants, and
+    several in this file already do. "No test can ever kill it" was a claim
+    about the input space, not a proof.
+    """
+    monkeypatch.setattr(match, "MIN_INLIERS", 1)
+    monkeypatch.setattr(match, "MIN_MARGIN", 100.0)
+
+    q = _textured(83)
+    rows = _identity_corpus(tmp_path, q)
+    _stub_matcher(monkeypatch, 8, 0, 100)
+
+    v = match.by_orb(_png(q), rows, tmp_path, tmp_path / "desc")
+
+    assert isinstance(v, match.CouldNotDecide), v
+    assert "(8 vs 0)" in v.reason, (
+        f"a lone candidate reported a runner-up that does not exist: {v.reason!r}"
+    )
