@@ -43,18 +43,28 @@ def _in_cli_words(msg: str) -> str:
     exist is worse than saying nothing. It has one now, so it is translated
     like the others.
     """
-    for kwarg, flag in (("doi=", "--doi"), ("pick=", "--pick N"), ("cite=", "--cite"),
-                        ("own_work=True", "--own-work")):
+    for kwarg, flag in (
+        ("doi=", "--doi"),
+        ("pick=", "--pick N"),
+        ("cite=", "--cite"),
+        ("own_work=True", "--own-work"),
+    ):
         msg = msg.replace(kwarg, flag)
     return msg
 
 
-def _finalize(src: Path, rec: Record, out: Optional[str], quiet: bool = False) -> Path:
+def _finalize(src: Path, rec: Record, out: Optional[str]) -> Path:
     """CLI-side wrapper: the service's finalize() no longer prints, so the CLI
-    prints here instead -- the one place that still needs to."""
+    prints here instead -- the one place that still needs to.
+
+    This used to take `quiet: bool = False` guarding the print. No caller ever
+    passed it and no flag exposed it, so the guard had exactly one reachable
+    outcome -- which is why the mutation sweep could drop its `not` and no
+    test could tell. An unreachable parameter is a branch that only ever
+    misleads a reader about what the function can do.
+    """
     dest = _finalize_no_print(src, rec, out)
-    if not quiet:
-        _print_filed(rec, dest)
+    _print_filed(rec, dest)
     return dest
 
 
