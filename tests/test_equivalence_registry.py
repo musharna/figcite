@@ -277,14 +277,26 @@ def _roundtrip(src: str) -> str:
 _PLUGIN = """
 import json, os
 _failed = []
+_errored = []
 
 def pytest_runtest_logreport(report):
     if report.failed:
-        _failed.append(report.nodeid)
+        # A "call" failure is a test disagreeing with the code. A setup or
+        # teardown failure is pytest's ERROR: the test never got to run, so it
+        # is infrastructure, not evidence. Kept apart deliberately -- see the
+        # runner, which will not read the second as a kill.
+        (_failed if report.when == "call" else _errored).append(report.nodeid)
 
 def pytest_sessionfinish(session, exitstatus):
     with open(os.environ["FIGCITE_REGISTRY_REPORT"], "w", encoding="utf-8") as fh:
-        json.dump({"failed": sorted(set(_failed)), "exitstatus": int(exitstatus)}, fh)
+        json.dump(
+            {
+                "failed": sorted(set(_failed)),
+                "errored": sorted(set(_errored)),
+                "exitstatus": int(exitstatus),
+            },
+            fh,
+        )
 """
 
 
@@ -389,16 +401,38 @@ def _run(tree: Path, selection: list[str]) -> Run:
 
     tail = "\n".join((out + err).strip().splitlines()[-12:])
     failed: list[str] = []
+    errored: list[str] = []
     if report.exists():
         try:
-            failed = json.loads(report.read_text(encoding="utf-8"))["failed"]
+            data = json.loads(report.read_text(encoding="utf-8"))
+            failed = data["failed"]
+            errored = data.get("errored", [])
         except (ValueError, KeyError):
-            failed = []
+            failed, errored = [], []
 
     # pytest: 0 all passed, 1 tests failed, 2 interrupted, 3 internal error,
     # 4 usage error, 5 nothing collected. Only 0 and 1 are evidence.
     if proc.returncode == 0:
         return Run(Outcome.SURVIVED, 0, [], tail)
+
+    # An ERROR is a test that never ran -- a fixture blew up, a browser could
+    # not reach the page, a port was taken. That is the environment
+    # misbehaving, not a test disagreeing with the code, and reading it as a
+    # kill is the "outage folded into an absence" mistake this repo is about.
+    #
+    # Observed, which is why this is here: running the mutation tier alongside
+    # the push gate put enough load on the machine that a Playwright test
+    # errored with net::ERR_NETWORK_CHANGED. The registry called that a KILL,
+    # the round-trip control reported pdfdeck.py's transform as lossy, and a
+    # push was blocked over a browser hiccup. The test passes alone.
+    if errored:
+        return Run(
+            Outcome.HARNESS_ERROR,
+            proc.returncode,
+            failed,
+            f"{len(errored)} test(s) ERRORED rather than failed, so this run is "
+            f"not evidence either way -- first: {errored[0]}\n{tail}",
+        )
     if proc.returncode == 1 and failed:
         return Run(Outcome.KILLED, 1, failed, tail)
     return Run(
