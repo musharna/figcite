@@ -276,3 +276,19 @@ def _private_store(tmp_path, monkeypatch):
     # exactly the state this replaced.
     assert str(home) in str(store.MANIFEST), store.MANIFEST
     assert str(home) in str(corpus.DB_PATH), corpus.DB_PATH
+
+
+@pytest.fixture
+def ppt_module():
+    """The PowerPoint guard module, imported WITHOUT running its tests.
+
+    Its safety predicates are pure string handling, so they belong in the
+    ordinary suite; the tests around them are `live` and stay deselected.
+    """
+    import importlib.util
+
+    path = Path(__file__).resolve().parent / "test_pptx_powerpoint.py"
+    spec = importlib.util.spec_from_file_location("_ppt_guard", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod

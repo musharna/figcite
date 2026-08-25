@@ -80,7 +80,7 @@ def _powerpoint_available() -> bool:
         r"\App Paths\POWERPNT.EXE' -ErrorAction SilentlyContinue) "
         r"{'INSTALLED'} else {'NO'}"
     )
-    return ok and "INSTALLED" in out
+    return ok and out.strip() == "INSTALLED"
 
 
 def _powerpoint_already_running() -> bool:
@@ -98,9 +98,11 @@ def _powerpoint_already_running() -> bool:
         "if (Get-Process POWERPNT -ErrorAction SilentlyContinue) "
         "{'RUNNING'} else {'NOT-RUNNING'}"
     )
-    if not ok or ("RUNNING" not in out and "NOT-RUNNING" not in out):
-        return True  # UNKNOWN is treated as BUSY: refuse, never assume idle
-    return "NOT-RUNNING" not in out
+    # EXACT match, not substring. `"NOT-RUNNING" not in out` AUTHORISES COM on
+    # the output "RUNNING\nNOT-RUNNING", because the busy sentinel contains the
+    # idle one. Only an exact, positive idle report proceeds; busy, garbage,
+    # contaminated output, and a probe that did not run are all treated as busy.
+    return not (ok and out.strip() == "NOT-RUNNING")
 
 
 @pytest.fixture(autouse=True)
@@ -127,10 +129,9 @@ def _refuse_to_touch_someone_elses_powerpoint():
     """
     if _powerpoint_already_running():
         pytest.skip(
-            "PowerPoint is already running -- it belongs to whoever is at the "
-            "keyboard. These tests call Application.Quit(), which would close "
-            "their unsaved work. Close PowerPoint and re-run, or run them on a "
-            "machine nobody is using."
+            "PowerPoint is already running -- it belongs to whoever is at "
+            "the keyboard, and these tests drive it. Close PowerPoint and "
+            "re-run, or run them on a machine nobody is using."
         )
 
 
@@ -226,7 +227,7 @@ def test_figcite_reads_a_deck_that_powerpoint_wrote(workdir, figures):
         f"foreach ($f in (Get-ChildItem '{win}\\ppfig*.png')) {{ "
         f"  $s = $pres.Slides.Add($i, 12); "
         f"  $null = $s.Shapes.AddPicture($f.FullName, 0, -1, 60, 60, 520, 340); $i++ }}; "
-        f"$pres.SaveAs('{out_win}'); $pres.Close(); if ($ppt.Presentations.Count -eq 0) {{ $ppt.Quit() }}; Write-Output DONE"
+        f"$pres.SaveAs('{out_win}'); $pres.Close(); Write-Output DONE"
     )
     assert "DONE" in r.stdout, f"PowerPoint failed to write the deck: {r.stderr[:300]}"
 
@@ -257,7 +258,7 @@ def test_powerpoint_opens_figcite_output_without_repairing_it(workdir, figures):
         f"foreach ($s in $pres.Slides) {{ foreach ($sh in $s.Shapes) {{ "
         f"  if ($sh.Type -eq 13) {{ Write-Output ('ALT=' + $sh.AlternativeText) }}; "
         f"  Write-Output ('NAME=' + $sh.Name) }} }}; "
-        f"$pres.Close(); if ($ppt.Presentations.Count -eq 0) {{ $ppt.Quit() }}; Write-Output OPENED_CLEAN"
+        f"$pres.Close(); Write-Output OPENED_CLEAN"
     )
     assert "OPENED_CLEAN" in r.stdout, (
         f"PowerPoint could not open figcite's output: {r.stderr[:400]}"
@@ -321,7 +322,7 @@ def test_powerpoint_opens_a_deck_applied_through_the_web_path(workdir, figures):
         f"$ppt = New-Object -ComObject PowerPoint.Application; $ppt.Visible = -1; "
         f"$pres = $ppt.Presentations.Open('{win}\\web-applied.pptx', -1, 0, -1); "
         f"Write-Output ('SLIDES=' + $pres.Slides.Count); "
-        f"$pres.Close(); if ($ppt.Presentations.Count -eq 0) {{ $ppt.Quit() }}; Write-Output OPENED_CLEAN"
+        f"$pres.Close(); Write-Output OPENED_CLEAN"
     )
     assert "OPENED_CLEAN" in r.stdout, (
         f"PowerPoint could not open a deck applied through service.apply(): "
@@ -345,7 +346,7 @@ def test_provenance_survives_a_powerpoint_edit_and_save(workdir, figures):
         f"$ppt = New-Object -ComObject PowerPoint.Application; $ppt.Visible = -1; "
         f"$pres = $ppt.Presentations.Open('{win}\\cited.pptx', 0, 0, -1); "
         f"$pres.Slides[1].Shapes[1].Left = $pres.Slides[1].Shapes[1].Left + 5; "
-        f"$pres.SaveAs('{win}\\resaved.pptx'); $pres.Close(); if ($ppt.Presentations.Count -eq 0) {{ $ppt.Quit() }}; "
+        f"$pres.SaveAs('{win}\\resaved.pptx'); $pres.Close(); "
         f"Write-Output RESAVED"
     )
     assert "RESAVED" in r.stdout, f"PowerPoint could not resave: {r.stderr[:300]}"
