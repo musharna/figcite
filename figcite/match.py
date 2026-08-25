@@ -75,10 +75,19 @@ def by_dhash(query_bytes: bytes, rows) -> Verdict:
 
     try:
         dh = dhash_bytes(query_bytes)
-    except (OSError, ValueError):
-        # PIL's own refusal, narrow on purpose: UnidentifiedImageError and
-        # "Truncated File Read" are both OSError. Anything else -- a
+    except OSError:
+        # PIL's own refusal, and ONLY that. UnidentifiedImageError subclasses
+        # OSError, and so does "Truncated File Read"; anything else -- a
         # MemoryError, a bug in here -- still fails loudly.
+        #
+        # This caught `(OSError, ValueError)` when it was first written an
+        # hour earlier, and the exception-routing mutation tier showed the
+        # `ValueError` arm was never exercised. Probed 12 adversarial inputs
+        # -- zero-width, zero-height, 1-bit, 16-bit, seven TIFF colour modes
+        # -- and every failure was OSError. Breadth nobody can point at is a
+        # list of names guarding an open set, and the narrowing is the safe
+        # direction anyway: an unforeseen ValueError now surfaces instead of
+        # being quietly relabelled "could not decide".
         #
         # Note this decision belongs HERE and not in `dhash_bytes`, which is
         # also called at INDEX time by `corpus.build` and `provenance.embed`.
