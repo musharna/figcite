@@ -224,3 +224,55 @@ def _block_windows_interop(request):
         yield
     finally:
         mp.undo()
+
+
+@pytest.fixture(autouse=True)
+def _private_store(tmp_path, monkeypatch):
+    """Every test gets its own store, corpus and library.
+
+    The session used to share one `FIGCITE_HOME` created at import, so a
+    figure filed by one test stayed visible to every test after it. That is
+    not a hypothetical: two tests written during the mutation audit passed
+    alone and failed only in the full suite, because both matchers fall back
+    to `store.find_similar` over the GLOBAL store whatever manifest they are
+    handed, and a blank query image perceptually matched a record some
+    unrelated test had filed.
+
+    It also cost the equivalence registry its parallelism. `conftest` is
+    imported once per PROCESS, so under xdist each worker got its own store
+    and the accumulation was partitioned rather than shared -- which makes a
+    mutant killed only via accumulated state able to survive in a worker that
+    never accumulates it. The registry had to run serially to model the gate
+    honestly. With the store private per TEST there is no accumulation to
+    partition, and the two topologies stop being able to disagree.
+
+    Repointing rather than re-importing: nothing does `from .store import
+    MANIFEST`, so every consumer reads these through the module and sees the
+    new value. `corpus`'s four paths are computed from `store.DATA_DIR` at
+    import and frozen, so they need repointing of their own -- a fixture that
+    moved only the store would leave every corpus test sharing one sqlite
+    file and look like it had isolated them.
+    """
+    from figcite import corpus, store
+
+    home = tmp_path / "figcite-home"
+    corpus_dir = home / "corpus"
+    monkeypatch.setenv("FIGCITE_HOME", str(home))
+    for obj, name, value in (
+        (store, "DATA_DIR", home),
+        (store, "MANIFEST", home / "manifest.jsonl"),
+        (store, "STAGING", home / "staging"),
+        (store, "LIBRARY", home / "library"),
+        (corpus, "CORPUS_DIR", corpus_dir),
+        (corpus, "DB_PATH", corpus_dir / "figures.sqlite"),
+        (corpus, "IMAGE_DIR", corpus_dir / "images"),
+        (corpus, "DESCRIPTOR_DIR", corpus_dir / "descriptors"),
+    ):
+        monkeypatch.setattr(obj, name, value)
+
+    # The isolation has to be OBSERVED, not assumed. A fixture that silently
+    # stopped repointing -- a renamed attribute, a new path added to store --
+    # would leave the suite green and sharing one directory again, which is
+    # exactly the state this replaced.
+    assert str(home) in str(store.MANIFEST), store.MANIFEST
+    assert str(home) in str(corpus.DB_PATH), corpus.DB_PATH

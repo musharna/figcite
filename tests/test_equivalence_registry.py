@@ -50,23 +50,35 @@ attribute.
 
 ## One canonical execution profile
 
-Runs are SERIAL and the profile is fixed. An earlier version opportunistically
-added `-n auto` when xdist happened to be importable. That is unsound here, not
-merely fast: this suite's conftest does `os.environ["FIGCITE_HOME"] =
-mkdtemp()` at import, conftest is imported once per process, so under xdist
-every worker gets its OWN store and the global figure store is PARTITIONED
-instead of accumulating. This suite demonstrably has cross-test coupling
-through that store -- two tests written earlier in this audit passed alone and
-failed only in the full suite, because both matchers fall back to
-`store.find_similar` over the global store whatever manifest is passed. A
-mutant killed only via accumulated state could therefore be scheduled into a
-worker that never accumulates it, and the registry would certify a claim that
-is false serially.
+The profile is fixed: a pinned worker count, no plugin autoloading, no
+randomised order.
 
-Measured before removing it: all five claims plus the control gave identical
-verdicts serially and under `-n auto`. That is not a defence -- it shows those
-five agreed in that run, not that the topology is sound for the next claim.
-Parallelism is used only ACROSS runs, where the processes share nothing.
+Runs were forced SERIAL for most of this file's life, and the reason is kept
+because it was retired rather than overruled. conftest built one
+`FIGCITE_HOME` at import and conftest is imported once per PROCESS, so under
+xdist each worker accumulated its own store instead of sharing one. This
+suite had real coupling through that store -- two tests written during the
+audit passed alone and failed only in the full suite, because both matchers
+fall back to `store.find_similar` over the global store whatever manifest they
+are handed. A mutant killed only via accumulated state could be scheduled into
+a worker that never accumulated it, and the registry would certify a claim
+that is false serially.
+
+conftest now gives every TEST its own store, corpus and library, so there is
+no accumulation to partition and that argument no longer has a premise.
+Parallelism is used both inside a run and across runs.
+
+Note what did NOT justify the change: all 12 claims plus the control gave
+identical verdicts serially and under `-n 8`, 0 disagreements -- and it was 0
+disagreements BEFORE the isolation too, which was correctly refused as a
+reason at the time. Agreement across a fixed set of mutants shows those
+mutants agreed in that run, never that the topology is sound. The mechanism
+going away is the reason; the measurement is corroboration.
+
+Scope, narrower than "nothing is shared": the store axis is gone by
+construction. `crossref.MAILTO` is a constant and `crossref._last_call` /
+`pmc._last_call` are rate-limiter timestamps no test reads across tests.
+Those are the only per-process leftovers.
 
 The profile also sanitises `PYTEST_ADDOPTS`, `PYTHONPATH` and `FIGCITE_*`,
 pins `PYTHONHASHSEED`, and disables plugin autoloading so an unrelated
@@ -105,6 +117,9 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 SELF = Path(__file__).name
 TIMEOUT = 1800
+# Fixed, not `auto`, so a verdict does not depend on the core count of the
+# machine that produced it. Four inside a run x four runs at a time = 16.
+INNER_WORKERS = 4
 
 
 class Outcome(str, Enum):
@@ -453,7 +468,32 @@ def _worktree(dest: Path, module: str | None, source: str | None) -> Path:
 
 
 def _run(tree: Path, selection: list[str]) -> Run:
-    """One serial pytest run under the canonical profile."""
+    """One pytest run under the canonical profile.
+
+    These runs used to be forced serial, and the reason is worth keeping
+    because it is now GONE rather than overruled. conftest built one
+    `FIGCITE_HOME` at import, conftest is imported once per PROCESS, so under
+    xdist each worker accumulated its own store instead of sharing one. A
+    mutant killed only via accumulated cross-test state could then be
+    scheduled into a worker that never accumulated it, and the registry would
+    certify a claim that is false serially.
+
+    conftest now gives every TEST its own store, corpus and library. There is
+    no accumulation left to partition, so the premise of that argument is
+    false, not merely unlikely -- which is the difference between retiring a
+    constraint and ignoring one.
+
+    Measured after the change, all 12 claims plus the control, serial against
+    `-n 8`: 0 disagreements. Recorded as corroboration, NOT as the reason. It
+    was 0 disagreements before the isolation too, and that was correctly
+    refused as a justification: agreement across a fixed set shows those
+    mutants agreed in that run, never that the topology is sound.
+
+    Scope, stated because it is narrower than "nothing is shared": the store
+    axis is gone by construction. `crossref.MAILTO` is a constant, and
+    `crossref._last_call` / `pmc._last_call` are rate-limiter timestamps that
+    no test reads across tests. Those are the only per-process leftovers.
+    """
     env = {
         k: v
         for k, v in os.environ.items()
@@ -482,6 +522,15 @@ def _run(tree: Path, selection: list[str]) -> Run:
         "_registry_plugin",
         *selection,
     ]
+    try:  # xdist is not a declared dependency of this project
+        import xdist  # noqa: F401
+
+        # A FIXED count, never `auto`: the same commit should not be certified
+        # under four workers here and sixteen elsewhere. Four inside each run,
+        # four runs at a time, is one worker per core on this machine.
+        cmd += ["-p", "xdist", "-n", str(INNER_WORKERS)]
+    except ImportError:
+        pass
     # Its own process group, so a timeout can reap DESCENDANTS too. pytest
     # here can spawn children (the suite shells out), and `subprocess.run`'s
     # timeout kills only the direct child -- leaving orphans holding the
