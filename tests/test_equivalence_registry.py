@@ -187,6 +187,102 @@ CLAIMS: tuple[Claim, ...] = (
     ],
 )
 
+# --- broadened exception handlers, from the exception-routing tier ----------
+#
+# Each of these survived `except X` -> `except Exception`. They are here rather
+# than in a memo because that is the lesson of this file: a prose equivalence
+# claim has no link to the suite and goes stale silently.
+#
+# The shared argument is FILTER vs SWALLOW. A handler that RE-RAISES what it
+# does not recognise passes the unexpected through either way, so widening
+# what it catches changes nothing. A handler that RETURNS or PRINTS is a
+# swallow, and widening one launders a defect into a diagnosis -- those are
+# not here, they got tests (tests/test_error_routing.py).
+_BROADENINGS: tuple[tuple[str, str, str, str], ...] = (
+    (
+        "zotero.py",
+        "configured",
+        "NotConfigured",
+        "The try is `credentials()`, which calls `_from_file()` -- itself "
+        "wrapped in `except Exception: raise NotConfigured(...)` -- then only "
+        "os.environ.get and .lower() on a str, then raises NotConfigured. "
+        "NotConfigured is the only thing that can leave it.",
+    ),
+    (
+        "crossref.py",
+        "throttled_get",
+        "ValueError",
+        "`float(r.headers.get('retry-after', 2))`. The .get supplies a default "
+        "so the argument is never None, and float() on a str or int raises "
+        "only ValueError.",
+    ),
+    (
+        "corpus.py",
+        "can_compare_dhash",
+        "ValueError",
+        "`if not dh: return False` precedes the try, so int(None, 16) is "
+        "unreachable and int(str, 16) raises only ValueError. The guard above "
+        "the try is what makes this a code-path argument rather than a guess.",
+    ),
+    (
+        "service.py",
+        "_library_path_for",
+        "(OSError, ValueError)",
+        "`json.loads(sidecar.read_text(...))`. read_text raises OSError or "
+        "UnicodeDecodeError, which subclasses ValueError; json.loads raises "
+        "JSONDecodeError, which also subclasses ValueError. The caught set IS "
+        "the reachable set.",
+    ),
+    # NOT here on purpose: `match.py:_target_features` `cv2.error ->
+    # Exception` also survived, but `orb` is an INJECTED parameter, so the
+    # argument that only cv2 can fail there holds for production and not for
+    # the code. That is an input-quantified claim wearing a proof's clothes --
+    # the exact shape this file was built after getting wrong twice -- so it
+    # stays an open survivor rather than a certified equivalence.
+    (
+        "match.py",
+        "_decode",
+        "cv2.error",
+        "`cv2.imdecode(np.frombuffer(data, np.uint8), ...)`. np.frombuffer on "
+        "bytes with a one-byte dtype cannot raise for any length, including "
+        "zero, so cv2 is the only source of failure.",
+    ),
+    (
+        "pmc.py",
+        "_get",
+        "requests.exceptions.ConnectionError",
+        "The handler raises DnsUnreachable for a DNS-shaped failure and then "
+        "ends in a bare `raise`. Anything it does not recognise is re-raised "
+        "unchanged, so it is a FILTER: widening what reaches it changes what "
+        "is inspected, not what escapes.",
+    ),
+    (
+        "pmc.py",
+        "_get_with_retry",
+        "requests.exceptions.HTTPError",
+        "`code = getattr(e.response, 'status_code', None)` then `if code not "
+        "in RETRY_CODES or attempt == MAX_ATTEMPTS: raise`. Anything without a "
+        "usable .response yields code=None, which is not in RETRY_CODES, so it "
+        "re-raises. A FILTER again.",
+    ),
+)
+
+CLAIMS = CLAIMS + tuple(
+    Claim(
+        claim_id=f"{mod.removesuffix('.py')}-{fn}-broadening",
+        mutation=Mutation(
+            module=mod,
+            function=fn,
+            target=caught,
+            occurrence=0,
+            expect_occurrences=1,
+            op="broaden_except",
+        ),
+        proof=proof,
+    )
+    for mod, fn, caught, proof in _BROADENINGS
+)
+
 # Every module a claim rewrites. Each needs its OWN round-trip baseline: a
 # lossy rewrite of zotero.py is not cleared by deck.py round-tripping safely.
 MODULES: tuple[str, ...] = tuple(sorted({c.mutation.module for c in CLAIMS}))
@@ -236,7 +332,19 @@ def _mutate_source(src: str, m: Mutation) -> str:
     tree = ast.parse(src)
     fn = _enclosing(tree, m.function)
 
-    hits = [n for n in ast.walk(fn) if ast.unparse(n) == m.target]
+    if m.op == "broaden_except":
+        # An ExceptHandler unparses to the whole `except X:` plus its body, so
+        # it is matched on the caught TYPE alone -- which is the thing the
+        # claim is about, and is stable when the body is edited.
+        hits = [
+            n
+            for n in ast.walk(fn)
+            if isinstance(n, ast.ExceptHandler)
+            and n.type is not None
+            and ast.unparse(n.type) == m.target
+        ]
+    else:
+        hits = [n for n in ast.walk(fn) if ast.unparse(n) == m.target]
     # ast.walk is breadth-first, not source order. Sort so `occurrence` means
     # what a reader assumes it means.
     hits.sort(key=lambda n: (n.lineno, n.col_offset))
@@ -259,6 +367,9 @@ def _mutate_source(src: str, m: Mutation) -> str:
         const = node.args[-1]
         assert isinstance(const, ast.Constant) and isinstance(const.value, int)
         node.args[-1] = ast.Constant(value=const.value + 1)
+    elif m.op == "broaden_except":
+        assert isinstance(node, ast.ExceptHandler)
+        node.type = ast.Name(id="Exception", ctx=ast.Load())
     else:  # pragma: no cover - a typo in the registry, not a runtime path
         raise AssertionError(f"unknown op {m.op!r}")
 

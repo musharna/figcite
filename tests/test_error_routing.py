@@ -25,6 +25,7 @@ import json
 import pytest
 
 from figcite import cli, corpus, match, service, store, zotero
+from figcite.provenance import Record
 from figcite.crossref import LookupUnavailable
 from figcite.zotero import NotConfigured
 
@@ -211,3 +212,175 @@ def test_the_top_level_handler_covers_every_type_it_claims(exc, monkeypatch, cap
 
     assert rc == 1, rc
     assert str(exc) in capsys.readouterr().err
+
+
+# ------------------------------------------- cmd_confirm: a typo is not a crash
+
+
+def test_a_non_numeric_index_is_refused_not_a_traceback(monkeypatch, capsys):
+    """`except (ValueError, IndexError)` survived `drop ValueError`.
+
+    `cmd_confirm` does `pool[int(n)].ref`, and `n` is whatever the user typed.
+    `figcite confirm abc` raises ValueError on the `int()`, and without that
+    arm a typo at the command line is a raw traceback rather than the "no
+    pending item" message the IndexError arm already gives for `confirm 99`.
+    Only the IndexError arm was covered, so the two halves of one refusal had
+    one test between them.
+    """
+    monkeypatch.setattr(service, "pending_items", lambda: [])
+
+    assert cli.main(["confirm", "abc"]) == 2
+    assert "no pending item abc" in capsys.readouterr().err
+
+
+# --------------------------------- cmd_confirm: our bug is not your misuse
+
+
+def _confirm_raising(monkeypatch, exc):
+    item = service.PendingItem(ref="staged:q.png", kind="staged", context="ctx")
+    monkeypatch.setattr(service, "pending_items", lambda: [item])
+
+    def exploding(*a, **kw):
+        raise exc
+
+    monkeypatch.setattr(service, "confirm", exploding)
+
+
+def test_a_defect_in_confirm_exits_one_not_two(monkeypatch, capsys):
+    """Three handlers -- NotGrounded, ValueError, KeyError -- all survived
+    broadening to `except Exception`.
+
+    Their `try` is the whole `service.confirm(...)` pipeline: CrossRef, store
+    writes, file operations. Each handler PRINTS and RETURNS 2, and 2 is the
+    code that means "you invoked me wrong" -- argparse's own. Broadening any
+    of them reports figcite's failure as the user's mistake, and tells a
+    wrapper not to retry, because misuse is not worth retrying.
+
+    RuntimeError is the probe because it is NOT one of the three: `cli.main`
+    catches it at the top level and returns 1. So 1 vs 2 is the distinction
+    that survives to the caller -- "I ran and broke" against "you called me
+    wrong" -- and under the mutant it collapses to 2.
+
+    ValueError deliberately is NOT used here: `service.confirm` raises it for
+    genuine misuse ("needs doi="), so exit 2 is the CORRECT answer for it. A
+    probe has to be a type that is not already a misuse, or the test asserts
+    the opposite of what it means.
+    """
+    _confirm_raising(monkeypatch, RuntimeError("a defect inside confirm"))
+
+    rc = cli.main(["confirm", "0", "--doi", "10.1/x"])
+
+    assert rc == 1, (
+        f"a defect inside confirm came back as exit {rc}; 2 would claim the "
+        "user invoked the command wrongly"
+    )
+
+
+def test_an_unlisted_fault_in_confirm_is_not_swallowed(monkeypatch):
+    """The same three broadenings, from the other side.
+
+    TypeError is in neither `cmd_confirm`'s handlers nor `cli.main`'s tuple,
+    so today it propagates. Broadening any of the three catches it and returns
+    2 instead, which is the swallow this pins.
+    """
+    _confirm_raising(monkeypatch, TypeError("a bad refactor inside confirm"))
+
+    with pytest.raises(TypeError, match="bad refactor"):
+        cli.main(["confirm", "0", "--doi", "10.1/x"])
+
+
+@pytest.mark.parametrize(
+    "exc,fragment",
+    [
+        (ValueError("a filed capture needs doi="), "needs --doi"),
+        (KeyError("no candidate 9 on staged:q.png"), "no candidate 9"),
+    ],
+    ids=["ValueError", "KeyError"],
+)
+def test_the_real_misuses_are_still_reported_as_misuse(
+    exc, fragment, monkeypatch, capsys
+):
+    """Positive control for the pair above, and it is required.
+
+    A `cmd_confirm` with no handlers at all satisfies the previous test
+    perfectly. The two genuine misuse cases must still come back as exit 2
+    with a message rather than as a traceback.
+    """
+    item = service.PendingItem(ref="staged:q.png", kind="staged", context="ctx")
+    monkeypatch.setattr(service, "pending_items", lambda: [item])
+
+    def raising(*a, **kw):
+        raise exc
+
+    monkeypatch.setattr(service, "confirm", raising)
+
+    assert cli.main(["confirm", "0", "--doi", "10.1/x"]) == 2
+    assert fragment in capsys.readouterr().err
+
+
+# ------------------------- the library fallback must not mask a real fault
+
+
+def test_a_broken_library_scan_does_not_silently_return_the_original(
+    tmp_path, monkeypatch
+):
+    """`except LibraryFileMissing` survived broadening to `except Exception`.
+
+    The handler exists for records that never had a library file -- `figcite
+    register` and the matplotlib hook deliberately do not copy the image -- so
+    it falls back to the `original_file` the record stores. It ends in `raise`,
+    but only when that fallback is unavailable.
+
+    So when the original DOES exist, broadening turns any fault in the library
+    scan into a successful answer: the caller gets a path, and the failure that
+    produced it is gone. That is the fallback covering for a defect rather than
+    for the documented absence.
+    """
+    original = tmp_path / "mine.png"
+    original.write_bytes(b"pretend image")
+
+    rec = Record(
+        sha256="c" * 64,
+        dhash="0" * 16,
+        source_kind="generated",
+        confirmed=True,
+        source_detail={"original_file": str(original)},
+    )
+    monkeypatch.setattr(store, "all_records", lambda: {rec.sha256: rec})
+
+    def exploding(sha):
+        raise RuntimeError("the library index is corrupt")
+
+    monkeypatch.setattr(service, "_library_path_for", exploding)
+
+    with pytest.raises(RuntimeError, match="library index is corrupt"):
+        service._resolve_ref_to_path(f"filed:{rec.sha256}")
+
+
+def test_a_record_that_never_had_a_library_file_still_gets_its_original(
+    tmp_path, monkeypatch
+):
+    """Positive control: the documented fallback must still work.
+
+    This is the whole reason the handler exists -- a registered figure has no
+    library copy and never will -- so a test that only asserts faults escape
+    would pass against a handler that had been deleted.
+    """
+    original = tmp_path / "mine.png"
+    original.write_bytes(b"pretend image")
+
+    rec = Record(
+        sha256="d" * 64,
+        dhash="0" * 16,
+        source_kind="generated",
+        confirmed=True,
+        source_detail={"original_file": str(original)},
+    )
+    monkeypatch.setattr(store, "all_records", lambda: {rec.sha256: rec})
+
+    def missing(sha):
+        raise service.LibraryFileMissing("no library file for this record")
+
+    monkeypatch.setattr(service, "_library_path_for", missing)
+
+    assert service._resolve_ref_to_path(f"filed:{rec.sha256}") == original
