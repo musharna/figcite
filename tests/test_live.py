@@ -16,7 +16,7 @@ from figcite.crossref import record_from_doi, search_bibliographic
 from figcite.pdfgrab import crop, discover_doi
 from figcite.provenance import read_embedded
 
-pytestmark = pytest.mark.live
+pytestmark = [pytest.mark.live, pytest.mark.desktop_destructive]
 
 REAL_PDF = (
     "/mnt/c/Users/a2b32/Zotero/storage/497VPIMU/"

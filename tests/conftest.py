@@ -292,3 +292,42 @@ def ppt_module():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--run-desktop-destructive",
+        action="store_true",
+        default=False,
+        help=(
+            "run tests that MUTATE THIS DESKTOP -- drive Office, replace the "
+            "clipboard. Only on a machine nobody is working on."
+        ),
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """`-m live` must not imply consent to have your desktop mutated.
+
+    `live` conflates two unlike things: tests that reach the network or read a
+    real PDF, and tests that reach into the session of whoever is at the
+    keyboard. Someone running the first should not silently get the second.
+
+    This is least-privilege consent, NOT an ownership boundary, and the
+    difference matters enough to write down: a marker plus a flag is
+    discipline, and discipline is what failed on 2026-08-25 when nine bare
+    `pytest -q` runs closed the user's PowerPoint. The only real enforcement
+    is a session nobody is working in. This narrows what one wrong command can
+    reach; it does not make the underlying operations safe.
+    """
+    if config.getoption("--run-desktop-destructive"):
+        return
+    skip = pytest.mark.skip(
+        reason=(
+            "mutates this desktop (Office/clipboard); pass "
+            "--run-desktop-destructive, and only where nobody is working"
+        )
+    )
+    for item in items:
+        if "desktop_destructive" in item.keywords:
+            item.add_marker(skip)

@@ -28,7 +28,7 @@ from figcite import store
 from figcite.clipboard import PS_EXE, _win_userprofile, win_to_wsl
 from figcite.provenance import Record, now_stamps
 
-pytestmark = pytest.mark.live
+pytestmark = [pytest.mark.live, pytest.mark.desktop_destructive]
 
 
 def _pwsh(command: str, timeout: int = 90) -> tuple[bool, str]:
