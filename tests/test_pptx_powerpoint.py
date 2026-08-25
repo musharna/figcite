@@ -31,25 +31,92 @@ from figcite.provenance import Record, now_stamps
 pytestmark = pytest.mark.live
 
 
-def _powerpoint_available() -> bool:
+def _pwsh(command: str, timeout: int = 90) -> str:
+    """One PowerShell command, stdout, empty on any failure."""
     if not Path(PS_EXE).exists():
-        return False
+        return ""
     try:
         r = subprocess.run(
-            [
-                PS_EXE,
-                "-NoProfile",
-                "-Command",
-                "try { $a=New-Object -ComObject PowerPoint.Application; "
-                "'OK'; $a.Quit() } catch { 'NO' }",
-            ],
+            [PS_EXE, "-NoProfile", "-Command", command],
             capture_output=True,
             text=True,
-            timeout=180,
+            timeout=timeout,
         )
-        return "OK" in r.stdout
+        return r.stdout
     except Exception:
-        return False
+        return ""
+
+
+def _powerpoint_available() -> bool:
+    """Is PowerPoint INSTALLED -- asked without starting it.
+
+    This used to answer the question by doing
+
+        New-Object -ComObject PowerPoint.Application ... $a.Quit()
+
+    which is not a probe, it is the destructive operation itself. PowerPoint's
+    COM server is SINGLE-INSTANCE: `New-Object` hands back the running
+    application if there is one, so the availability check attached to the
+    user's PowerPoint and quit it -- closing every open presentation, unsaved
+    work included, before a single test had run.
+
+    Installation is a fact about the disk, so it is read off the disk. The
+    registry's App Paths key is written by the Office installer and answers
+    "is it here" without answering "start it".
+    """
+    return "INSTALLED" in _pwsh(
+        r"if (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion"
+        r"\App Paths\POWERPNT.EXE' -ErrorAction SilentlyContinue) "
+        r"{'INSTALLED'} else {'NO'}"
+    )
+
+
+def _powerpoint_already_running() -> bool:
+    """Is a HUMAN using PowerPoint right now?
+
+    The whole hazard in this file is that COM attaches to a running instance.
+    If nothing is running, the instance these tests create is THEIRS, and
+    quitting it costs nobody anything. If something is running, it belongs to
+    the person at the keyboard and must not be touched.
+
+    `Get-Process` reads the process table. It does not open a COM channel, so
+    asking cannot itself cause the thing it is asking about.
+    """
+    return "RUNNING" in _pwsh(
+        "if (Get-Process POWERPNT -ErrorAction SilentlyContinue) "
+        "{'RUNNING'} else {'NOT-RUNNING'}"
+    )
+
+
+@pytest.fixture(autouse=True)
+def _refuse_to_touch_someone_elses_powerpoint():
+    """Every test in this module quits PowerPoint. Not if it is not ours.
+
+    These tests are worth having -- python-pptx agreeing with python-pptx says
+    nothing about the application people actually open the file in, and
+    PowerPoint is the reader that silently "repairs" a package it dislikes.
+    The danger was never the COM call, it was the COM call landing on someone
+    else's session.
+
+    So the rule is ownership: run only when nothing is running, which makes
+    the instance we create ours to quit. This machine is a live workstation,
+    and on 2026-08-25 a bare `pytest -q` ran this module nine times while the
+    user had a deck open, closing it every time. No crash event, because
+    nothing crashed -- the application was asked to exit.
+
+    Outer layer is `pytest.ini`: `-m "not live"` is the default, so these are
+    opt-in. This is the inner one, for when someone opts in on the wrong
+    machine at the wrong moment. Residual and stated plainly: a human who
+    opens PowerPoint AFTER this check passes is still exposed for the length
+    of the run, which is why the outer layer is a default and not a habit.
+    """
+    if _powerpoint_already_running():
+        pytest.skip(
+            "PowerPoint is already running -- it belongs to whoever is at the "
+            "keyboard. These tests call Application.Quit(), which would close "
+            "their unsaved work. Close PowerPoint and re-run, or run them on a "
+            "machine nobody is using."
+        )
 
 
 # The condition is a STRING on purpose. pytest evaluates a string skipif
