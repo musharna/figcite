@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 from typing import Optional
 
@@ -1010,12 +1012,47 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+TRACEBACK_ENV = "FIGCITE_TRACEBACK"
+
+
 def main(argv: Optional[list[str]] = None) -> int:
+    """Run a command, and make sure nothing reaches the terminal as a crash.
+
+    This caught `(LookupError, RuntimeError, ValueError)`, which is a list of
+    names guarding an open set: any type nobody thought to list was presented
+    to the user as a Python traceback. Not hypothetical -- `figcite whereis`
+    on an unreadable image raised OSError out of the matcher and dumped a
+    stack, because OSError is in none of those three.
+
+    Adding OSError would have been a tripwire, not a fix; the next unlisted
+    type does it again. The boundary is a PRESENTATION layer, not a
+    classifier, so it stops enumerating types altogether.
+
+    Broad catching only hides a defect if the detail is thrown away, and it is
+    not: the message always prints, and the traceback is one environment
+    variable away. `except Exception` also leaves BaseException alone, so
+    Ctrl-C still interrupts and argparse's own exit-2 for a misused command
+    line still happens -- neither is an error this should be dressing up.
+
+    What this does NOT do is decide whether a failure was the user's fault.
+    Each `cmd_*` already maps its own user-facing errors to exit 2 before
+    anything gets here, so reaching this handler means "figcite ran and
+    something broke", which is exit 1. Doing that structurally -- a
+    FigciteUserError base class instead of per-command handlers -- is the
+    bigger fix and is not this one.
+    """
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except (LookupError, RuntimeError, ValueError) as e:
+    except Exception as e:  # NOT BaseException: Ctrl-C is not an error
         print(f"error: {e}", file=sys.stderr)
+        if os.environ.get(TRACEBACK_ENV):
+            traceback.print_exc()
+        else:
+            print(
+                f"  ({TRACEBACK_ENV}=1 for the full traceback)",
+                file=sys.stderr,
+            )
         return 1
 
 

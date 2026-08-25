@@ -276,17 +276,26 @@ def test_a_defect_in_confirm_exits_one_not_two(monkeypatch, capsys):
     )
 
 
-def test_an_unlisted_fault_in_confirm_is_not_swallowed(monkeypatch):
+def test_an_unlisted_fault_in_confirm_is_not_swallowed(monkeypatch, capsys):
     """The same three broadenings, from the other side.
 
-    TypeError is in neither `cmd_confirm`'s handlers nor `cli.main`'s tuple,
-    so today it propagates. Broadening any of the three catches it and returns
-    2 instead, which is the swallow this pins.
+    TypeError is in none of `cmd_confirm`'s handlers, so it falls through to
+    `cli.main`, which reports it as exit 1 -- "figcite broke". Broadening any
+    of the three catches it first and returns 2 instead, claiming the user
+    invoked the command wrongly. 1 vs 2 is the distinction that survives.
+
+    This asserted `pytest.raises(TypeError)` until `cli.main` stopped
+    enumerating types; it now catches everything and presents it. The
+    behaviour being pinned is unchanged -- an unlisted fault must not be
+    reported as misuse -- but the observable moved from an escaping exception
+    to an exit code, so the assertion moved with it.
     """
     _confirm_raising(monkeypatch, TypeError("a bad refactor inside confirm"))
 
-    with pytest.raises(TypeError, match="bad refactor"):
-        cli.main(["confirm", "0", "--doi", "10.1/x"])
+    rc = cli.main(["confirm", "0", "--doi", "10.1/x"])
+
+    assert rc == 1, f"an unlisted fault came back as exit {rc}, not 1"
+    assert "bad refactor" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -384,3 +393,67 @@ def test_a_record_that_never_had_a_library_file_still_gets_its_original(
     monkeypatch.setattr(service, "_library_path_for", missing)
 
     assert service._resolve_ref_to_path(f"filed:{rec.sha256}") == original
+
+
+# ------------------- the survivor this triage first put in the wrong tier
+
+
+def test_only_opencvs_own_refusal_makes_a_corpus_row_unusable(tmp_path):
+    """`match._target_features`'s `except cv2.error` survived broadening.
+
+    I first filed this as near-equivalent-but-unprovable: `orb` is an injected
+    parameter, so "only cv2 can fail there" is true of production and not of
+    the code, and I would not certify it. That was the wrong tier. The rule
+    this triage produced is FILTER vs SWALLOW, and this handler `return None,
+    None` -- it is a swallow, so broadening it converts any fault into "this
+    corpus row has no usable features" and drops it silently from the search.
+
+    The very fact that made it uncertifiable is what makes it easy to test.
+    `orb` being a parameter means a fake is all it takes, and the handler's
+    own comment already promises the property: "anything else (a MemoryError,
+    a bad `orb`) still fails loudly". Nothing checked that.
+
+    Silently is the operative word. A row dropped this way does not become a
+    CouldNotDecide the user can see -- it just is not in the comparison, so a
+    figure that IS in the corpus comes back "not found".
+    """
+    from PIL import Image
+
+    (tmp_path / "fig.png").write_bytes(b"")
+    Image.new("RGB", (40, 30), (7, 90, 200)).save(tmp_path / "fig.png")
+
+    class _BadOrb:
+        def detectAndCompute(self, img, mask):
+            raise MemoryError("out of memory computing descriptors")
+
+    class _Row:
+        image_path = "fig.png"
+
+    with pytest.raises(MemoryError, match="out of memory"):
+        match._target_features(_Row(), str(tmp_path), None, _BadOrb())
+
+
+def test_opencvs_refusal_still_makes_the_row_unusable(tmp_path):
+    """Positive control, and the handler's actual reason for existing.
+
+    OpenCV refuses some decodable images rather than returning nothing for
+    them -- one such figure anywhere in the corpus used to crash the whole
+    query. A test that only asserted faults escape would pass against a
+    handler that had been deleted outright.
+    """
+    import cv2
+
+    from PIL import Image
+
+    Image.new("RGB", (40, 30), (7, 90, 200)).save(tmp_path / "fig.png")
+
+    class _RefusingOrb:
+        def detectAndCompute(self, img, mask):
+            raise cv2.error("the detector needs a larger patch")
+
+    class _Row:
+        image_path = "fig.png"
+
+    desc, pts = match._target_features(_Row(), str(tmp_path), None, _RefusingOrb())
+
+    assert desc is None and pts is None

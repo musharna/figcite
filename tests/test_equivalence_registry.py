@@ -248,12 +248,16 @@ _BROADENINGS: tuple[tuple[str, str, str, str], ...] = (
         "JSONDecodeError, which also subclasses ValueError. The caught set IS "
         "the reachable set.",
     ),
-    # NOT here on purpose: `match.py:_target_features` `cv2.error ->
-    # Exception` also survived, but `orb` is an INJECTED parameter, so the
-    # argument that only cv2 can fail there holds for production and not for
-    # the code. That is an input-quantified claim wearing a proof's clothes --
-    # the exact shape this file was built after getting wrong twice -- so it
-    # stays an open survivor rather than a certified equivalence.
+    # NOT here, and no longer for the reason first given. `_target_features`'s
+    # `cv2.error -> Exception` was filed as near-equivalent-but-unprovable,
+    # because `orb` is an injected parameter and so "only cv2 can fail there"
+    # describes production rather than the code. Both halves of that were
+    # true and the conclusion was still wrong: that handler RETURNS
+    # `(None, None)`, which makes it a swallow, and a swallow broadened turns
+    # any fault into "this row has no usable features" and drops it from the
+    # search in silence. It has a test now (tests/test_error_routing.py), and
+    # the injected `orb` that made it uncertifiable is exactly what made the
+    # test one line.
     (
         "match.py",
         "_decode",
