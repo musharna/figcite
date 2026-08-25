@@ -62,11 +62,31 @@ def by_dhash(query_bytes: bytes, rows) -> Verdict:
     A miss is CouldNotDecide, never NoMatch: dhash cannot see a crop at all
     (measured -- hamming 7 for 5% off each edge, against a threshold of 6), so
     its silence is not evidence the figure is absent from the corpus.
+
+    Every way this can fail has to arrive at one of the three verdicts, the
+    same contract `by_orb` states for itself. Hashing was the one step outside
+    it: `dhash_bytes` hands the bytes to PIL, and PIL RAISES on a file it
+    cannot read, so `figcite whereis` on a truncated or non-image file
+    escaped as `OSError` rather than answering. `by_orb` already guards the
+    identical case one function down; this twin never got the same treatment.
     """
     if not rows:
         return CouldNotDecide("the corpus is empty -- run `figcite corpus build`")
 
-    dh = dhash_bytes(query_bytes)
+    try:
+        dh = dhash_bytes(query_bytes)
+    except (OSError, ValueError):
+        # PIL's own refusal, narrow on purpose: UnidentifiedImageError and
+        # "Truncated File Read" are both OSError. Anything else -- a
+        # MemoryError, a bug in here -- still fails loudly.
+        #
+        # Note this decision belongs HERE and not in `dhash_bytes`, which is
+        # also called at INDEX time by `corpus.build` and `provenance.embed`.
+        # An unreadable file is a real error when you are cataloguing it and a
+        # legitimate "could not look" when you are querying with it; folding
+        # that into the hash function would file a figure with an empty hash
+        # instead of telling anyone.
+        return CouldNotDecide("the query image could not be decoded")
     scored = sorted(((hamming(dh, r.dhash), r) for r in rows), key=lambda t: t[0])
     best_d, best = scored[0]
     if best_d > DHASH_THRESHOLD:
@@ -97,10 +117,21 @@ def opencv_available() -> bool:
 
 
 def _decode(data: bytes):
+    """The decoded image, or None when the bytes are not a readable image.
+
+    None is the whole contract: every caller reads it as "could not look".
+    `imdecode` returns None for most junk, but it RAISES for some -- zero
+    bytes among them -- and a raise is a fourth outcome none of the verdicts
+    can express. Narrow on purpose: OpenCV's own refusal is the recoverable
+    case, anything else still fails loudly.
+    """
     import cv2
     import numpy as np
 
-    return cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_GRAYSCALE)
+    try:
+        return cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_GRAYSCALE)
+    except cv2.error:
+        return None
 
 
 def by_orb(query_bytes: bytes, rows, image_root, descriptor_dir=None) -> Verdict:
