@@ -446,9 +446,23 @@ def _worktree(dest: Path, module: str | None, source: str | None) -> Path:
     mutating -- producing a mutant reported as surviving that dies immediately
     when run alone. A mutation harness is an instrument; it gets the isolation
     demanded of the tests it measures.
+
+    Which is why `dest` must not already exist. This used to clear it
+    silently, and that turned a caller's DUPLICATE PATH -- the same defect,
+    one layer up -- into two concurrent runs quietly sharing a tree. It
+    happened: a sweep keyed its scratch directories on file+line+operator, and
+    two comparisons on ONE line (`w_in < min_inches and h_in < min_inches`)
+    produced the same key. Silently wiping a peer's tree is exactly the
+    failure this function exists to prevent, so a repeated path is now an
+    error rather than a cleanup. Callers own uniqueness; this refuses to
+    paper over losing it.
     """
     if dest.exists():
-        shutil.rmtree(dest)
+        raise AssertionError(
+            f"{dest} already exists. Two runs sharing a scratch tree is the "
+            f"defect this harness exists to avoid -- make the caller's key "
+            f"unique rather than clearing the directory."
+        )
     dest.mkdir(parents=True)
     for item in ("figcite", "tests", "pyproject.toml", "pytest.ini"):
         src = REPO / item
@@ -574,17 +588,27 @@ def _run(tree: Path, selection: list[str]) -> Run:
         except (ValueError, KeyError):
             failed, errored = [], []
 
-    # pytest: 0 all passed, 1 tests failed, 2 interrupted, 3 internal error,
-    # 4 usage error, 5 nothing collected. Only 0 and 1 are evidence.
+    # The PLUGIN is the observation; the exit code is a summary of it. Reading
+    # the summary first was a mistake worth keeping the shape of: this said
+    # "only exit 0 and 1 are evidence", which is true of a plain run and false
+    # the moment you add `-x` -- pytest then exits 2 (INTERRUPTED) on a
+    # perfectly ordinary test failure. A sweep using `-x` to make kills cheap
+    # therefore scored 0 killed out of 359, every one of them filed as
+    # "no evidence" while the plugin sat there holding the nodeid that killed
+    # it. A named, attributed, call-phase failure is a kill whatever the
+    # process exit code says about how the session ended.
+    if failed:
+        return Run(Outcome.KILLED, proc.returncode, failed, tail)
     if proc.returncode == 0:
         return Run(Outcome.SURVIVED, 0, [], tail)
 
-    # An ERROR is a test that never ran -- a fixture blew up, a browser could
-    # not reach the page, a port was taken. That is the environment
-    # misbehaving, not a test disagreeing with the code, and reading it as a
-    # kill is the "outage folded into an absence" mistake this repo is about.
+    # No failure to attribute. An ERROR is a test that never ran -- a fixture
+    # blew up, a browser could not reach the page, a port was taken -- which
+    # is the environment misbehaving, not a test disagreeing with the code.
+    # Reading it as a kill is the "outage folded into an absence" mistake this
+    # repo is about.
     #
-    # Observed, which is why this is here: running the mutation tier alongside
+    # Observed, which is why this is here: running a mutation tier alongside
     # the push gate put enough load on the machine that a Playwright test
     # errored with net::ERR_NETWORK_CHANGED. The registry called that a KILL,
     # the round-trip control reported pdfdeck.py's transform as lossy, and a
@@ -593,12 +617,10 @@ def _run(tree: Path, selection: list[str]) -> Run:
         return Run(
             Outcome.HARNESS_ERROR,
             proc.returncode,
-            failed,
-            f"{len(errored)} test(s) ERRORED rather than failed, so this run is "
+            [],
+            f"{len(errored)} test(s) ERRORED and none FAILED, so this run is "
             f"not evidence either way -- first: {errored[0]}\n{tail}",
         )
-    if proc.returncode == 1 and failed:
-        return Run(Outcome.KILLED, 1, failed, tail)
     return Run(
         Outcome.HARNESS_ERROR,
         proc.returncode,
@@ -808,3 +830,22 @@ def test_the_registry_can_detect_a_kill(verdicts):
         f"the mutant run went red, but not at {KILL_CONTROL_NODE}. An "
         f"unattributed kill is not evidence. Failed: {on_mutant.failed}"
     )
+
+
+def test_a_repeated_scratch_path_is_refused(tmp_path):
+    """The guard added after a sweep keyed two mutants to one directory.
+
+    `_worktree` used to clear an existing `dest` silently, so a caller whose
+    keys collided got two concurrent runs sharing a tree -- each wiping what
+    the other was mutating, which produces verdicts that are noise. That is
+    the same defect the per-run tree exists to prevent, arriving one layer up,
+    and silence is what made it survive long enough to corrupt a sweep.
+
+    Marked fast on purpose: it costs a directory, not a suite run, and a guard
+    that only runs under `slow` would not be there when a sweep needs it.
+    """
+    dest = tmp_path / "tree"
+    _worktree(dest, None, None)
+
+    with pytest.raises(AssertionError, match="already exists"):
+        _worktree(dest, None, None)
