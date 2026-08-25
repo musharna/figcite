@@ -31,10 +31,21 @@ from figcite.provenance import Record, now_stamps
 pytestmark = pytest.mark.live
 
 
-def _pwsh(command: str, timeout: int = 90) -> str:
-    """One PowerShell command, stdout, empty on any failure."""
+def _pwsh(command: str, timeout: int = 90) -> tuple[bool, str]:
+    """(the command ran, its stdout). NOT just stdout, and that is the point.
+
+    The first version returned `""` on every failure, so a timeout, a missing
+    executable or a permission error was indistinguishable from PowerShell
+    successfully reporting nothing. `_powerpoint_already_running` then read
+    that silence as "not running" and authorised COM automation.
+
+    A safety check that reads its own outage as an all-clear is the exact
+    failure this repo exists to prevent, and it was written into the guard
+    meant to prevent it. Inability to establish danger is not evidence of
+    safety.
+    """
     if not Path(PS_EXE).exists():
-        return ""
+        return False, ""
     try:
         r = subprocess.run(
             [PS_EXE, "-NoProfile", "-Command", command],
@@ -42,9 +53,9 @@ def _pwsh(command: str, timeout: int = 90) -> str:
             text=True,
             timeout=timeout,
         )
-        return r.stdout
+        return r.returncode == 0, r.stdout
     except Exception:
-        return ""
+        return False, ""
 
 
 def _powerpoint_available() -> bool:
@@ -64,11 +75,12 @@ def _powerpoint_available() -> bool:
     registry's App Paths key is written by the Office installer and answers
     "is it here" without answering "start it".
     """
-    return "INSTALLED" in _pwsh(
+    ok, out = _pwsh(
         r"if (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion"
         r"\App Paths\POWERPNT.EXE' -ErrorAction SilentlyContinue) "
         r"{'INSTALLED'} else {'NO'}"
     )
+    return ok and "INSTALLED" in out
 
 
 def _powerpoint_already_running() -> bool:
@@ -82,10 +94,13 @@ def _powerpoint_already_running() -> bool:
     `Get-Process` reads the process table. It does not open a COM channel, so
     asking cannot itself cause the thing it is asking about.
     """
-    return "RUNNING" in _pwsh(
+    ok, out = _pwsh(
         "if (Get-Process POWERPNT -ErrorAction SilentlyContinue) "
         "{'RUNNING'} else {'NOT-RUNNING'}"
     )
+    if not ok or ("RUNNING" not in out and "NOT-RUNNING" not in out):
+        return True  # UNKNOWN is treated as BUSY: refuse, never assume idle
+    return "NOT-RUNNING" not in out
 
 
 @pytest.fixture(autouse=True)
@@ -211,7 +226,7 @@ def test_figcite_reads_a_deck_that_powerpoint_wrote(workdir, figures):
         f"foreach ($f in (Get-ChildItem '{win}\\ppfig*.png')) {{ "
         f"  $s = $pres.Slides.Add($i, 12); "
         f"  $null = $s.Shapes.AddPicture($f.FullName, 0, -1, 60, 60, 520, 340); $i++ }}; "
-        f"$pres.SaveAs('{out_win}'); $pres.Close(); $ppt.Quit(); Write-Output DONE"
+        f"$pres.SaveAs('{out_win}'); $pres.Close(); if ($ppt.Presentations.Count -eq 0) {{ $ppt.Quit() }}; Write-Output DONE"
     )
     assert "DONE" in r.stdout, f"PowerPoint failed to write the deck: {r.stderr[:300]}"
 
@@ -242,7 +257,7 @@ def test_powerpoint_opens_figcite_output_without_repairing_it(workdir, figures):
         f"foreach ($s in $pres.Slides) {{ foreach ($sh in $s.Shapes) {{ "
         f"  if ($sh.Type -eq 13) {{ Write-Output ('ALT=' + $sh.AlternativeText) }}; "
         f"  Write-Output ('NAME=' + $sh.Name) }} }}; "
-        f"$pres.Close(); $ppt.Quit(); Write-Output OPENED_CLEAN"
+        f"$pres.Close(); if ($ppt.Presentations.Count -eq 0) {{ $ppt.Quit() }}; Write-Output OPENED_CLEAN"
     )
     assert "OPENED_CLEAN" in r.stdout, (
         f"PowerPoint could not open figcite's output: {r.stderr[:400]}"
@@ -306,7 +321,7 @@ def test_powerpoint_opens_a_deck_applied_through_the_web_path(workdir, figures):
         f"$ppt = New-Object -ComObject PowerPoint.Application; $ppt.Visible = -1; "
         f"$pres = $ppt.Presentations.Open('{win}\\web-applied.pptx', -1, 0, -1); "
         f"Write-Output ('SLIDES=' + $pres.Slides.Count); "
-        f"$pres.Close(); $ppt.Quit(); Write-Output OPENED_CLEAN"
+        f"$pres.Close(); if ($ppt.Presentations.Count -eq 0) {{ $ppt.Quit() }}; Write-Output OPENED_CLEAN"
     )
     assert "OPENED_CLEAN" in r.stdout, (
         f"PowerPoint could not open a deck applied through service.apply(): "
@@ -330,7 +345,7 @@ def test_provenance_survives_a_powerpoint_edit_and_save(workdir, figures):
         f"$ppt = New-Object -ComObject PowerPoint.Application; $ppt.Visible = -1; "
         f"$pres = $ppt.Presentations.Open('{win}\\cited.pptx', 0, 0, -1); "
         f"$pres.Slides[1].Shapes[1].Left = $pres.Slides[1].Shapes[1].Left + 5; "
-        f"$pres.SaveAs('{win}\\resaved.pptx'); $pres.Close(); $ppt.Quit(); "
+        f"$pres.SaveAs('{win}\\resaved.pptx'); $pres.Close(); if ($ppt.Presentations.Count -eq 0) {{ $ppt.Quit() }}; "
         f"Write-Output RESAVED"
     )
     assert "RESAVED" in r.stdout, f"PowerPoint could not resave: {r.stderr[:300]}"
