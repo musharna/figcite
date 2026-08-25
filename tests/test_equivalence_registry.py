@@ -1,73 +1,116 @@
 """Equivalence claims, as assertions instead of prose.
 
-A mutation survivor can be dealt with two ways: write a test that kills it, or
-prove it unobservable and record the proof. This file exists because the second
-option was being recorded in a form that cannot fail.
+A mutation survivor gets dealt with two ways: a test that kills it, or a proof
+that it is unobservable. The second was being recorded in a form that cannot
+fail, and it failed silently.
 
-The failure it prevents actually happened. The audit memo listed
-`k != "record"` among the mutants proved equivalent by construction. Commit
-c5f1ba7 -- INSIDE the same batch that memo describes -- had already added the
-two tests that kill it. Nothing noticed, because a prose proof has no link to
-the suite it is a claim about. The error surfaced only when the claim was sent
-to an outside reviewer, which is not a mechanism.
+The audit memo listed `k != "record"` among the mutants proved equivalent by
+construction. Commit c5f1ba7 -- INSIDE the same batch that memo describes --
+had already added the two tests that kill it. Nothing noticed, because a prose
+proof has no link to the suite it is a claim about. The error surfaced only
+when the claim was sent to an outside reviewer, which is not a mechanism.
 
-The point: **an equivalence claim is a falsifiable prediction.** "No test in
-this suite kills this mutant" is not a philosophical position, it is a
-statement about an executable artifact, and it is either true right now or it
-is not. So the claims live here and are checked by running them. When someone
-adds a test that kills one, this file goes red and says which claim died --
-instead of the claim quietly becoming false and staying on the books.
+So the claims live here and are checked by running them.
 
-A claim going red is NOT a bug. It means a proof became obsolete because the
-suite got stronger, which is good news. The fix is to delete the claim, not to
-delete the test.
+## What a green run here does and does not mean
 
-## What is checked, and the controls
+It does NOT mean a claim is true. Equivalence is established by the
+construction argument recorded in `Claim.proof`; what this file provides is a
+STALE-PROOF DETECTOR. Green means the suite has not falsified the proof. Red
+means it has, and the proof is obsolete -- which is good news, and the fix is
+to delete the claim, never to weaken the test that killed it.
 
-Three things run, and the two controls matter as much as the claims:
+## Three outcomes, not two
 
-1. `test_the_round_trip_alone_changes_nothing` -- the machinery rewrites a
-   module by unparsing its AST. If that transform were itself lossy, every
-   claim would look "killed" and the registry would cry wolf. So the transform
-   is applied with NO mutation and the suite must stay green.
+The first version of this file returned a bool: exit code 0 meant survived,
+anything else meant killed. That collapses three distinguishable states --
 
-2. `test_each_claim_still_holds` -- the claims. Each mutant is applied and the
-   suite must stay GREEN, i.e. the mutant survives, i.e. the proof still holds.
+    SURVIVED        nothing in the suite kills this mutant
+    KILLED          a specific test kills it, and that has been attributed
+    HARNESS_ERROR   the run did not produce evidence either way
 
-3. `test_the_registry_can_detect_a_kill` -- the control that makes the whole
-   file worth having. `k != "record"` is a mutation this suite DOES kill, and
-   the registry must report it killed. Without this, a registry whose runner
-   was silently broken -- wrong path, swallowed exit code, a pytest that never
-   collected anything -- would report every claim as holding, forever. A green
-   result from a harness that cannot go red is not evidence.
+-- into two, which is precisely the failure figcite exists to prevent: an
+outage folded into an absence. A collection error, a timeout, or a usage
+mistake is not a test disagreeing with a proof. It stops certification, but it
+must never satisfy the kill control, and it must never be reported as "a test
+now kills this mutant".
 
-## Scope of the claim, stated rather than implied
+## Attribution, because an unattributed kill is not evidence
 
-Survival is measured against `-m "not live"`: the same selection the push gate
-uses. Live tests need a Zotero key, Windows, PowerPoint, Ghostscript and the
-network, so they cannot run here. A claim in this file therefore means "no
-test in the unit suite kills this mutant", not "no test anywhere". That is a
-narrower statement than the bare word "equivalent" suggests, which is exactly
-why it is written down.
+A red suite names the mutant only if the redness came from the mutant. So when
+a claim's run fails, the failing nodeids are re-run twice: alone against a
+clean round-tripped tree (they must PASS) and alone against the mutated tree
+(they must FAIL). Anything else is HARNESS_ERROR -- including a failure that
+only reproduces inside the full serial prefix, which is an order-dependent
+test sequence rather than an attributable kill.
 
-The registry is also excluded from the runs it launches -- it does not kill
-mutants, and a registry that ran itself would not terminate.
+Failing nodeids are collected by an in-process plugin, not by parsing terminal
+prose or guessing them from JUnit's dotted `classname`, which carries no file
+attribute.
+
+## One canonical execution profile
+
+Runs are SERIAL and the profile is fixed. An earlier version opportunistically
+added `-n auto` when xdist happened to be importable. That is unsound here, not
+merely fast: this suite's conftest does `os.environ["FIGCITE_HOME"] =
+mkdtemp()` at import, conftest is imported once per process, so under xdist
+every worker gets its OWN store and the global figure store is PARTITIONED
+instead of accumulating. This suite demonstrably has cross-test coupling
+through that store -- two tests written earlier in this audit passed alone and
+failed only in the full suite, because both matchers fall back to
+`store.find_similar` over the global store whatever manifest is passed. A
+mutant killed only via accumulated state could therefore be scheduled into a
+worker that never accumulates it, and the registry would certify a claim that
+is false serially.
+
+Measured before removing it: all five claims plus the control gave identical
+verdicts serially and under `-n auto`. That is not a defence -- it shows those
+five agreed in that run, not that the topology is sound for the next claim.
+Parallelism is used only ACROSS runs, where the processes share nothing.
+
+The profile also sanitises `PYTEST_ADDOPTS`, `PYTHONPATH` and `FIGCITE_*`,
+pins `PYTHONHASHSEED`, and disables plugin autoloading so an unrelated
+installed plugin cannot reorder collection. That removes the differences this
+file can control; it does NOT make a verdict machine-independent, because
+Python version, optional dependencies and environment-dependent skips still
+vary and nothing here pins those.
+
+The gate deliberately runs a DIFFERENT profile: it may randomise order, which
+is how isolation bugs get found. These two answer different questions -- the
+gate is a stress diagnostic, this is a qualification oracle that has to give
+the same answer twice -- so the profiles differing is a design choice, not
+drift.
+
+Scope is stated rather than implied: survival is measured under
+`-m "not live"`, the selection the push gate uses. A claim here means "no test
+in the unit suite kills this mutant", not "no test anywhere".
 """
 
 from __future__ import annotations
 
 import ast
+import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
-from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 
 import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 SELF = Path(__file__).name
+TIMEOUT = 1800
+
+
+class Outcome(str, Enum):
+    SURVIVED = "SURVIVED"
+    KILLED = "KILLED"
+    HARNESS_ERROR = "HARNESS_ERROR"
 
 
 # --------------------------------------------------------------- the claims
@@ -78,11 +121,11 @@ class Mutation:
     """One mutant, anchored on the AST rather than on a line number.
 
     Line numbers drift with every edit above them, and a registry that
-    silently mutated the wrong line would report a meaningless verdict. So a
-    target is named by its enclosing function plus the exact `ast.unparse`
-    text of the node, and `expect_occurrences` pins how many nodes should
-    match. If the code changes shape, the count stops matching and this fails
-    LOUDLY rather than mutating something else.
+    silently mutated the wrong line would report a meaningless verdict. A
+    target is named by its enclosing top-level function plus the exact
+    `ast.unparse` text of the node, with the match count pinned. If the code
+    changes shape the count stops matching and this fails LOUDLY rather than
+    mutating something else.
     """
 
     module: str
@@ -144,8 +187,12 @@ CLAIMS: tuple[Claim, ...] = (
     ],
 )
 
+# Every module a claim rewrites. Each needs its OWN round-trip baseline: a
+# lossy rewrite of zotero.py is not cleared by deck.py round-tripping safely.
+MODULES: tuple[str, ...] = tuple(sorted({c.mutation.module for c in CLAIMS}))
 
-# The control. This mutation IS killed by the suite; the registry must say so.
+# The control. This mutation IS killed, by a test named here rather than by
+# "something went red somewhere".
 KILL_CONTROL = Claim(
     claim_id="control-manifest-record-filter",
     mutation=Mutation(
@@ -158,19 +205,31 @@ KILL_CONTROL = Claim(
     ),
     proof="NOT a claim. Known killed -- proves this file can report a kill.",
 )
+KILL_CONTROL_NODE = (
+    "tests/test_deck_guards.py::test_the_pptx_manifest_json_carries_the_record_as_data"
+)
 
 
 # ------------------------------------------------------------- the mutator
 
 
 def _enclosing(tree: ast.Module, name: str) -> ast.AST:
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and node.name == name
-        ):
-            return node
-    raise AssertionError(f"no function named {name!r}")
+    """The single top-level function called `name`.
+
+    `ast.walk` would return the first match anywhere, so a nested helper or a
+    method that later borrowed the name could silently move the target. These
+    claims all live in top-level functions, so that is what is required, and
+    ambiguity is an error rather than a coin flip.
+    """
+    hits = [
+        n
+        for n in tree.body
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == name
+    ]
+    assert len(hits) == 1, (
+        f"expected exactly one top-level function named {name!r}, found {len(hits)}"
+    )
+    return hits[0]
 
 
 def _mutate_source(src: str, m: Mutation) -> str:
@@ -206,19 +265,49 @@ def _mutate_source(src: str, m: Mutation) -> str:
     return ast.unparse(ast.fix_missing_locations(tree))
 
 
+def _roundtrip(src: str) -> str:
+    return ast.unparse(ast.parse(src))
+
+
 # --------------------------------------------------------------- the runner
 
+# Collected in-process. Reconstructing nodeids from JUnit's dotted `classname`
+# is a guess (it carries no file attribute), and parsing the terminal summary
+# is parsing prose. A plugin reports exactly what failed.
+_PLUGIN = """
+import json, os
+_failed = []
 
-def _worktree(dest: Path) -> Path:
-    """A private copy of the repo. Per-call, deliberately.
+def pytest_runtest_logreport(report):
+    if report.failed:
+        _failed.append(report.nodeid)
 
-    An earlier version of this audit's throwaway harness used one fixed
-    scratch directory, and two runs that overlapped each wiped the tree the
-    other was mutating -- producing a mutant reported as surviving that dies
-    immediately when run alone. A mutation harness is an instrument; it gets
-    the isolation demanded of the tests it measures.
+def pytest_sessionfinish(session, exitstatus):
+    with open(os.environ["FIGCITE_REGISTRY_REPORT"], "w", encoding="utf-8") as fh:
+        json.dump({"failed": sorted(set(_failed)), "exitstatus": int(exitstatus)}, fh)
+"""
+
+
+@dataclass
+class Run:
+    outcome: Outcome
+    exit_code: int | None
+    failed: list[str] = field(default_factory=list)
+    detail: str = ""
+
+
+def _worktree(dest: Path, module: str | None, source: str | None) -> Path:
+    """A private copy of the repo, one per run, deliberately.
+
+    An earlier throwaway harness in this audit used one fixed scratch
+    directory, and two runs that overlapped each wiped the tree the other was
+    mutating -- producing a mutant reported as surviving that dies immediately
+    when run alone. A mutation harness is an instrument; it gets the isolation
+    demanded of the tests it measures.
     """
-    dest.mkdir(parents=True, exist_ok=True)
+    if dest.exists():
+        shutil.rmtree(dest)
+    dest.mkdir(parents=True)
     for item in ("figcite", "tests", "pyproject.toml", "pytest.ini"):
         src = REPO / item
         if not src.exists():
@@ -233,92 +322,291 @@ def _worktree(dest: Path) -> Path:
     # The registry does not kill mutants, and running itself would not
     # terminate.
     (dest / "tests" / SELF).unlink(missing_ok=True)
+    (dest / "_registry_plugin.py").write_text(_PLUGIN, encoding="utf-8")
+    if module is not None:
+        assert source is not None
+        (dest / "figcite" / module).write_text(source, encoding="utf-8")
     return dest
 
 
-def _run_suite(tree: Path, stop_early: bool) -> tuple[bool, str]:
-    env = {k: v for k, v in os.environ.items() if not k.startswith("FIGCITE_")}
+def _run(tree: Path, selection: list[str]) -> Run:
+    """One serial pytest run under the canonical profile."""
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith("FIGCITE_") and k not in ("PYTEST_ADDOPTS", "PYTHONPATH")
+    }
+    report = tree / "registry-report.json"
+    env["FIGCITE_REGISTRY_REPORT"] = str(report)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
-    cmd = [sys.executable, "-m", "pytest", "-q", "-m", "not live", "-p", "no:randomly"]
-    try:  # opportunistic only -- xdist is not a dependency of this project
-        import xdist  # noqa: F401
-
-        cmd += ["-n", "auto", "-p", "no:cacheprovider"]
-    except ImportError:
-        pass
-    if stop_early:
-        cmd.append("-x")
-    proc = subprocess.run(
-        cmd, cwd=tree, env=env, capture_output=True, text=True, timeout=1800
+    env["PYTHONHASHSEED"] = "0"
+    # Disabling `randomly` and `cacheprovider` by name only covers the plugins
+    # known about today; any other installed third-party plugin could still
+    # change collection or execution order. The oracle loads nothing it did
+    # not ask for, and asks for the reporting plugin explicitly below.
+    env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
+    cmd = [
+        sys.executable,
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:randomly",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "_registry_plugin",
+        *selection,
+    ]
+    # Its own process group, so a timeout can reap DESCENDANTS too. pytest
+    # here can spawn children (the suite shells out), and `subprocess.run`'s
+    # timeout kills only the direct child -- leaving orphans holding the
+    # scratch tree and contaminating later runs of this same registry.
+    proc = subprocess.Popen(
+        cmd,
+        cwd=tree,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
     )
-    tail = "\n".join((proc.stdout + proc.stderr).strip().splitlines()[-12:])
-    # Exit 0 = every test passed = nothing killed the mutant. Any other code is
-    # treated as a kill, INCLUDING a collection error: a suite that cannot run
-    # is not evidence that a mutant survives it.
-    return proc.returncode == 0, tail
+    try:
+        out, err = proc.communicate(timeout=TIMEOUT)
+    except subprocess.TimeoutExpired:
+        try:
+            # `start_new_session=True` makes the child the group leader, so
+            # its pid IS the pgid. Looking it up with `os.getpgid` instead can
+            # fail once the pytest leader has exited while a descendant still
+            # holds the pipes open -- exactly the case a timeout implies --
+            # and would then leave the surviving group unkilled.
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):  # already gone
+            pass
+        proc.communicate()
+        return Run(Outcome.HARNESS_ERROR, None, [], f"timed out after {TIMEOUT}s")
+
+    tail = "\n".join((out + err).strip().splitlines()[-12:])
+    failed: list[str] = []
+    if report.exists():
+        try:
+            failed = json.loads(report.read_text(encoding="utf-8"))["failed"]
+        except (ValueError, KeyError):
+            failed = []
+
+    # pytest: 0 all passed, 1 tests failed, 2 interrupted, 3 internal error,
+    # 4 usage error, 5 nothing collected. Only 0 and 1 are evidence.
+    if proc.returncode == 0:
+        return Run(Outcome.SURVIVED, 0, [], tail)
+    if proc.returncode == 1 and failed:
+        return Run(Outcome.KILLED, 1, failed, tail)
+    return Run(
+        Outcome.HARNESS_ERROR,
+        proc.returncode,
+        failed,
+        f"exit {proc.returncode} produced no attributable failure\n{tail}",
+    )
 
 
-def _verify(
-    claim: Claim, tmp: Path, mutate: bool, stop_early: bool
-) -> tuple[bool, str]:
-    tree = _worktree(tmp / claim.claim_id)
-    path = tree / "figcite" / claim.mutation.module
-    src = path.read_text(encoding="utf-8")
-    if mutate:
-        out = _mutate_source(src, claim.mutation)
-        assert out != ast.unparse(ast.parse(src)), "the mutation changed nothing"
-    else:
-        out = ast.unparse(ast.parse(src))
-    path.write_text(out, encoding="utf-8")
-    return _run_suite(tree, stop_early)
+def _selection() -> list[str]:
+    return ["-m", "not live"]
+
+
+def _attribute(root: Path, claim: Claim, failed: list[str]) -> Run:
+    """A red suite names the mutant only if the redness came from the mutant.
+
+    Each failing node is re-run ONE AT A TIME, each in its own fresh pair of
+    trees: alone on a clean round-tripped tree it must pass, alone on the
+    mutant it must fail. Only nodes that clear both are reported as killers.
+
+    One at a time matters, and the first version got it wrong by re-running
+    the whole failing set together. If the suite reports A and B, A can seed
+    the state that makes B fail; the reduced A+B sequence still reproduces,
+    and every node in it gets reported as a verified killer even though
+    neither kills the mutant on its own. That is the same order-dependence
+    this function exists to screen out, surviving inside the screen.
+
+    A failure that reproduces only in a longer sequence is an order-dependent
+    test sequence, not an attributable kill: the fixture should install the
+    state it needs explicitly before it counts as evidence.
+    """
+    src = (REPO / "figcite" / claim.mutation.module).read_text(encoding="utf-8")
+    mutated = _mutate_source(src, claim.mutation)
+    verified: list[str] = []
+    notes: list[str] = []
+
+    for i, node in enumerate(failed):
+        clean = _worktree(
+            root / f"{claim.claim_id}-attr-{i}-clean",
+            claim.mutation.module,
+            _roundtrip(src),
+        )
+        mutant = _worktree(
+            root / f"{claim.claim_id}-attr-{i}-mutant", claim.mutation.module, mutated
+        )
+        on_clean = _run(clean, [node])
+        if on_clean.outcome is not Outcome.SURVIVED:
+            notes.append(f"{node}: also fails on a CLEAN tree, so it is not the mutant")
+            continue
+        on_mutant = _run(mutant, [node])
+        if on_mutant.outcome is not Outcome.KILLED:
+            notes.append(f"{node}: PASSES alone on the mutant (order-dependent)")
+            continue
+        verified.append(node)
+
+    if verified:
+        # One independently verified killer falsifies the proof, whatever else
+        # in the suite happened to be red at the same time.
+        return Run(Outcome.KILLED, 1, verified, "\n".join(notes))
+    return Run(
+        Outcome.HARNESS_ERROR,
+        1,
+        [],
+        "the suite went red, but NO failing test kills the mutant on its own. "
+        "That is an order-dependent sequence or unrelated breakage, not an "
+        "attributable kill -- make the required state explicit in the fixture "
+        "before counting it as evidence.\n" + "\n".join(notes),
+    )
+
+
+# ------------------------------------------------------------- the workload
+
+
+def _roundtrip_job(root: Path, module: str) -> Run:
+    src = (REPO / "figcite" / module).read_text(encoding="utf-8")
+    tree = _worktree(root / f"roundtrip-{module}", module, _roundtrip(src))
+    return _run(tree, _selection())
+
+
+def _claim_job(root: Path, claim: Claim) -> Run:
+    src = (REPO / "figcite" / claim.mutation.module).read_text(encoding="utf-8")
+    mutated = _mutate_source(src, claim.mutation)
+    assert mutated != _roundtrip(src), "the mutation changed nothing"
+    tree = _worktree(root / claim.claim_id, claim.mutation.module, mutated)
+    run = _run(tree, _selection())
+    if run.outcome is Outcome.KILLED:
+        return _attribute(root, claim, run.failed)
+    return run
+
+
+def _kill_control_job(root: Path) -> tuple[Run, Run]:
+    """Run the ONE node that is supposed to do the killing, both ways.
+
+    A full-suite `-x` run cannot tell "killed by the oracle I named" from
+    "something unrelated went red first". This repo already learned that a
+    kill you cannot attribute is not evidence; the control has to name its
+    killer and drive it directly.
+    """
+    src = (REPO / "figcite" / KILL_CONTROL.mutation.module).read_text(encoding="utf-8")
+    clean = _worktree(
+        root / "control-clean", KILL_CONTROL.mutation.module, _roundtrip(src)
+    )
+    mutant = _worktree(
+        root / "control-mutant",
+        KILL_CONTROL.mutation.module,
+        _mutate_source(src, KILL_CONTROL.mutation),
+    )
+    return _run(clean, [KILL_CONTROL_NODE]), _run(mutant, [KILL_CONTROL_NODE])
+
+
+@pytest.fixture(scope="session")
+def verdicts(tmp_path_factory) -> dict:
+    """Every run, computed once.
+
+    Runs are serial INTERNALLY -- that is the soundness requirement -- but
+    they are independent whole-suite processes sharing no state, so they are
+    executed concurrently with each other. That is a different thing from
+    xdist, which splits ONE suite's state across workers.
+    """
+    root = tmp_path_factory.mktemp("equivalence-registry")
+    out: dict = {}
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {
+            ("roundtrip", m): pool.submit(_roundtrip_job, root, m) for m in MODULES
+        }
+        futures.update(
+            {("claim", c.claim_id): pool.submit(_claim_job, root, c) for c in CLAIMS}
+        )
+        futures[("control", "kill")] = pool.submit(_kill_control_job, root)
+        for key, fut in futures.items():
+            try:
+                out[key] = fut.result()
+            except Exception as exc:  # a broken harness is not a verdict
+                out[key] = Run(
+                    Outcome.HARNESS_ERROR, None, [], f"{type(exc).__name__}: {exc}"
+                )
+    return out
 
 
 # ----------------------------------------------------------------- the tests
 
 
 @pytest.mark.slow
-def test_the_round_trip_alone_changes_nothing(tmp_path):
-    """Control for the instrument: unparsing a module must not break it.
+@pytest.mark.parametrize("module", MODULES)
+def test_the_round_trip_alone_changes_nothing(module, verdicts):
+    """Control for the instrument, once per module a claim rewrites.
 
-    Every claim below is measured on a module that has been round-tripped
-    through `ast.unparse`. If that transform were lossy, the suite would fail
-    for reasons having nothing to do with the mutant and every claim would
-    read as killed. This is checked on the module carrying the most claims.
+    Every claim is measured on a module that has been round-tripped through
+    `ast.unparse`. If that transform were lossy the suite would fail for
+    reasons having nothing to do with any mutant, and every claim in that
+    module would read as killed.
     """
-    survived, tail = _verify(CLAIMS[1], tmp_path, mutate=False, stop_early=False)
-    assert survived, (
-        "unparsing deck.py with NO mutation applied changed the suite's "
-        f"outcome, so no verdict below is trustworthy:\n{tail}"
+    run = verdicts[("roundtrip", module)]
+    assert run.outcome is Outcome.SURVIVED, (
+        f"unparsing figcite/{module} with NO mutation applied changed the "
+        f"suite's outcome ({run.outcome.value}), so no verdict for that "
+        f"module is trustworthy:\n{run.detail}"
     )
 
 
 @pytest.mark.slow
 @pytest.mark.parametrize("claim", CLAIMS, ids=lambda c: c.claim_id)
-def test_each_claim_still_holds(claim, tmp_path):
+def test_each_claim_still_holds(claim, verdicts):
     """The mutant must still survive. If it does not, the proof is obsolete."""
-    survived, tail = _verify(claim, tmp_path, mutate=True, stop_early=False)
-    assert survived, (
-        f"EQUIVALENCE CLAIM {claim.claim_id!r} IS NO LONGER TRUE.\n\n"
+    run = verdicts[("claim", claim.claim_id)]
+
+    if run.outcome is Outcome.HARNESS_ERROR:
+        pytest.fail(
+            f"claim {claim.claim_id!r} COULD NOT BE CERTIFIED -- this is not a "
+            f"statement about the proof, the run produced no evidence either "
+            f"way:\n{run.detail}"
+        )
+
+    assert run.outcome is Outcome.SURVIVED, (
+        f"EQUIVALENCE CLAIM {claim.claim_id!r} HAS BEEN FALSIFIED.\n\n"
         f"The recorded proof was:\n  {claim.proof}\n\n"
-        "A test now kills this mutant, which means the suite got stronger and "
-        "the proof is obsolete. Delete the claim from CLAIMS -- do not weaken "
-        "the test that killed it.\n\n"
-        f"{tail}"
+        f"These tests kill the mutant, and were verified to pass on a clean "
+        f"round-tripped tree and fail alone on the mutant:\n  "
+        + "\n  ".join(run.failed)
+        + "\n\nThe suite got stronger and the proof is obsolete. Delete the "
+        "claim from CLAIMS -- do not weaken the test that killed it."
     )
 
 
 @pytest.mark.slow
-def test_the_registry_can_detect_a_kill(tmp_path):
+def test_the_registry_can_detect_a_kill(verdicts):
     """The control that makes this file evidence rather than decoration.
 
-    Without it, a runner pointed at the wrong directory, or one whose exit
-    code was swallowed, would report every claim as holding forever -- a green
-    result from a harness that cannot go red. `k != "record"` is killed by
-    tests/test_deck_guards.py and tests/test_pdfdeck_layout.py, so the
-    registry must report it killed.
+    Without it, a runner pointed at the wrong directory, or one swallowing its
+    exit code, would report every claim as holding forever -- a green result
+    from a harness that cannot go red. The named oracle must PASS on a clean
+    round-tripped tree and FAIL on the mutant, so the redness is attributable
+    to the mutation and not to anything else in the suite.
     """
-    survived, tail = _verify(KILL_CONTROL, tmp_path, mutate=True, stop_early=True)
-    assert not survived, (
-        "the registry reported a KNOWN-KILLED mutant as surviving, so it "
-        f"cannot detect a kill and no claim above means anything:\n{tail}"
+    on_clean, on_mutant = verdicts[("control", "kill")]
+
+    assert on_clean.outcome is Outcome.SURVIVED, (
+        f"the control's oracle {KILL_CONTROL_NODE} does not pass on a clean "
+        f"tree, so its failure on the mutant would prove nothing "
+        f"({on_clean.outcome.value}):\n{on_clean.detail}"
+    )
+    assert on_mutant.outcome is Outcome.KILLED, (
+        f"the registry did not detect a KNOWN-KILLED mutant via its named "
+        f"oracle ({on_mutant.outcome.value}), so it cannot report a kill and "
+        f"no claim above means anything:\n{on_mutant.detail}"
+    )
+    assert KILL_CONTROL_NODE in on_mutant.failed, (
+        f"the mutant run went red, but not at {KILL_CONTROL_NODE}. An "
+        f"unattributed kill is not evidence. Failed: {on_mutant.failed}"
     )
