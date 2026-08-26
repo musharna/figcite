@@ -50,6 +50,20 @@ def page(tmp_path):
                 pytest.skip(f"chromium is not installed: {e}")
             pg = browser.new_page()
             pg.goto(f"http://127.0.0.1:{port}/", wait_until="load")
+            # `load` fires when the document and its subresources are done, not
+            # when this page is usable, and Playwright's `is_hidden` returns
+            # True for an element that IS NOT THERE. So a page that never
+            # rendered satisfies every `is_hidden` assertion in this file and
+            # fails first at whichever `is_visible` premise comes next --
+            # reporting "the wrong tab is open" for "there is no page".
+            #
+            # Measured 2026-08-26: under the equivalence registry, which runs
+            # this suite once per claim under four xdist workers, that race
+            # turned into three red gate runs whose message named a tab.
+            # Waiting for the root screen makes the fixture deliver what it
+            # claims to -- a loaded UI -- and turns a genuine failure to render
+            # into a timeout that says so.
+            pg.wait_for_selector("#pending", state="visible", timeout=30_000)
             yield pg
             browser.close()
     finally:

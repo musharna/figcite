@@ -148,7 +148,7 @@ class Mutation:
     target: str
     occurrence: int
     expect_occurrences: int
-    op: str  # "gt_to_gte" | "bump_last_arg" | "ne_to_eq"
+    op: str  # "gt_to_gte" | "bump_last_arg" | "ne_to_eq" | "eq_to_lte" | "eq_to_gte"
 
 
 @dataclass(frozen=True)
@@ -199,6 +199,72 @@ CLAIMS: tuple[Claim, ...] = (
         )
         for mod in ("deck.py", "pdfdeck.py")
         for i in (0, 1)
+    ],
+    # --- the two-value `kind` domain, from the reduced-ROR tier ------------
+    #
+    # `"filed" < "staged"`, so at every site that splits on kind exactly ONE
+    # widening admits the other value and one admits nothing at all. The
+    # dangerous half of each pair is tested in tests/test_pending_kind_split.py;
+    # these certify the inert half, which no input can reach.
+    *[
+        Claim(
+            claim_id=claim_id,
+            mutation=Mutation(
+                module=mod,
+                function=fn,
+                target=target,
+                occurrence=0,
+                expect_occurrences=1,
+                op=op,
+            ),
+            proof=(
+                "`PendingItem.kind` is written at exactly two sites, both "
+                "string literals, in `service.pending_items`; there are ZERO "
+                "assignments to `.kind` anywhere, checked by walking the AST "
+                "rather than by grepping for a spelling. The field therefore "
+                "cannot hold a third value and cannot be rewritten after "
+                "construction. Over that closed pair " + order + ", so the "
+                "widened operator admits nothing `==` did not. NOTE the kind "
+                "of argument: this is a CODE-PATH proof, not a value-domain "
+                "hypothesis -- the domain is closed by construction. The "
+                "OPPOSITE swap at this same site is NOT equivalent (it admits "
+                "the other kind) and is pinned by test_pending_kind_split.py."
+            ),
+        )
+        for claim_id, mod, fn, target, op, order in (
+            (
+                "kind-pending-staged-gte",
+                "cli.py",
+                "cmd_pending",
+                "i.kind == 'staged'",
+                "eq_to_gte",
+                '`"filed" >= "staged"` is False',
+            ),
+            (
+                "kind-pending-filed-lte",
+                "cli.py",
+                "cmd_pending",
+                "i.kind == 'filed'",
+                "eq_to_lte",
+                '`"staged" <= "filed"` is False',
+            ),
+            (
+                "kind-confirm-filed-lte",
+                "cli.py",
+                "cmd_confirm",
+                "i.kind == 'filed'",
+                "eq_to_lte",
+                '`"staged" <= "filed"` is False',
+            ),
+            (
+                "kind-service-filed-lte",
+                "service.py",
+                "pending_items",
+                "it.kind == 'filed'",
+                "eq_to_lte",
+                '`"staged" <= "filed"` is False',
+            ),
+        )
     ],
 )
 
@@ -381,6 +447,12 @@ def _mutate_source(src: str, m: Mutation) -> str:
     elif m.op == "ne_to_eq":
         assert isinstance(node, ast.Compare) and isinstance(node.ops[0], ast.NotEq)
         node.ops[0] = ast.Eq()
+    elif m.op == "eq_to_lte":
+        assert isinstance(node, ast.Compare) and isinstance(node.ops[0], ast.Eq)
+        node.ops[0] = ast.LtE()
+    elif m.op == "eq_to_gte":
+        assert isinstance(node, ast.Compare) and isinstance(node.ops[0], ast.Eq)
+        node.ops[0] = ast.GtE()
     elif m.op == "bump_last_arg":
         assert isinstance(node, ast.Call)
         const = node.args[-1]
