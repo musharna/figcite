@@ -65,7 +65,7 @@ def test_status_says_whether_the_launcher_is_installed(monkeypatch, capsys):
     assert "NOT installed" in out, out
 
 
-def test_status_reports_whether_a_poller_is_actually_running(monkeypatch, capsys):
+def test_status_reports_whether_a_watcher_is_actually_running(monkeypatch, capsys):
     """The load-bearing line, per the comment above it: a launcher in Startup
     is an INTENTION, and only this says the clipboard is being read.
 

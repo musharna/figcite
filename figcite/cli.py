@@ -150,9 +150,7 @@ def cmd_images(a) -> int:
 def cmd_watch(a) -> int:
     from .clipboard import watch
 
-    return watch(
-        max_hours=a.hours, poll_ms=a.poll_ms, auto_confirm=not a.no_auto_confirm
-    )
+    return watch(max_hours=a.hours, auto_confirm=not a.no_auto_confirm)
 
 
 def _corpus_dois() -> list[str]:
@@ -286,13 +284,13 @@ def cmd_autostart_status(a) -> int:
         print("autostart: NOT installed  (figcite autostart install)")
     else:
         print(f"autostart: installed   {st['launcher']}")
-    # The load-bearing line: the polling process itself. A launcher sitting in
-    # Startup is an intention; only this says the clipboard is being read.
+    # The load-bearing line: the watcher process itself. A launcher sitting in
+    # Startup is an intention; only this says the clipboard is being watched.
     if st["watching"]:
         for p in st["processes"]:
-            print(f"WATCHING   clipboard poller pid={p['pid']} since {p['started']}")
+            print(f"WATCHING   clipboard watcher pid={p['pid']} since {p['started']}")
     else:
-        print("NOT WATCHING — no clipboard poller process is running")
+        print("NOT WATCHING — no clipboard watcher process is running")
     if st["supervisors"]:
         print(
             f"supervisor {len(st['supervisors'])} restart loop(s) alive "
@@ -838,7 +836,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     w = sub.add_parser("watch", help="watch the Windows clipboard for snipped images")
     w.add_argument("--hours", type=float, default=8.0)
-    w.add_argument("--poll-ms", type=int, default=800)
+    # No --poll-ms: the watcher is woken by WM_CLIPBOARDUPDATE and never polls,
+    # so an interval would be a knob naming a mechanism that is not there.
+    # Removed rather than accepted-and-ignored, so an old invocation fails
+    # loudly instead of appearing to set something.
     w.add_argument(
         "--no-auto-confirm",
         action="store_true",

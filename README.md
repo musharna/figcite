@@ -437,3 +437,15 @@ overrides it when you mean to.
 - The watcher deliberately ignores whatever is already on the clipboard when it
   starts, because the focused window at that moment is not where the image came
   from. `-CaptureExisting` opts in.
+- **The watcher is woken, not ticking.** It used to ask the clipboard every
+  800ms whether anything had changed — 75 times a minute, ~108,000 times a day,
+  and every ask *opens* the clipboard so nothing else can while it is open. It
+  now registers with `AddClipboardFormatListener` and sleeps until Windows sends
+  `WM_CLIPBOARDUPDATE`. Measured over 12 idle seconds: 94ms of CPU before, 0ms
+  after. There is no polling fallback — failing to subscribe prints
+  `WATCH_FAILED` and exits, because a fallback would restore the cost silently
+  on the one machine nobody is watching.
+- **A clipboard it cannot read is not a clipboard with nothing on it.** The read
+  has three outcomes — an image, no image, or `CLIPBOARD_UNREADABLE` when another
+  application is holding it — instead of the old `catch { }` that reported the
+  third as the second.

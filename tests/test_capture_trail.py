@@ -142,3 +142,76 @@ def test_malformed_capture_announcement_is_ignored(monkeypatch, tmp_path, capsys
         f"expected only the one real capture to be processed, got {seen}"
     )
     assert "malformed capture announcement" in capsys.readouterr().out
+
+
+# ------------------------------------------- the watcher stopped polling, 2026-08-26
+
+
+def _ps1_param_block() -> str:
+    """The `param(...)` header of the watcher script, brackets balanced.
+
+    Extracted rather than grepped because the script now TALKS about polling at
+    length in order to explain why it does not poll, so `"PollMs" in src` would
+    be satisfied by a comment saying the opposite of what the test wants to
+    know. A parameter is a structural thing; ask the structure.
+    """
+    src = C.PS1.read_text(encoding="utf-8", errors="replace")
+    start = src.index("param(")
+    depth = 0
+    for i in range(start + len("param"), len(src)):
+        if src[i] == "(":
+            depth += 1
+        elif src[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return src[start : i + 1]
+    raise AssertionError("param( block in watch_clipboard.ps1 is never closed")
+
+
+def test_the_watcher_has_no_poll_interval_because_it_does_not_poll():
+    """It used to ask the clipboard every 800ms whether anything had changed --
+    75 times a minute, and every ask OPENS the clipboard so nothing else can.
+
+    A `-PollMs` parameter surviving the rewrite would mean either a poll loop
+    came back or the script advertises a knob that controls nothing. Both are
+    worth failing on.
+    """
+    assert "PollMs" not in _ps1_param_block(), (
+        "the watcher takes a poll interval again; it is supposed to be woken by "
+        "WM_CLIPBOARDUPDATE, not to ask on a timer"
+    )
+
+
+def test_the_watcher_subscribes_and_then_sleeps_on_the_event():
+    """The positive half of the test above: absence of a poll knob would also be
+    satisfied by a watcher that does nothing at all."""
+    src = C.PS1.read_text(encoding="utf-8", errors="replace")
+    assert "AddClipboardFormatListener(sink.Handle)" in src, (
+        "nothing subscribes to clipboard changes"
+    )
+    assert "$listener.Changed.WaitOne(" in src, (
+        "the main loop does not wait on the change event"
+    )
+
+
+def test_an_unreadable_clipboard_is_not_reported_as_an_empty_one():
+    """The old loop wrapped the whole read in `catch { }`, so a clipboard that
+    would not open reported exactly as a clipboard with nothing on it -- an
+    outage folded into an absence, which is the failure this project exists to
+    avoid everywhere else. The read has three outcomes now, and the third is
+    announced rather than swallowed."""
+    src = C.PS1.read_text(encoding="utf-8", errors="replace")
+    assert 'state = "Unreadable"' in src, "the read cannot express 'I could not tell'"
+    assert 'state = "NoImage"' in src, "the read cannot express 'nothing there'"
+    assert "CLIPBOARD_UNREADABLE" in src, "an unreadable clipboard is never announced"
+
+
+def test_failing_to_subscribe_is_fatal_rather_than_falling_back_to_polling():
+    """A polling fallback would restore the cost the subscription exists to
+    remove, silently, in the one situation nobody is looking at the logs."""
+    src = C.PS1.read_text(encoding="utf-8", errors="replace")
+    assert "WATCH_FAILED" in src, "a failed subscription is not announced"
+    assert "exit 4" in src, "a failed subscription does not stop the watcher"
+    assert src.index("WATCH_FAILED") < src.index("WATCH_START"), (
+        "the failure check must come before the watcher claims to be started"
+    )

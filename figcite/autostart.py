@@ -50,7 +50,7 @@ BACKOFF_SECONDS = 60
 # A watcher that exits faster than this did not do useful work; back off.
 TOO_FAST_SECONDS = 30
 
-# Find the clipboard poller -- and NOT the process doing the finding.
+# Find the clipboard watcher -- and NOT the process doing the finding.
 #
 # A PowerShell process that greps command lines for 'watch_clipboard.ps1' has
 # that string in its OWN command line, so the naive filter matches itself. That

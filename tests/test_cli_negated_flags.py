@@ -191,9 +191,24 @@ def test_watch_passes_its_other_settings_through_unchanged(monkeypatch):
     seen: dict = {}
     monkeypatch.setattr("figcite.clipboard.watch", lambda **kw: (seen.update(kw), 0)[1])
 
-    assert cli.main(["watch", "--hours", "3.5", "--poll-ms", "250"]) == 0
+    assert cli.main(["watch", "--hours", "3.5"]) == 0
     assert seen["max_hours"] == 3.5
-    assert seen["poll_ms"] == 250
+
+
+def test_watch_rejects_the_poll_interval_it_no_longer_has(monkeypatch, capsys):
+    """`--poll-ms` set the interval of a loop that no longer exists: the watcher
+    is woken by WM_CLIPBOARDUPDATE and never asks on a timer.
+
+    It is REJECTED rather than accepted-and-ignored. A flag that is quietly
+    swallowed reads to whoever typed it as a setting that took effect, which is
+    the worse of the two failures -- they would go on believing they had turned
+    the poll rate down on something that does not poll.
+    """
+    monkeypatch.setattr("figcite.clipboard.watch", lambda **kw: 0)
+    with pytest.raises(SystemExit) as e:
+        cli.main(["watch", "--poll-ms", "250"])
+    assert e.value.code == 2
+    assert "poll-ms" in capsys.readouterr().err
 
 
 def test_no_start_installs_without_launching(monkeypatch):

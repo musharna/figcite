@@ -390,7 +390,6 @@ def _zotero_try(query: str, out: dict, page_title: bool = False) -> str:
 
 def watch(
     max_hours: float = 8.0,
-    poll_ms: int = 800,
     resolve: bool = True,
     auto_confirm: bool = True,
 ) -> int:
@@ -409,8 +408,6 @@ def watch(
         wsl_to_win(PS1),
         "-StagingDir",
         win_dir,
-        "-PollMs",
-        str(poll_ms),
         "-MaxHours",
         str(max_hours),
     ]
@@ -421,10 +418,21 @@ def watch(
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
     )
+    failed = False
     try:
         for line in proc.stdout:  # type: ignore[union-attr]
             line = line.strip()
             if not line:
+                continue
+            if line.startswith("WATCH_FAILED"):
+                # The watcher could not subscribe to clipboard changes, and it
+                # deliberately has no polling fallback -- a fallback would put
+                # back the cost the subscription exists to remove, silently, on
+                # the one machine nobody is watching. So this is fatal here too:
+                # the supervising launcher retries with a backoff, and the log
+                # says why rather than showing a watcher that watches nothing.
+                print(f"  {line}", flush=True)
+                failed = True
                 continue
             if line.startswith("WATCH_ALREADY_RUNNING"):
                 print(
@@ -465,7 +473,7 @@ def watch(
         print("stopping watcher", flush=True)
     finally:
         proc.terminate()
-    return 0
+    return 1 if failed else 0
 
 
 def enrich(png: str | os.PathLike) -> dict:

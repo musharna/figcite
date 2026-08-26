@@ -100,7 +100,7 @@ def test_a_probe_that_did_not_complete_is_UNKNOWN_not_empty(monkeypatch):
     substrings in place.
 
     Under the mutant a probe that never ran returns an EMPTY LIST, which the
-    caller renders as "NOT WATCHING -- no clipboard poller process is
+    caller renders as "NOT WATCHING -- no clipboard watcher process is
     running". A failed measurement reported as a negative observation is the
     same error this whole tool exists to prevent, one layer down.
     """

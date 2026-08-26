@@ -16,7 +16,12 @@ from figcite.crossref import record_from_doi, search_bibliographic
 from figcite.pdfgrab import crop, discover_doi
 from figcite.provenance import read_embedded
 
-pytestmark = [pytest.mark.live, pytest.mark.desktop_destructive]
+# `live` for the module -- every test here crosses a real system boundary. But
+# only ONE of them mutates the machine the human is sitting at, and blanket
+# marking the others `desktop_destructive` would make the marker mean "live",
+# which is the conflation the marker was introduced to undo. The narrow mark
+# goes on the test that earns it.
+pytestmark = [pytest.mark.live]
 
 REAL_PDF = (
     "/mnt/c/Users/a2b32/Zotero/storage/497VPIMU/"
@@ -100,6 +105,7 @@ def test_real_pdf_crop_end_to_end(tmp_path):
 
 
 @pytest.mark.skipif(not Path(PS_EXE).exists(), reason="no Windows PowerShell")
+@pytest.mark.desktop_destructive
 def test_windows_clipboard_watcher_captures_a_real_snip(tmp_path, monkeypatch):
     """Drives the actual watcher against the actual Windows clipboard.
 
@@ -182,8 +188,6 @@ def test_windows_clipboard_watcher_captures_a_real_snip(tmp_path, monkeypatch):
             wsl_to_win(PS1),
             "-StagingDir",
             win_dir,
-            "-PollMs",
-            "400",
             "-MaxHours",
             "0.02",
         ],
@@ -193,7 +197,7 @@ def test_windows_clipboard_watcher_captures_a_real_snip(tmp_path, monkeypatch):
     )
     created = []
     try:
-        time.sleep(8)  # warm-up + several poll cycles
+        time.sleep(8)  # warm-up, then long enough that a stale capture would have landed
         stale = captures_since(before)
         assert not stale, (
             f"watcher captured the pre-existing clipboard image {stale} and would "
@@ -236,3 +240,115 @@ def test_windows_clipboard_watcher_captures_a_real_snip(tmp_path, monkeypatch):
         # Put production back the way we found it.
         if was_installed:
             autostart.start()
+
+
+def test_an_idle_watcher_costs_nothing(tmp_path, monkeypatch):
+    """The watcher used to ask the clipboard 75 times a minute whether anything
+    had changed, and every ask OPENS the clipboard, so no other application can
+    while it is open. It is woken by WM_CLIPBOARDUPDATE now and sleeps between
+    changes, which is only worth anything if idle really is free.
+
+    Measured over 12 seconds of an untouched clipboard: the polling version
+    burned ~100ms of CPU, the event-driven version burns 0.
+
+    Deliberately NOT `desktop_destructive`: this starts a watcher on a private
+    staging directory and then watches it do nothing. It reads the clipboard
+    once at startup to prime its hash and never writes it, so nothing the human
+    owns is touched.
+    """
+    from figcite.clipboard import PS1, wsl_to_win
+
+    private = tmp_path / "idle-staging"
+    private.mkdir(parents=True, exist_ok=True)
+    win_dir = wsl_to_win(private)
+
+    proc = subprocess.Popen(
+        [
+            PS_EXE,
+            "-sta",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            wsl_to_win(PS1),
+            "-StagingDir",
+            win_dir,
+            "-MaxHours",
+            "0.02",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+    def cpu_ms(win_pid):
+        """CPU consumed so far, asked of Windows in 100-nanosecond ticks."""
+        r = subprocess.run(
+            [
+                PS_EXE,
+                "-NoProfile",
+                "-Command",
+                f"$p = Get-CimInstance Win32_Process -Filter 'ProcessId={win_pid}';"
+                "if ($p) { ($p.KernelModeTime + $p.UserModeTime) } else { 'GONE' }",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        out = r.stdout.strip()
+        if out == "GONE" or not out:
+            return None
+        return int(out) / 10_000.0
+
+    try:
+        # The Popen pid is the WSL-side interop stub, not the Windows process.
+        # The private staging directory appears verbatim in the real process's
+        # command line, so ask Windows for the one that has it.
+        win_pid = None
+        deadline = time.time() + 30
+        while time.time() < deadline and win_pid is None:
+            r = subprocess.run(
+                [
+                    PS_EXE,
+                    "-NoProfile",
+                    "-Command",
+                    "Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\" |"
+                    f" Where-Object {{ $_.CommandLine -like '*{private.name}*' }} |"
+                    " Select-Object -First 1 -ExpandProperty ProcessId",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if r.stdout.strip().isdigit():
+                win_pid = int(r.stdout.strip())
+            else:
+                time.sleep(1)
+        assert win_pid, "the watcher process never appeared in the Windows process table"
+
+        time.sleep(4)  # let startup -- Add-Type compiles C# -- finish and settle
+        before = cpu_ms(win_pid)
+        assert before is not None, "the watcher died during warm-up"
+        time.sleep(12)  # twelve seconds of an untouched clipboard
+        after = cpu_ms(win_pid)
+
+        # Positive control FIRST: a watcher that has exited also burns no CPU,
+        # and would sail through the assertion below. "Asleep" and "dead" are
+        # two states and this test has to tell them apart.
+        assert after is not None, (
+            "the watcher exited during the idle window; 0ms of CPU would then "
+            "mean nothing at all"
+        )
+        assert before > 0, (
+            "the watcher reports zero CPU even for its own startup, so this "
+            "measurement is not measuring anything"
+        )
+
+        burned = after - before
+        assert burned < 30, (
+            f"an idle watcher burned {burned:.0f}ms of CPU over 12 seconds; the "
+            f"800ms poll loop this replaced burned about 100ms, so something is "
+            f"asking the clipboard on a timer again"
+        )
+    finally:
+        proc.terminate()
