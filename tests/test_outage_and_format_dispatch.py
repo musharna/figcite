@@ -330,3 +330,39 @@ def test_the_written_record_hashes_the_output_not_the_input(tmp_path):
     assert out.sha256 != sha256_bytes(src.read_bytes()), (
         "the record hashes the INPUT; embedding changed the bytes, so these must differ"
     )
+
+
+def test_a_tiff_is_converted_too_and_not_written_under_its_own_name(tmp_path):
+    """The `else` arm again, from ABOVE the comparison instead of below it.
+
+    The BMP test above is the same rule and cannot see this. `embed`'s first
+    branch is `fmt == "PNG" or dst...endswith(".png")`, and every source these
+    tests feed it sorts at or below "PNG" -- "BMP" < "JPEG" < "PNG". Widen that
+    comparison to `>=` and none of them enter it, so the mutant survives a file
+    full of format-dispatch tests.
+
+    "TIFF" sorts above. So do "WEBP" and "PPM". And TIFF is not an exotic
+    choice for this tool: microscopy and gel images arrive as .tif routinely.
+
+    Widened, a TIFF takes the PNG branch: PNG bytes are written to the .tif
+    path that was asked for, the rename to .png never happens, and the sidecar
+    ends up naming a file whose extension lies about its contents.
+    """
+    src = _make(tmp_path / "in.tif", "TIFF")
+    assert _format_on_disk(src) == "TIFF", "the fixture is not a TIFF"
+    assert "TIFF" > "PNG", "TIFF no longer sorts above PNG; this test is moot"
+
+    dst = tmp_path / "out.tif"
+    out = embed(src, dst, REC)
+
+    converted = tmp_path / "out.png"
+    assert converted.exists(), (
+        "a TIFF was not converted; the PNG branch claimed it and wrote PNG "
+        "bytes under the .tif name"
+    )
+    assert not dst.exists(), (
+        f"{dst.name} was written as well as {converted.name}, so there are now "
+        f"two files and only one of them is named honestly"
+    )
+    assert _format_on_disk(converted) == "PNG"
+    assert out.sha256, "the returned record has no hash of what was written"

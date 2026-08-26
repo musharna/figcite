@@ -266,3 +266,64 @@ def test_an_unlabelled_candidate_is_treated_as_a_lead(capsys, monkeypatch):
     assert "lead" in out[:lead_at].lower(), (
         "an unlabelled candidate was presented as evidence:\n" + out
     )
+
+
+def test_only_the_failed_doi_is_printed_as_a_failure(capsys, monkeypatch):
+    """The test above lists five outcomes and asserts each reason reaches the
+    user -- and cannot see the failure branch widen.
+
+    `o.status == "failed"` decides which DOIs get a `FAILED` line. Widened to
+    `>=` every other status qualifies ("indexed" > "failed", and so does every
+    `not-*`), so all five print as failures. The existing assertions still
+    pass, because the reasons it checks for are also printed by the tally
+    underneath: the strings are all still there, attached to the wrong claim.
+
+    The count is what distinguishes them. One of these failed.
+    """
+    monkeypatch.setattr(
+        corpus,
+        "build",
+        lambda dois, limit=None: [
+            corpus.BuildOutcome("10.1/a", "PMC1", "indexed"),
+            corpus.BuildOutcome("10.1/b", "PMC2", "not-open-access"),
+            corpus.BuildOutcome("10.1/c", "", "no-pmc-copy"),
+            corpus.BuildOutcome("10.1/e", "PMC5", "failed", "connection reset"),
+        ],
+    )
+    monkeypatch.setattr(cli, "_corpus_dois", lambda: ["10.1/%s" % c for c in "abce"])
+
+    class A:
+        limit = None
+
+    cli.cmd_corpus_build(A())
+    out = capsys.readouterr().out
+
+    failed_lines = [ln for ln in out.splitlines() if "FAILED" in ln]
+    assert len(failed_lines) == 1, (
+        f"exactly one DOI failed; {len(failed_lines)} were reported as "
+        f"failures:\n" + "\n".join(failed_lines)
+    )
+    assert "10.1/e" in failed_lines[0], failed_lines[0]
+    # Positive control: a run where nothing failed must print no FAILED line,
+    # so "count == 1" is not satisfied by a formatter that always prints one.
+    assert "connection reset" in failed_lines[0], failed_lines[0]
+
+
+def test_a_build_with_no_failures_prints_no_failure_lines(capsys, monkeypatch):
+    """The other half of the control above."""
+    monkeypatch.setattr(
+        corpus,
+        "build",
+        lambda dois, limit=None: [
+            corpus.BuildOutcome("10.1/a", "PMC1", "indexed"),
+            corpus.BuildOutcome("10.1/b", "PMC2", "not-open-access"),
+        ],
+    )
+    monkeypatch.setattr(cli, "_corpus_dois", lambda: ["10.1/a", "10.1/b"])
+
+    class A:
+        limit = None
+
+    cli.cmd_corpus_build(A())
+    out = capsys.readouterr().out
+    assert "FAILED" not in out, f"a clean build reported failures:\n{out}"

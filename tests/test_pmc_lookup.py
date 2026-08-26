@@ -109,3 +109,39 @@ def test_a_result_with_a_pmcid_still_carries_it(monkeypatch):
         ),
     )
     assert pmc.lookup_dois(["10.1/oa"]).records[0].pmcid == "PMC7"
+
+
+def test_a_record_with_no_open_access_field_is_not_open_access(monkeypatch):
+    """Europe PMC does not promise every field on every record.
+
+    `it.get("isOpenAccess") == "Y"` reads a MISSING field as None and answers
+    False, which is the right answer -- an unstated licence is not a grant.
+    Every existing test supplies the field as "Y" or "N", so the None case had
+    never been through this code at all.
+
+    It is worth a test beyond tidiness: `None` does not compare with a string
+    under anything except `==` and `!=`. Widen that comparison and the same
+    absent field raises TypeError in the middle of a lookup, turning a record
+    figcite should simply mark closed-access into a crashed batch.
+    """
+    def fake_get(url, **kw):
+        return _fake_response(
+            [
+                {
+                    "doi": "10.1/missing-field",
+                    "pmcid": "PMC9",
+                    "title": "No licence stated",
+                    "pubYear": "2021",
+                    # isOpenAccess deliberately absent
+                },
+            ]
+        )
+
+    monkeypatch.setattr(pmc, "_get", fake_get)
+    out = pmc.lookup_dois(["10.1/missing-field"]).records
+
+    assert len(out) == 1, out
+    assert out[0].pmcid == "PMC9"
+    assert out[0].is_open_access is False, (
+        "a record with no isOpenAccess field was treated as open access"
+    )

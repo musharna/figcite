@@ -188,3 +188,4 @@ def test_a_dot_jpeg_destination_takes_the_jpeg_arm(tmp_path):
     assert dst.exists(), "the .jpeg the caller asked for was not written"
     with Image.open(dst) as im:
         assert im.format == "JPEG", im.format
+
