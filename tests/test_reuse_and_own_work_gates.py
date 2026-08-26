@@ -258,3 +258,174 @@ def test_a_sourced_figure_is_still_captioned_in_a_pdf(tmp_path):
     assert "Shiragaki" in figure_page, (
         f"a sourced figure lost its caption: {figure_page!r}"
     )
+
+
+# --- own_work, from the side of the comparison nothing stood on -------------
+#
+# `source_kind == "generated"` means "the user made this themselves", and it
+# buys two exemptions: bibtex drops the record from the bibliography, and both
+# deck writers suppress its citation caption. Widened to `<=` it stops naming a
+# kind and starts naming a HALF-LINE -- and the kinds that fall inside it are
+# `clipboard`, `clipboard-from-pdf` and `clipboard-from-web`, which is figcite's
+# primary capture path and by definition somebody ELSE's figure.
+#
+# So the mutant's effect is: a figure snipped out of a paper is reclassified as
+# your own work, dropped from the bibliography, and printed with no attribution.
+# That is the exact outcome this tool exists to prevent.
+#
+# The tests above already cover both sides of `own_work` -- and could not see
+# it. `_rec` defaults to `source_kind="pdf-crop"`, and "pdf-crop" > "generated",
+# so the sourced-figure control sits on the one side of the comparison the
+# widening does not reach. It proves the feature works; it cannot prove the
+# predicate discriminates.
+
+CAPTURED_KINDS = ["clipboard", "clipboard-from-pdf", "clipboard-from-web"]
+
+
+def test_the_captured_kinds_really_do_sort_below_generated():
+    """The premise the three tests below rest on.
+
+    If a kind stopped sorting below "generated" it would stop exercising the
+    widening, and those tests would keep passing while testing nothing -- which
+    is precisely how `pdf-crop` came to be the sourced representative.
+    """
+    for kind in CAPTURED_KINDS:
+        assert kind < "generated", f"{kind!r} no longer sorts below 'generated'"
+    assert "pdf-crop" > "generated", (
+        "pdf-crop now sorts below 'generated'; the older tests in this file "
+        "would start covering the widening and this comment would be wrong"
+    )
+
+
+@pytest.mark.parametrize("kind", CAPTURED_KINDS)
+def test_a_captured_figure_is_not_counted_as_own_work_in_the_bib(kind):
+    """Someone else's figure must appear in the bibliography."""
+    rep = records_to_bibtex([_rec(source_kind=kind)])
+    assert rep["skipped_own_work"] == 0, (
+        f"a {kind!r} capture was counted as the user's own work and dropped "
+        f"from the bibliography: {rep}"
+    )
+    assert rep["included"] == 1, rep
+    # The DOI, not the short cite: `_rec` sets no authors/year, so the entry
+    # renders as @article{anonnd} and carries the DOI as its only identifying
+    # field. Asserting on a name the entry never contains would fail for a
+    # reason that has nothing to do with the own-work gate.
+    assert DOI in rep["bibtex"], rep["bibtex"]
+
+
+def test_a_captured_figure_is_still_captioned_in_a_pdf(tmp_path):
+    """One representative rather than all three: the PDF and pptx writers are
+    slow, and `clipboard` is both the primary path and the lexicographic floor
+    of the widened range, so it is the strongest single case."""
+    pdf = _staged_pdf(
+        tmp_path, _rec(source_kind="clipboard"), name="captured.pdf", seed=44
+    )
+    out = tmp_path / "captured.cited.pdf"
+
+    pdf_apply(pdf, out, captions=True, credits=True)
+
+    doc = fitz.open(str(out))
+    figure_page = doc[0].get_text()
+    doc.close()
+    assert "Shiragaki" in figure_page, (
+        f"a captured figure was treated as own work and lost its caption: "
+        f"{figure_page!r}"
+    )
+
+
+def _first_slide_text(path):
+    """Text on the FIGURE slide only.
+
+    `_pptx_text` concatenates every slide, credits page included -- and the
+    credits page prints the citation whether or not the caption was
+    suppressed. So a whole-deck search cannot tell "captioned" from
+    "credited", and the first version of the test below passed while its
+    mutant survived. The PDF test above already scoped itself to `doc[0]`
+    for exactly this reason.
+    """
+    prs = Presentation(str(path))
+    slide = prs.slides[0]
+    return "\n".join(
+        sh.text_frame.text for sh in slide.shapes if sh.has_text_frame
+    )
+
+
+def test_a_captured_figure_is_still_captioned_in_a_pptx(tmp_path):
+    deck = _staged_pptx(
+        tmp_path, _rec(source_kind="clipboard"), name="captured.pptx", seed=52
+    )
+    out = tmp_path / "captured.cited.pptx"
+
+    pptx_apply(deck, out, captions=True, credits=True)
+
+    figure_slide = _first_slide_text(out)
+    assert "Shiragaki" in figure_slide, (
+        f"a captured figure was treated as own work and lost its caption: "
+        f"{figure_slide!r}"
+    )
+
+
+def test_the_pptx_probe_reads_the_figure_slide_not_the_credits(tmp_path):
+    """Positive control for `_first_slide_text`.
+
+    A helper that returned the whole deck would make the test above pass on a
+    suppressed caption, because the credits page names the work anyway. This
+    pins that the figure slide and the credits page are different text.
+    """
+    deck = _staged_pptx(
+        tmp_path, _rec(source_kind="generated"), name="own.pptx", seed=53
+    )
+    out = tmp_path / "own.cited.pptx"
+
+    pptx_apply(deck, out, captions=True, credits=True)
+
+    assert "Shiragaki" not in _first_slide_text(out), (
+        "own work was captioned on the figure slide, or the probe is reading "
+        "the whole deck"
+    )
+    assert "Shiragaki" in _pptx_text(out), (
+        "the credits page stopped naming the work, so the contrast this "
+        "control draws no longer exists"
+    )
+
+
+def test_no_source_kind_sorts_below_clipboard():
+    """What makes `autostart.status`'s widened count harmless -- checked.
+
+    `status` counts captures with `r.source_kind == "clipboard"`. Widened to
+    `<=` that count would absorb every kind sorting below "clipboard", and
+    today there are none: "clipboard" is a prefix of "clipboard-from-pdf" and
+    "clipboard-from-web", so it is the floor.
+
+    That is an argument about VALUES, not about the code path -- `_actions.py`
+    takes `kind: str` and hands it straight to `Record(source_kind=kind)`, so
+    nothing structurally stops a caller inventing a new one. Which makes it a
+    hypothesis, and the honest thing to do with a hypothesis is give it
+    something that can falsify it. Add a kind sorting below "clipboard" and
+    this fails, pointing at the equivalence claim that would go stale.
+    """
+    import ast
+    import pathlib
+
+    import figcite
+
+    literals: dict[str, str] = {}
+    for path in sorted(pathlib.Path(figcite.__file__).parent.glob("*.py")):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            for kw in node.keywords:
+                if kw.arg in ("source_kind", "kind") and isinstance(
+                    kw.value, ast.Constant
+                ):
+                    if isinstance(kw.value.value, str):
+                        literals[kw.value.value] = f"{path.name}:{node.lineno}"
+
+    assert literals, "found no source_kind literals at all; this probe is broken"
+    below = {k: where for k, where in literals.items() if k < "clipboard"}
+    assert not below, (
+        f"a source_kind now sorts below 'clipboard': {below}. "
+        f"`autostart.status`'s count is no longer safe under a widened "
+        f"comparison, and the equivalence claim for it is stale."
+    )
