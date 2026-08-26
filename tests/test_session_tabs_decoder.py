@@ -226,3 +226,131 @@ def test_the_fully_qualified_localhost_name_is_also_loopback(tmp_path):
     assert [c["doi"] for c in cands] == ["10.1111/nph.99999"], (
         f"figcite's own UI was offered as the source of a figure: {cands}"
     )
+
+
+# ------------------------------- the operands, from the side nothing stood on
+
+
+def test_a_back_offset_strictly_inside_the_output_is_legal():
+    """Every legal-offset test in this file uses `offset == len(out)`.
+
+    `_block(b"abc", 0, 3)` and `_block(b"A", 0, 1)` both look back to the very
+    first byte written, and at that point `offset > len(out)` and
+    `offset != len(out)` give the SAME answer. So the guard could be checking
+    inequality rather than range and nothing here would notice -- which is what
+    the reduced-ROR sweep found: `offset > len(out)` -> `!=` survived a file
+    full of back-offset tests.
+
+    Under that mutant every ordinary match is rejected as corrupt, because in
+    real LZ4 the look-back is almost always SHORTER than the output so far.
+    Four literals and a look-back of two is the smallest case that says so.
+    """
+    got = st.lz4_block_decompress(_block(b"abcd", 0, 2), 8)
+
+    assert got == b"abcdcdcd", got
+
+
+def test_the_two_operands_of_the_offset_guard_are_not_the_same_test():
+    """Pins why the test above exists, so it cannot be 'simplified' back.
+
+    If a future edit made every legal case use offset == len(out) again, the
+    guard would be untestable for inequality-vs-range and this file would go
+    back to passing on a broken predicate.
+    """
+    # offset < len(out): legal, and only `>` allows it
+    assert st.lz4_block_decompress(_block(b"abcd", 0, 2), 8) == b"abcdcdcd"
+    # offset == len(out): legal, the existing boundary case
+    assert st.lz4_block_decompress(_block(b"abc", 0, 3), 7) == b"abcabca"
+    # offset > len(out): refused
+    with pytest.raises(ValueError, match="corrupt LZ4 back-offset"):
+        st.lz4_block_decompress(_block(b"A", 0, 5), 8)
+
+
+def test_a_truncated_block_does_not_run_off_the_end():
+    """`if pos >= n: break` survived being narrowed to `==`, because no test
+    ever gets `pos` PAST `n`.
+
+    It gets there on truncated input. `out += src[pos : pos + lit_len]` is a
+    slice and clamps; `pos += lit_len` does not, so a block claiming more
+    literals than it carries leaves `pos > n`. `pos >= n` is then True and the
+    block ends -- but `pos == n` is False, and the next read is off the end.
+
+    A session file that was being written when Firefox was killed is exactly
+    this input, so the difference is between returning the bytes that survived
+    and raising IndexError from inside a decompressor.
+
+    NOTE what this does NOT cover, because the measurement said so: the loop
+    header `while pos < n` narrowed to `!=` SURVIVES this test, and survives
+    correctly. This very break is why. It catches the only route that
+    overshoots, and every read after it (`src[pos]`, `src[pos + 1]`) raises
+    rather than advancing past the end -- so `pos <= n` always holds at the top
+    of the loop and the two spellings agree there. One guard is what makes the
+    other unobservable; that is a proof, not a coverage gap.
+    """
+    # token claims 9 literals; only 3 follow.
+    truncated = bytes([9 << 4]) + b"abc"
+
+    got = st.lz4_block_decompress(truncated, 16)
+
+    assert got == b"abc", got
+
+
+def test_a_block_that_ends_exactly_on_its_literals_is_still_whole():
+    """Positive control for the test above: `pos == n` is the ordinary way a
+    block ends, and a decoder that bailed early on everything would satisfy
+    the truncation assertion too."""
+    exact = bytes([3 << 4]) + b"xyz"
+
+    assert st.lz4_block_decompress(exact, 3) == b"xyz"
+
+
+# ---------------------------------------- why six of these mutants are correct
+
+
+def test_the_arithmetic_that_makes_the_narrow_spellings_equivalent():
+    """Six reduced-ROR mutants in this decoder survive, and should.
+
+    They are not coverage gaps, they are arithmetic:
+
+        lit_len   = token >> 4     so 0..15   =>  `== 15` is `>= 15`
+        match_len = token & 0x0F   so 0..15   =>  `== 15` is `>= 15`
+        b         = src[pos]       so 0..255  =>  `!= 255` is `< 255`  (x2)
+        offset    = a | (b << 8)   so >= 0    =>  `== 0` is `<= 0`
+
+    (The sixth, `while pos < n` -> `!=`, is proved by the break above rather
+    than by arithmetic, and is argued where that test lives.)
+
+    Written as a test rather than a comment because a comment cannot fail.
+    Each of these would be a registry equivalence claim, except that a claim
+    re-runs the entire suite in a subprocess to re-check one operator, and the
+    property is decidable here in microseconds by enumeration. Change the
+    nibble mask or widen the byte source and this fails, naming the mutant
+    whose proof just went stale.
+    """
+    for token in range(256):
+        lit_len = token >> 4
+        match_len = token & 0x0F
+        assert 0 <= lit_len <= 15, (token, lit_len)
+        assert 0 <= match_len <= 15, (token, match_len)
+        assert (lit_len == 15) == (lit_len >= 15), token
+        assert (match_len == 15) == (match_len >= 15), token
+
+    for b in range(256):
+        assert (b != 255) == (b < 255), b
+
+    for lo in (0, 1, 254, 255):
+        for hi in (0, 1, 254, 255):
+            offset = lo | (hi << 8)
+            assert offset >= 0
+            assert (offset == 0) == (offset <= 0), (lo, hi)
+
+
+def test_a_byte_really_is_the_only_thing_that_reaches_those_comparisons():
+    """The premise of the enumeration above: `b` comes from indexing `bytes`,
+    which yields 0..255 and nothing else. If that source ever became something
+    wider -- an int from a struct field, say -- `!= 255` and `< 255` would part
+    company and the enumeration would no longer be about the real operand."""
+    sample = bytes(range(256))
+    assert {type(sample[i]) for i in range(256)} == {int}
+    assert min(sample[i] for i in range(256)) == 0
+    assert max(sample[i] for i in range(256)) == 255

@@ -59,6 +59,9 @@ def test_decoder_expands_a_back_reference():
     assert st.lz4_block_decompress(block, 7) == b"abcabca"
 
 
+MAGIC_BYTES = st.MAGIC
+
+
 def test_bad_magic_is_refused_and_a_good_one_is_not(tmp_path):
     payload = b'{"windows":[]}'
     good = tmp_path / "good.jsonlz4"
@@ -67,12 +70,26 @@ def test_bad_magic_is_refused_and_a_good_one_is_not(tmp_path):
     # the negative assertion below would pass for the wrong reason.
     assert st.read_mozlz4(good) == payload
 
-    bad = tmp_path / "bad.jsonlz4"
-    bad.write_bytes(
-        b"NOTMOZLZ" + struct.pack("<I", len(payload)) + _lz4_literals(payload)
-    )
-    with pytest.raises(ValueError, match="mozLz4"):
-        st.read_mozlz4(bad)
+    # Two bad magics, one on each side of MAGIC in byte order.
+    #
+    # `raw[:8] != MAGIC` compares for INEQUALITY, and a single counter-example
+    # cannot show that: b"NOTMOZLZ" sorts BELOW b"mozLz40\0" ('N' < 'm'), so a
+    # guard narrowed to `raw[:8] < MAGIC` refuses it too and the test passes on
+    # the narrowed guard. The reduced-ROR sweep found exactly that survivor.
+    #
+    # Anything sorting ABOVE separates them, and such a file is not
+    # far-fetched -- any header beginning with a byte above 'm' qualifies.
+    for label, magic in (("below", b"NOTMOZLZ"), ("above", b"zzzzzzzz")):
+        assert (magic < MAGIC_BYTES) == (label == "below"), (
+            f"{magic!r} no longer sorts {label} the real magic; this test has "
+            f"stopped bracketing it"
+        )
+        bad = tmp_path / f"bad-{label}.jsonlz4"
+        bad.write_bytes(
+            magic + struct.pack("<I", len(payload)) + _lz4_literals(payload)
+        )
+        with pytest.raises(ValueError, match="mozLz4"):
+            st.read_mozlz4(bad)
 
 
 # --------------------------------------------------------------- tab reading
