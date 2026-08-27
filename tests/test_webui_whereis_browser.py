@@ -66,6 +66,44 @@ def _goto_through_transport_hiccups(pg, url: str):
     )
 
 
+def _wait_for_ui_or_say_why(pg):
+    """Wait for the root screen, and on timeout report WHAT was there instead.
+
+    Mode 1 of this fixture's flake (2026-08-26) is mitigated but its cause is
+    NOT established, and the three live candidates are not distinguishable from
+    the symptom:
+
+      H1 a timing race -- the page had not rendered when `load` fired
+      H2 the chromium renderer died under memory pressure, leaving nothing
+      H3 the server answered something with no `#pending` in it -- `_host_ok`
+         returns a JSON 403, and `serve_forever` runs on a thread started
+         immediately before `goto`
+
+    H1 predicts the wait simply resolves. H2 and H3 BOTH predict a timeout, and
+    they have completely different fixes: worker resource limits versus server
+    startup or Host handling. So a bare timeout cannot tell them apart, and
+    guessing between them from a green suite would be inventing a cause.
+
+    What it dumps decides it. A blank body means the renderer went away; a JSON
+    error body means the server answered and this is not about memory at all.
+    """
+    try:
+        pg.wait_for_selector("#pending", state="visible", timeout=30_000)
+    except PlaywrightError as e:
+        try:
+            url, body = pg.url, pg.content()[:400]
+        except Exception as inner:  # pragma: no cover - renderer already gone
+            url, body = "<unreachable>", f"<could not read the page: {inner}>"
+        raise AssertionError(
+            "the figcite UI never rendered. This is the evidence that tells "
+            "H2 (renderer died: empty/unreachable body) from H3 (server "
+            "answered: a JSON error body), which a bare timeout cannot.\n"
+            f"  url  : {url}\n"
+            f"  body : {body!r}\n"
+            f"  wait : {e}"
+        ) from e
+
+
 @pytest.fixture
 def page(tmp_path):
     """A chromium page pointed at a real figcite server in this process.
@@ -98,7 +136,7 @@ def page(tmp_path):
             # Waiting for the root screen makes the fixture deliver what it
             # claims to -- a loaded UI -- and turns a genuine failure to render
             # into a timeout that says so.
-            pg.wait_for_selector("#pending", state="visible", timeout=30_000)
+            _wait_for_ui_or_say_why(pg)
             yield pg
             browser.close()
     finally:
@@ -248,3 +286,44 @@ def test_a_persistent_transport_failure_still_fails(monkeypatch):
     with pytest.raises(AssertionError, match="kept failing"):
         _goto_through_transport_hiccups(pg, "http://127.0.0.1:1/")
     assert pg.calls == _TRANSPORT_RETRIES, pg.calls
+
+
+class _NeverRenders:
+    """A page whose selector wait times out, carrying a body to be reported."""
+
+    def __init__(self, body, url="http://127.0.0.1:1/"):
+        self._body, self.url = body, url
+
+    def wait_for_selector(self, *a, **kw):
+        raise PlaywrightError("Timeout 30000ms exceeded waiting for selector")
+
+    def content(self):
+        return self._body
+
+
+def test_a_page_that_never_renders_reports_what_was_there_instead():
+    """H2 and H3 both look like a timeout; only the BODY tells them apart.
+
+    Without this the next occurrence would say "timed out waiting for
+    #pending" and leave the same three hypotheses live -- which is how a
+    mitigated flake turns into a guessed cause.
+    """
+    server_answered = _NeverRenders('{"error": "unrecognized Host"}')
+    with pytest.raises(AssertionError) as e:
+        _wait_for_ui_or_say_why(server_answered)
+    assert "unrecognized Host" in str(e.value), str(e.value)
+    assert "H3" in str(e.value)
+
+
+def test_a_renderer_that_went_away_is_reported_differently():
+    """The other side. An empty body is the H2 signature, and a page object
+    that cannot even be read must not turn into a second, confusing error."""
+
+    class _Gone(_NeverRenders):
+        def content(self):
+            raise RuntimeError("Target page, context or browser has been closed")
+
+    with pytest.raises(AssertionError) as e:
+        _wait_for_ui_or_say_why(_Gone(""))
+    assert "could not read the page" in str(e.value), str(e.value)
+    assert "H2" in str(e.value)
