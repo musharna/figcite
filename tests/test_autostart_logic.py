@@ -331,3 +331,70 @@ def test_the_filed_count_counts_clipboard_captures_only(monkeypatch, tmp_path):
         f"expected the two clipboard captures; 3 would mean the filter is "
         f"inverted: {st['clipboard_records']}"
     )
+
+
+def test_status_reports_watching_when_a_watcher_process_exists(monkeypatch, tmp_path):
+    """Both direct `status()` tests above hand it an EMPTY process list.
+
+    `"watching": len(procs) > 0` is therefore only ever evaluated at zero,
+    where `> 0`, `!= 0` and a hard False all agree -- so the reduced-ROR
+    mutant that replaces it with False survived, and `status` would report
+    NOT WATCHING with a watcher running. A wrapper polling this would restart
+    a watcher that was already there, and the mutex in the PowerShell script
+    would refuse it: a supervisor loop failing forever, reported as healthy.
+
+    (`> 0` -> `!= 0` is equivalent and correct: a length is never negative.)
+    """
+    monkeypatch.setattr(autostart, "installed_path", lambda: None)
+    monkeypatch.setattr(
+        autostart,
+        "watcher_processes",
+        lambda: [{"pid": "4242", "started": "08/27/2026 09:00:00"}],
+    )
+    monkeypatch.setattr(autostart, "supervisor_processes", lambda: [])
+    from figcite import clipboard
+
+    monkeypatch.setattr(
+        clipboard, "staging_dirs", lambda: ("C:\\st", tmp_path / "staging")
+    )
+
+    st = autostart.status()
+
+    assert st["watching"] is True, st
+    assert st["processes"] and st["processes"][0]["pid"] == "4242", st
+
+
+def test_status_is_not_watching_with_no_processes(monkeypatch, tmp_path):
+    """The other half, so "always watching" cannot satisfy the test above."""
+    monkeypatch.setattr(autostart, "installed_path", lambda: None)
+    monkeypatch.setattr(autostart, "watcher_processes", lambda: [])
+    monkeypatch.setattr(autostart, "supervisor_processes", lambda: [])
+    from figcite import clipboard
+
+    monkeypatch.setattr(
+        clipboard, "staging_dirs", lambda: ("C:\\st", tmp_path / "staging")
+    )
+
+    assert autostart.status()["watching"] is False
+
+
+def test_a_startup_lookup_killed_midway_is_not_a_path(monkeypatch):
+    """`if r.returncode != 0 or not path:` -- narrowed to `> 0`, a process
+    killed by a signal reports a NEGATIVE code and slips the first operand.
+
+    The second operand usually catches it, because a killed child writes
+    nothing. Usually. A process killed AFTER writing some output leaves a
+    partial line on stdout, and then neither operand fires and half a path is
+    returned as the Startup folder.
+    """
+    import subprocess
+
+    def killed_after_writing(*a, **kw):
+        return subprocess.CompletedProcess(
+            args=a[0] if a else [], returncode=-15, stdout="C:\\Users\\part", stderr=""
+        )
+
+    monkeypatch.setattr(autostart, "_ps", lambda script, timeout=120: killed_after_writing())
+
+    with pytest.raises(RuntimeError):
+        autostart._startup_dir_win()
