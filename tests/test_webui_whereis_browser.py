@@ -13,6 +13,7 @@ node-based tests skip when node is absent.
 """
 
 import threading
+import time
 
 import pytest
 from PIL import Image
@@ -29,6 +30,40 @@ def _png(path):
     path.parent.mkdir(parents=True, exist_ok=True)
     Image.new("RGB", (40, 30), "blue").save(path)
     return path
+
+
+# Transport errors reaching a server we started ourselves, on loopback, are
+# facts about the machine rather than about figcite.
+#
+# Measured across 20 gate runs this session: 2 spurious reds, a 10% flake rate,
+# in TWO distinct modes -- a page that had not rendered (fixed below by waiting
+# for the root screen) and `net::ERR_NETWORK_CHANGED` raised by `goto` itself
+# when a WSL adapter flapped mid-test. Both surface through the equivalence
+# registry as COULD NOT BE CERTIFIED on an UNRELATED claim, which reads like a
+# regression in code nobody touched.
+#
+# The retry is deliberately narrow. Only `net::` transport codes are retried:
+# a loopback connection that failed to open says nothing about the application,
+# while a TIMEOUT might be a real hang and an assertion is a real answer. Both
+# of those still propagate. Retrying everything would trade a flaky suite for a
+# suite that cannot report a broken server, which is the worse failure.
+_TRANSPORT_RETRIES = 3
+
+
+def _goto_through_transport_hiccups(pg, url: str):
+    last = None
+    for attempt in range(_TRANSPORT_RETRIES):
+        try:
+            return pg.goto(url, wait_until="load")
+        except PlaywrightError as e:
+            if "net::" not in str(e):
+                raise
+            last = e
+            time.sleep(0.4 * (attempt + 1))
+    raise AssertionError(
+        f"loopback transport kept failing after {_TRANSPORT_RETRIES} attempts, "
+        f"so this is not a passing hiccup: {last}"
+    )
 
 
 @pytest.fixture
@@ -49,7 +84,7 @@ def page(tmp_path):
             except PlaywrightError as e:  # pragma: no cover - env-dependent
                 pytest.skip(f"chromium is not installed: {e}")
             pg = browser.new_page()
-            pg.goto(f"http://127.0.0.1:{port}/", wait_until="load")
+            _goto_through_transport_hiccups(pg, f"http://127.0.0.1:{port}/")
             # `load` fires when the document and its subresources are done, not
             # when this page is usable, and Playwright's `is_hidden` returns
             # True for an element that IS NOT THERE. So a page that never
@@ -161,3 +196,55 @@ def test_the_other_screens_still_work(page, tmp_path, monkeypatch):
     page.click("#tab-pending")
     assert page.is_visible("#pending"), "the pending screen no longer opens"
     assert page.is_hidden("#deck")
+
+
+# --- the transport retry itself, which must not swallow a real failure -------
+
+
+class _Flaky:
+    """A stand-in page whose `goto` fails a set number of times first."""
+
+    def __init__(self, errors):
+        self.errors = list(errors)
+        self.calls = 0
+
+    def goto(self, url, **kw):
+        self.calls += 1
+        if self.errors:
+            raise PlaywrightError(self.errors.pop(0))
+        return "loaded"
+
+
+def test_a_loopback_transport_hiccup_is_retried(monkeypatch):
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    pg = _Flaky(["Page.goto: net::ERR_NETWORK_CHANGED at http://127.0.0.1:1/"])
+
+    assert _goto_through_transport_hiccups(pg, "http://127.0.0.1:1/") == "loaded"
+    assert pg.calls == 2, pg.calls
+
+
+def test_a_timeout_is_NOT_retried(monkeypatch):
+    """The narrowing that makes this retry safe rather than a blindfold.
+
+    A loopback connection that would not open says nothing about figcite. A
+    timeout might be a real hang in the server or the page, and retrying it
+    would trade a flaky suite for one that cannot report a broken server --
+    the worse failure of the two.
+    """
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    pg = _Flaky(["Page.goto: Timeout 30000ms exceeded"])
+
+    with pytest.raises(PlaywrightError, match="Timeout"):
+        _goto_through_transport_hiccups(pg, "http://127.0.0.1:1/")
+    assert pg.calls == 1, f"a timeout was retried {pg.calls} times"
+
+
+def test_a_persistent_transport_failure_still_fails(monkeypatch):
+    """Positive control for the retry: it must give up, and say that it is not
+    a passing hiccup, rather than loop or return a broken page."""
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    pg = _Flaky(["net::ERR_CONNECTION_REFUSED"] * 10)
+
+    with pytest.raises(AssertionError, match="kept failing"):
+        _goto_through_transport_hiccups(pg, "http://127.0.0.1:1/")
+    assert pg.calls == _TRANSPORT_RETRIES, pg.calls
