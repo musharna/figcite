@@ -74,9 +74,15 @@ def test_a_left_to_right_gradient_sets_no_bits_and_its_mirror_sets_all():
     [
         ("", "0" * 16, "an empty first hash"),
         ("0" * 16, "", "an empty second hash"),
-        ("00", "0" * 16, "two hashes of different widths"),
+        ("00", "0" * 16, "a short first hash against a full one"),
+        # The same mismatch the other way round. `len(a) != len(b)` compares
+        # for INEQUALITY and the case above only makes `a` SHORTER, so a guard
+        # narrowed to `len(a) < len(b)` still fires for it and the reduced-ROR
+        # mutant survived. Reversed, the narrowed guard falls through and
+        # `int(a, 16) ^ int(b, 16)` is computed on incomparable widths.
+        ("0" * 16, "00", "a full first hash against a short one"),
     ],
-    ids=["empty-a", "empty-b", "length-mismatch"],
+    ids=["empty-a", "empty-b", "length-mismatch", "length-mismatch-reversed"],
 )
 def test_an_uncomparable_pair_returns_the_sentinel_not_a_distance(a, b, why):
     """`if not a or not b or len(a) != len(b)` survived `Or -> And`.
@@ -97,6 +103,27 @@ def test_an_uncomparable_pair_returns_the_sentinel_not_a_distance(a, b, why):
     real 64-bit distance so it can never read as a hit.
     """
     assert hamming(a, b) == 999, why
+
+
+def test_a_truncated_hash_does_not_report_a_perfect_match():
+    """What the reversed length mismatch actually produces, spelled out.
+
+    `hamming("0" * 16, "00")` with the guard narrowed to `<` skips the
+    sentinel and evaluates `int("0000000000000000", 16) ^ int("00", 16)`,
+    which is 0 -- a distance of ZERO, the strongest possible match, between
+    two hashes that were never comparable.
+
+    `by_dhash` sorts candidates by this number and takes the smallest, so a
+    truncated or malformed hash would not merely slip through: it would beat
+    every genuine figure in the corpus. The sentinel is 999 precisely so that
+    "not comparable" can never be mistaken for "identical", and this is the
+    direction that was never asked.
+    """
+    assert hamming("0" * 16, "00") == 999
+    assert hamming("00", "0" * 16) == 999
+    # And the reason the sentinel is that large: it must lose to every real
+    # distance, including the worst possible one.
+    assert 999 > hamming("0" * 16, "f" * 16) == 64
 
 
 def test_two_comparable_hashes_return_a_real_distance():

@@ -711,3 +711,65 @@ def test_a_lone_candidate_too_close_to_call_reports_a_runner_up_of_zero(
     assert "(8 vs 0)" in v.reason, (
         f"a lone candidate reported a runner-up that does not exist: {v.reason!r}"
     )
+
+
+# --- why four match.py survivors are correct, and what would make them wrong --
+
+
+def test_knnmatch_returns_a_full_pair_for_any_target_this_code_accepts():
+    """The premise behind `[p for p in bf.knnMatch(dq, d, k=2) if len(p) == 2]`.
+
+    Two reduced-ROR mutants live on that comparison, `<=` and `>=`, and both
+    survive. `>=` is trivial: k=2 caps the length, so nothing above 2 exists.
+    `<=` is the interesting one -- it admits short pairs, and the very next
+    line unpacks `for m, s in pairs`, which would raise on a 1-element list.
+
+    It never sees one, because `by_orb` skips any target with `len(d) < 10`
+    two lines earlier, and knnMatch returns a full k-pair whenever the train
+    set has at least k descriptors.
+
+    That last clause is a fact about OpenCV rather than about this repo, so it
+    is measured here rather than assumed. Relax the `len(d) < 10` guard below
+    2, or change k, and this fails -- naming the equivalence that went stale.
+    """
+    import cv2
+    import numpy as np
+
+    rng = np.random.default_rng(0)
+
+    def desc(n):
+        return rng.integers(0, 256, size=(n, 32), dtype=np.uint8)
+
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING)
+    query = desc(20)
+
+    # One descriptor is the only case that yields a short pair...
+    assert {len(p) for p in bf.knnMatch(query, desc(1), k=2)} == {1}
+
+    # ...and `by_orb` never gets there: it requires at least ten.
+    for n in (2, 10, 50):
+        assert {len(p) for p in bf.knnMatch(query, desc(n), k=2)} == {2}, n
+
+
+def test_the_descriptor_floor_is_still_well_above_k():
+    """The other half of that premise, read from the source rather than
+    remembered: the guard has to keep `len(d)` at or above k=2 for the
+    reasoning above to hold, and it is currently 10."""
+    import ast
+    import pathlib
+
+    from figcite import match as match_mod
+
+    tree = ast.parse(pathlib.Path(match_mod.__file__).read_text())
+    floors = [
+        node.comparators[0].value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Compare)
+        and ast.unparse(node).startswith("len(d) <")
+        and isinstance(node.comparators[0], ast.Constant)
+    ]
+    assert floors, "the len(d) guard in by_orb is gone; re-derive the claim"
+    assert all(f >= 2 for f in floors), (
+        f"a descriptor floor dropped below k=2: {floors}. knnMatch can now "
+        f"return a short pair and `len(p) == 2` -> `<=` is no longer equivalent."
+    )
