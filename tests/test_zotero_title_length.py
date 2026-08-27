@@ -95,3 +95,72 @@ def test_the_query_side_guard_is_the_mirror_of_this_one(monkeypatch):
 
     assert out["doi"] is None
     assert "too short" in out["evidence"], out["evidence"]
+
+
+# --- which variant matched, and the title that hides it ----------------------
+
+
+def test_the_matched_variant_is_named_even_for_a_title_with_leading_space(
+    monkeypatch,
+):
+    """`resolve_page_title` appends "(matched on <variant>)" when the form that
+    grounded is not the title it was handed.
+
+    `cand != title` narrowed to `<` keeps that note only when the variant sorts
+    BELOW the original. Variants are progressively trimmed prefixes, so they
+    normally do -- which is why the mutant survived.
+
+    A leading space inverts it. `title_variants` strips before it trims, so for
+    " Some Paper | Journal" the first candidate is "Some Paper | Journal", and
+    "S" sorts ABOVE " ". Under the mutant every variant compares False and the
+    note disappears: the user is told the lookup grounded, but not on what.
+    Which variant matched is the difference between a citation a person can
+    check and one they have to trust.
+    """
+    grounded = {
+        "doi": "10.1111/nph.71477",
+        "grounded": True,
+        "evidence": "exact title match in Zotero",
+        "candidates": [],
+    }
+    monkeypatch.setattr(
+        zotero, "resolve", lambda cand, max_age_hours=None: dict(grounded)
+    )
+
+    out = zotero.resolve_page_title(" Some Paper | Journal")
+
+    assert out["grounded"] is True, out
+    assert "matched on" in out["evidence"], (
+        f"the grounding variant was not named: {out['evidence']!r}"
+    )
+
+
+def test_no_variant_is_named_when_the_title_itself_matched(monkeypatch):
+    """The other half: when the form that grounded IS what was handed in,
+    there is nothing to disclose and the note would be noise."""
+    grounded = {
+        "doi": "10.1111/nph.71477",
+        "grounded": True,
+        "evidence": "exact title match in Zotero",
+        "candidates": [],
+    }
+    monkeypatch.setattr(
+        zotero, "resolve", lambda cand, max_age_hours=None: dict(grounded)
+    )
+
+    exact = "Some Paper"
+    out = zotero.resolve_page_title(exact)
+
+    assert out["grounded"] is True
+    assert "matched on" not in out["evidence"], out["evidence"]
+
+
+def test_a_leading_space_really_does_invert_the_ordering():
+    """The premise, so the test above cannot quietly stop exercising it."""
+    variants = zotero.title_variants(" Some Paper | Journal")
+    assert variants, "no variants were produced"
+    assert all(c != " Some Paper | Journal" for c in variants)
+    assert all(not (c < " Some Paper | Journal") for c in variants), (
+        f"a variant now sorts below the original; the narrowed guard would "
+        f"keep the note and this test would stop covering it: {variants}"
+    )
