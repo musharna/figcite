@@ -65,3 +65,48 @@ def test_other_oserrors_are_not_disguised_as_a_busy_port(monkeypatch, capsys):
     monkeypatch.setattr(web, "make_server", denied)
     with pytest.raises(OSError):
         web.serve(port=80)
+
+
+@pytest.mark.parametrize(
+    "code,name",
+    [
+        (errno.EACCES, "EACCES"),          # 13, below EADDRINUSE
+        (errno.ETIMEDOUT, "ETIMEDOUT"),    # 110, above it
+        (errno.ECONNREFUSED, "ECONNREFUSED"),  # 111, above it
+    ],
+)
+def test_no_oserror_on_either_side_is_disguised_as_a_busy_port(
+    monkeypatch, code, name
+):
+    """The test above is right and cannot see half the failure it guards.
+
+    `if e.errno != errno.EADDRINUSE: raise` compares for INEQUALITY, and
+    EACCES is 13 while EADDRINUSE is 98 -- so a guard narrowed to
+    `e.errno < errno.EADDRINUSE` re-raises EACCES too and the existing test
+    passes on the narrowed guard. That is what the reduced-ROR sweep found.
+
+    Everything ABOVE 98 is what it lets through: ETIMEDOUT is 110 and
+    ECONNREFUSED is 111, and under the narrowed guard both stop propagating
+    and get reported as "port already in use" -- the code's own comment says
+    that disguise is the fail-quiet this project refuses.
+    """
+    def boom(port):
+        raise OSError(code, f"{name} for the test")
+
+    monkeypatch.setattr(web, "make_server", boom)
+
+    with pytest.raises(OSError) as e:
+        web.serve(port=8765)
+    assert e.value.errno == code
+
+
+def test_the_errno_probes_bracket_the_one_being_compared():
+    """The premise. Two of those codes exist to sit ABOVE EADDRINUSE, and if
+    the platform ever renumbered them the test above would stop exercising the
+    narrowing while still passing."""
+    assert errno.EACCES < errno.EADDRINUSE, (errno.EACCES, errno.EADDRINUSE)
+    assert errno.ETIMEDOUT > errno.EADDRINUSE, (errno.ETIMEDOUT, errno.EADDRINUSE)
+    assert errno.ECONNREFUSED > errno.EADDRINUSE, (
+        errno.ECONNREFUSED,
+        errno.EADDRINUSE,
+    )

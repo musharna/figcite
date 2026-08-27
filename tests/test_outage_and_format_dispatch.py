@@ -121,6 +121,38 @@ def test_a_404_is_not_treated_as_a_rate_limit(monkeypatch, no_sleeping):
     assert not no_sleeping, no_sleeping
 
 
+@pytest.mark.parametrize("code", [500, 503])
+def test_a_server_error_is_not_treated_as_a_rate_limit(monkeypatch, no_sleeping, code):
+    """The side of 429 that nothing stood on.
+
+    The three tests above drive 200, 404 and 429, and BOTH the codes that are
+    not 429 sort BELOW it. So `== 429` widened to `>= 429` behaves identically
+    on every one of them and the mutant survives a file written specifically
+    about this branch.
+
+    Above 429 it diverges. A 500 or 503 is a server fault, not a rate limit:
+    CrossRef sends no retry-after, so the widened branch invents a two-second
+    nap and re-requests a failing endpoint, then hands back whatever came the
+    second time. Retrying is not free and it is not what this function is for
+    -- the caller decides what a 5xx means.
+    """
+    calls = _responses(monkeypatch, FakeResponse(code))
+
+    r = crossref.throttled_get("https://api.crossref.org/works/10.1/x")
+
+    assert len(calls) == 1, (
+        f"a {code} was retried as though throttled: {len(calls)} request(s)"
+    )
+    assert r.status_code == code
+    assert not no_sleeping, f"the tool backed off on a {code}: {no_sleeping}"
+
+
+def test_the_probed_codes_bracket_the_rate_limit_one():
+    """The premise for the whole group: a code below 429 and one above it, so
+    both narrowings of the comparison are observable."""
+    assert 404 < 429 < 500
+
+
 def test_a_persistent_429_is_still_a_429_and_not_a_miss(monkeypatch, no_sleeping):
     """After the single retry the response is returned as-is.
 
