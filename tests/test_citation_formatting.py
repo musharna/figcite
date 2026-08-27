@@ -406,7 +406,18 @@ def test_one_exact_title_match_is_not_ambiguous(monkeypatch):
 
 
 def test_two_items_sharing_a_title_are_ambiguous(monkeypatch):
-    """Positive control: the boundary has to be reachable from both sides."""
+    """Positive control: the boundary has to be reachable from both sides.
+
+    The fixture used to be `[item, {**item, "key": "K2"}]` -- the same record
+    twice, differing only in key. That is a DUPLICATE, not an ambiguity: both
+    records name one paper, so there is no competing answer to be ambiguous
+    between, and `resolve_title` now grounds it (see
+    tests/test_zotero_duplicate_records.py).
+
+    What this test is for is unchanged and still reachable: two DIFFERENT works
+    filed under one title, which is the case the uniqueness rule was written
+    for and which still refuses to ground.
+    """
     item = {
         "title": "A study of orchids",
         "doi": "10.1/o",
@@ -415,9 +426,8 @@ def test_two_items_sharing_a_title_are_ambiguous(monkeypatch):
         "creators": ["Smith"],
         "date": "2020",
     }
-    monkeypatch.setattr(
-        zotero, "library", lambda max_age_hours=None: [item, {**item, "key": "K2"}]
-    )
+    other = {**item, "key": "K2", "doi": "10.2/different-work"}
+    monkeypatch.setattr(zotero, "library", lambda max_age_hours=None: [item, other])
 
     out = zotero.resolve_title("A study of orchids")
 
