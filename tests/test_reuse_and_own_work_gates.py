@@ -429,3 +429,61 @@ def test_no_source_kind_sorts_below_clipboard():
         f"`autostart.status`'s count is no longer safe under a widened "
         f"comparison, and the equivalence claim for it is stale."
     )
+
+
+# --- the verdict that sorts ABOVE the sentinel ------------------------------
+#
+# `rec.reuse and rec.reuse != "unknown"` suppresses the note for the DEFAULT
+# reuse value, which means "nothing was determined". Narrowed to `<` it also
+# suppresses everything sorting above "unknown" -- and REUSE_VERDICTS contains
+# exactly one such member:
+#
+#     unknown-ask-publisher
+#
+# which is not the sentinel. It is a DETERMINED verdict: the licence was read
+# and it says to ask the publisher. Collapsing it into the withheld case turns
+# a finding into an absence, which is the one error this project is built to
+# avoid -- and it is the verdict whose whole purpose is to tell a user there is
+# a question to settle before they reuse the figure.
+#
+# Both positive controls above use "CC BY 4.0", and "C" sorts below "u", so the
+# narrowed guard writes it and they pass on the mutant.
+
+ASK_PUBLISHER = "unknown-ask-publisher"
+
+
+def test_the_ask_publisher_verdict_is_the_one_that_sorts_above_the_sentinel():
+    """The premise, read from the real constant rather than hardcoded."""
+    from figcite.crossref import REUSE_VERDICTS
+
+    above = sorted(v for v in REUSE_VERDICTS if v > "unknown")
+    assert above == [ASK_PUBLISHER], (
+        f"the set of verdicts sorting above the sentinel changed: {above}. "
+        f"The tests below no longer cover what they claim to."
+    )
+    assert "CC BY 4.0" < "unknown", (
+        "the existing positive controls no longer sort below the sentinel"
+    )
+
+
+def test_ask_publisher_is_written_into_the_bib():
+    """It is a determined verdict, not the absence of one."""
+    out = records_to_bibtex([_rec(reuse=ASK_PUBLISHER)])
+
+    assert f"reuse: {ASK_PUBLISHER}" in out["bibtex"], (
+        f"a determined 'ask the publisher' verdict was withheld as though "
+        f"nothing had been determined:\n{out['bibtex']}"
+    )
+
+
+def test_ask_publisher_is_printed_on_the_credits_page(tmp_path):
+    deck = _staged_pptx(
+        tmp_path, _rec(reuse=ASK_PUBLISHER), name="askpub.pptx", seed=61
+    )
+    out = tmp_path / "askpub.cited.pptx"
+
+    pptx_apply(deck, out, captions=True, credits=True)
+
+    assert ASK_PUBLISHER in _pptx_text(out), (
+        f"the credits page withheld a determined verdict:\n{_pptx_text(out)}"
+    )

@@ -117,3 +117,15 @@ def test_a_missing_pdf_exits_nonzero(tmp_path):
 def test_a_malformed_rect_exits_nonzero(pdf):
     rc = cli.main(["grab", str(pdf), "--page", "1", "--rect", "1,2,3"])
     assert rc == 2, f"a 3-value --rect exited {rc}"
+
+    # Five, not just three. `len(parts) != 4` compares for INEQUALITY, and a
+    # 3-value rect sorts BELOW 4, so a guard narrowed to `len(parts) < 4`
+    # rejects it too and this test passes on the narrowed guard -- which is
+    # what the reduced-ROR sweep found. Too MANY coordinates is the half it
+    # lets through, and `tuple(parts)` then hands crop() a 5-tuple where it
+    # expects x0,y0,x1,y1.
+    rc = cli.main(["grab", str(pdf), "--page", "1", "--rect", "1,2,3,4,5"])
+    assert rc == 2, f"a 5-value --rect exited {rc}"
+
+    # And the premise, so the pair keeps bracketing 4 if anyone edits it.
+    assert len("1,2,3".split(",")) < 4 < len("1,2,3,4,5".split(","))
