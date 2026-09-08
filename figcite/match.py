@@ -96,7 +96,32 @@ def by_dhash(query_bytes: bytes, rows) -> Verdict:
         # that into the hash function would file a figure with an empty hash
         # instead of telling anyone.
         return CouldNotDecide("the query image could not be decoded")
-    scored = sorted(((hamming(dh, r.dhash), r) for r in rows), key=lambda t: t[0])
+    # A dhash distance only means something when BOTH hashes carry signal. A
+    # flat fill has no gradients, so it hashes to all zeros -- and sits at
+    # hamming 0 from every other featureless figure and within the threshold
+    # of anything sparse. `figcite whereis` answered five distinct blank
+    # fixtures with the same DOI at "hamming 6": confident, and wrong about
+    # whose figure it was.
+    #
+    # `corpus.can_compare_dhash` already states this rule and already enforces
+    # it in `duplicates_of_dhash`. It was simply never consulted where a
+    # distance becomes a VERDICT. Both ends are checked, exactly as the
+    # duplicate path checks both -- a degenerate CANDIDATE is as meaningless
+    # as a degenerate query. Imported here rather than at module scope because
+    # `corpus` reaches back into this module.
+    from .corpus import can_compare_dhash
+
+    if not can_compare_dhash(dh):
+        return CouldNotDecide(
+            "this image is too smooth to identify: its perceptual hash has no "
+            "gradients to compare, so any 'match' would name a figure at random"
+        )
+    comparable = [r for r in rows if can_compare_dhash(r.dhash)]
+    if not comparable:
+        return CouldNotDecide(
+            "no corpus figure has a comparable perceptual hash"
+        )
+    scored = sorted(((hamming(dh, r.dhash), r) for r in comparable), key=lambda t: t[0])
     best_d, best = scored[0]
     if best_d > DHASH_THRESHOLD:
         return CouldNotDecide(

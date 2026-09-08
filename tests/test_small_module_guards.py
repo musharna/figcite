@@ -327,11 +327,16 @@ def test_the_nearest_record_wins_ties_by_first_seen(monkeypatch):
     filed twice under different citations is exactly the case this fallback
     exists for.
     """
-    a = Record(sha256="a" * 64, dhash="0" * 16, citation="FIRST", confirmed=True)
-    b = Record(sha256="b" * 64, dhash="0" * 16, citation="SECOND", confirmed=True)
+    # "f0" * 8 rather than "0" * 16: an all-zero hash is the FEATURELESS hash,
+    # which `can_compare_dhash` refuses outright, and this test is about the
+    # tie-breaking comparison rather than about identifiability. The tie is
+    # preserved exactly -- both records still sit at distance 0.
+    tied = "f0" * 8
+    a = Record(sha256="a" * 64, dhash=tied, citation="FIRST", confirmed=True)
+    b = Record(sha256="b" * 64, dhash=tied, citation="SECOND", confirmed=True)
     monkeypatch.setattr(store, "all_records", lambda: {a.sha256: a, b.sha256: b})
 
-    got = store.find_similar("0" * 16)
+    got = store.find_similar(tied)
 
     assert got is not None
     assert got[0].citation == "FIRST", (
@@ -346,14 +351,19 @@ def test_a_match_exactly_at_max_distance_is_returned(monkeypatch):
     max_distance is the furthest still acceptable. Under `<` a record exactly
     at the limit is discarded and the caller is told nothing matched.
     """
-    rec = Record(sha256="c" * 64, dhash="0" * 15 + "f", citation="C", confirmed=True)
+    # Both hashes must be non-degenerate: an all-zero hash is the FEATURELESS
+    # hash and `can_compare_dhash` refuses it, which would make this boundary
+    # unreachable for reasons that have nothing to do with the <= under test.
+    # The distance is still EXACTLY 4 -- the last nibble differs, 0x0 vs 0xf.
+    query = "f0" * 7 + "f0"
+    rec = Record(sha256="c" * 64, dhash=query[:-1] + "f", citation="C", confirmed=True)
     monkeypatch.setattr(store, "all_records", lambda: {rec.sha256: rec})
 
     d = 4  # 0xf is four set bits away from 0x0
-    assert store.find_similar("0" * 16, max_distance=d) is not None, (
+    assert store.find_similar(query, max_distance=d) is not None, (
         f"a record at exactly distance {d} was rejected"
     )
-    assert store.find_similar("0" * 16, max_distance=d - 1) is None
+    assert store.find_similar(query, max_distance=d - 1) is None
 
 
 # ---------------------------------------------------------------- pdfgrab

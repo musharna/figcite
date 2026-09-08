@@ -72,8 +72,18 @@ def _row(dhash="0f0f0f0f0f0f0f0f", image_path="fig.png"):
 
 
 def _readable_png(colour=(10, 120, 200)):
+    # Non-monotonic texture, deliberately. dhash compares each pixel with its
+    # right neighbour, so a solid fill AND a smooth ramp both hash to all
+    # zeros -- and `corpus.can_compare_dhash` refuses that hash, because a
+    # red square and a blue square are identical under it. A fixture that is
+    # merely "readable" is not necessarily IDENTIFIABLE.
     buf = io.BytesIO()
-    Image.new("RGB", (64, 64), colour).save(buf, "PNG")
+    im = Image.new("RGB", (64, 64), colour)
+    for x in range(64):
+        for y in range(64):
+            v = (x * 37 + y * 101) % 256
+            im.putpixel((x, y), (v, (v + colour[1]) % 256, colour[2]))
+    im.save(buf, "PNG")
     return buf.getvalue()
 
 

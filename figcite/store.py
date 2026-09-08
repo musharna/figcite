@@ -55,8 +55,18 @@ def get(sha: str) -> Optional[Record]:
 
 def find_similar(dh: str, max_distance: int = 6) -> Optional[tuple[Record, int]]:
     """Perceptual fallback for images PowerPoint has re-encoded or rescaled."""
+    # Same rule the matcher and the duplicate check apply: a featureless image
+    # hashes to all zeros, so without this a blank picture in a deck is linked
+    # to whatever blank record the manifest happens to hold, and reported as
+    # provenance at `manifest-dhash(d=0)`.
+    from .corpus import can_compare_dhash
+
+    if not can_compare_dhash(dh):
+        return None
     best, best_d = None, 999
     for r in all_records().values():
+        if not can_compare_dhash(r.dhash):
+            continue
         d = hamming(dh, r.dhash)
         if d < best_d:
             best, best_d = r, d

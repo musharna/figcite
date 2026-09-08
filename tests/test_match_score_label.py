@@ -60,12 +60,16 @@ def test_the_dhash_label_says_hamming_and_survives_a_perfect_hit(tmp_path):
 
     png = tmp_path / "fig.png"
     Image.new("RGB", (64, 48), "white").save(png)
-    # A gradient, so the dhash is not the all-zero flat-fill hash that
-    # `can_compare_dhash` refuses.
+    # NON-MONOTONIC texture, so the dhash is not the all-zero hash that
+    # `can_compare_dhash` refuses. A left-to-right RAMP is not enough: every
+    # dhash bit is "is this pixel brighter than the one to its right", so a
+    # smooth ramp answers "no" 64 times and hashes to all zeros exactly like a
+    # flat fill. This fixture asserted a gradient was sufficient and it was not.
     im = Image.new("RGB", (64, 48))
     for x in range(64):
         for y in range(48):
-            im.putpixel((x, y), (x * 4 % 256, y * 5 % 256, 0))
+            v = (x * 37 + y * 101) % 256
+            im.putpixel((x, y), (v, (v * 3) % 256, 0))
     im.save(png)
     blob = png.read_bytes()
     dh = provenance.dhash_bytes(blob)

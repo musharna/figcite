@@ -41,7 +41,17 @@ CITE = "Shiragaki et al. 2020"
 
 
 def _figure(path):
-    Image.new("RGB", (120, 90), (40, 90, 140)).save(path)
+    # Non-monotonic texture, deliberately. dhash compares each pixel with its
+    # right neighbour, so a solid fill AND a smooth ramp both hash to all
+    # zeros -- and `corpus.can_compare_dhash` refuses that hash, because a
+    # red square and a blue square are identical under it. A fixture that is
+    # merely "readable" is not necessarily IDENTIFIABLE.
+    im = Image.new("RGB", (120, 90), (40, 90, 140))
+    for x in range(120):
+        for y in range(90):
+            v = (x * 37 + y * 101) % 256
+            im.putpixel((x, y), (v, (v + 90) % 256, 140))
+    im.save(path)
     return path
 
 
