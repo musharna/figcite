@@ -1,68 +1,242 @@
 # figcite
 
-Keep DOI/citation provenance attached to an image from the moment you capture it
-through to the slide it lands on — and out the other side as a credits slide and
-a manifest.
+Keep the DOI and citation attached to an image from the moment you capture it
+through to the slide it lands on — and out the other side as a credits slide,
+a bibliography, and a manifest.
 
-## Why this exists
+**A guessed citation never reaches a slide.** Everything below follows from
+that one rule.
 
-Provenance can ride along in three places, and they fail differently:
+```bash
+pip install .                  # from a clone; add '[match]' to identify cropped figures
 
-| Layer                                                        | Survives                                 | Dies when                                                       |
-| ------------------------------------------------------------ | ---------------------------------------- | --------------------------------------------------------------- |
-| 1. Embedded in the image bytes (PNG `tEXt`/XMP, JPEG EXIF)   | _Insert → Picture_                       | clipboard paste, "Compress Pictures" — anything that re-encodes |
-| 2. Shape alt-text in the `.pptx`                             | edits, save/reopen, export to tagged PDF | someone deletes and re-inserts the picture                      |
-| 3. Central manifest keyed by sha256 **and** perceptual dhash | everything above failing                 | the image is heavily cropped or redrawn                         |
+figcite watch                  # Windows: file every snip you take, grounded when it can be
+figcite pending                # what it could NOT ground -- confirm or dismiss each one
+figcite audit  deck.pptx       # which pictures in a deck have a source
+figcite apply  deck.pptx -o deck.cited.pptx   # alt-text, captions, credits slide, manifest
+```
 
-`figcite` writes all three. Matching a slide image back to its source tries them
-in that order; a dhash match is reported as fuzzy and treated as unconfirmed.
+---
 
-## The rule that shapes the design
+**Contents**
 
-**A guessed citation never reaches a slide.** DOIs read out of the PDF you
-cropped from are grounded and get marked confirmed. DOIs inferred from a window
-title are not, and stay behind `figcite pending` until you pick one.
+1. [How it works](#how-it-works)
+2. [Capturing images](#capturing-images)
+3. [Resolving what could not be grounded](#resolving-what-could-not-be-grounded)
+4. [Where the DOI comes from](#where-the-doi-comes-from)
+5. [Into the deck](#into-the-deck)
+6. [Reverse lookup: which paper is this figure from?](#reverse-lookup-which-paper-is-this-figure-from)
+7. [Bibliography and licensing](#bibliography-and-licensing)
+8. [Command reference](#command-reference)
+9. [Install, tests, and the push gate](#install-tests-and-the-push-gate)
+10. [Known limits](#known-limits)
+
+---
+
+## How it works
+
+Provenance rides along in three places, and they fail differently:
+
+| Layer | Survives | Dies when |
+| --- | --- | --- |
+| **1. Embedded in the image bytes** (PNG `tEXt`/XMP, JPEG EXIF) | _Insert → Picture_ | clipboard paste, "Compress Pictures" — anything that re-encodes |
+| **2. Shape alt-text in the `.pptx`** | edits, save/reopen, export to tagged PDF | someone deletes and re-inserts the picture |
+| **3. Central manifest** keyed by sha256 **and** perceptual dhash | everything above failing | the image is heavily cropped or redrawn |
+
+`figcite` writes all three. Matching a slide image back to its source tries
+them in that order; a dhash match is reported as fuzzy and treated as
+unconfirmed.
+
+### The rule that shapes the design
+
+DOIs read out of the PDF you cropped from are **grounded** and marked
+confirmed. DOIs inferred from a window title are **not**, and stay behind
+`figcite pending` until you pick one.
 
 This isn't hypothetical caution. Asking CrossRef for the exact title
 _"Array programming with NumPy"_ returns a **review of** that paper as the top
 hit, not the paper — score 37.2, ahead of everything else. A tool that
-auto-accepted the top hit would have put the wrong citation on a slide with full
-confidence. `tests/test_live.py::test_crossref_title_search_is_untrustworthy_by_design`
+auto-accepted the top hit would have put the wrong citation on a slide with
+full confidence.
+`tests/test_live.py::test_crossref_title_search_is_untrustworthy_by_design`
 pins that behaviour so the policy can be revisited if CrossRef ever improves.
 
-## The four ways an image arrives
+---
+
+## Capturing images
+
+Four ways an image arrives. Each one ends with a **tagged file** you insert
+into the deck instead of the original.
+
+### 1. A snip or screenshot (Win+Shift+S)
 
 ```bash
-# 1. Snip / screenshot to clipboard  (Win+Shift+S)
 figcite watch                     # leave running; catches every image you copy
-                                  # snips from a browser or a local PDF are
-                                  # GROUNDED and filed automatically -- no step
-figcite pending                   # only what could NOT be grounded lands here
-figcite dismiss m0 --reason "..." # a blank snip is not a figure; say why, --undo restores
-figcite confirm 0 --doi 10.3390/horticulturae6040087
-figcite confirm 0 --pick 1        # or accept a listed candidate
+figcite autostart                 # or keep it running across logons
+```
 
-# 2. A figure inside a paper PDF  -- DOI is read from the PDF itself
-figcite images paper.pdf --page 3                    # list embedded figures + bboxes
-figcite grab paper.pdf --page 3 --image-index 0 -o fig.png
-figcite grab paper.pdf --page 3 --rect 84,126,505,730 --dpi 300 -o fig.png
-figcite grab paper.pdf --page 3 --rect 0.1,0.1,0.9,0.5 --frac   # fractions of the page
+Snips from a browser or a local PDF are grounded and filed automatically — no
+step. Everything else lands in `figcite pending` (next section).
 
-# 3. Your own generated plots -- either register them at the call site...
-python -c "
+### 2. A figure inside a paper PDF
+
+The DOI is read from the PDF itself.
+
+```bash
+figcite images paper.pdf --page 3                              # list embedded figures + bboxes
+figcite grab   paper.pdf --page 3 --image-index 0 -o fig.png
+figcite grab   paper.pdf --page 3 --rect 84,126,505,730 --dpi 300 -o fig.png
+figcite grab   paper.pdf --page 3 --rect 0.1,0.1,0.9,0.5 --frac   # fractions of the page
+```
+
+### 3. Your own generated plots
+
+Register at the call site, or patch `savefig` once and let ordinary code file
+itself. Either way the git commit and working directory are stamped in.
+
+```python
 import figcite.mplhook as fc
-fc.savefig(fig, 'out.png', cite='This work', dataset='rnaseq_v3')  # stamps git commit too
-"
-# ...or patch savefig once and let ordinary code file itself
-python -c "
-import figcite.mplhook as fc; fc.install(dataset='rnaseq_v3')
-fig.savefig('panel_a.png')     # now filed, with cwd + git commit, no call-site change
-"
 
-# 4. A file you downloaded
+fc.savefig(fig, "out.png", cite="This work", dataset="rnaseq_v3")
+
+# ...or, once, at the top of the script:
+fc.install(dataset="rnaseq_v3")
+fig.savefig("panel_a.png")      # now filed, no call-site change
+```
+
+### 4. A file you downloaded
+
+```bash
 figcite tag downloaded.png --doi 10.1111/mec.12953
 figcite tag screenshot.png --url https://example.org/page --cite "Example Org, 2026"
+figcite register existing.png --doi 10.1111/mec.12953   # record provenance WITHOUT touching the file
 ```
+
+---
+
+## Resolving what could not be grounded
+
+Every clipboard capture is filed, whether or not a citation could be
+established:
+
+- **Grounded** (a DOI from the page's URL, or from the PDF the snip came from)
+  → filed confirmed, with the full citation and license.
+- **Everything else** → filed _unconfirmed_, carrying what was actually
+  observed: which app was in front, what the window title said, what URL was
+  open, and when.
+
+That second case is the point of the design. A screenshot with no resolvable
+DOI still knows it came from Firefox showing a particular page at a particular
+minute, and an audit reports that instead of "no source recorded". It is a
+trail, not a citation, and it is stored as unconfirmed so nothing downstream
+can print it as one.
+
+```bash
+figcite pending                                 # the queue, newest first
+figcite confirm m0 --doi 10.1111/nph.71477      # you know the source
+figcite confirm m0 --pick 1                     # accept a listed candidate
+figcite confirm m0 --own-work                   # it is your own figure
+figcite dismiss m0 --reason "blank region, not a figure"   # it is not attributable
+figcite dismiss --undo d0                       # changed your mind
+```
+
+`dismiss` is the third terminal state beside _confirmed_, not a form of it: a
+dismissed record carries no citation and can never read as sourced. The reason
+is required, because a dismissal with no reason is indistinguishable from a
+mistake six months later.
+
+### The browser UI
+
+```bash
+figcite ui --open
+```
+
+Resolve pending captures and audit a deck by looking at the pictures rather
+than reading paths. Loopback only (127.0.0.1), no auth, single user.
+
+> **On WSL, open the printed `http://127.0.0.1:<port>` literally — not
+> `localhost`.** Windows resolves `localhost` to the IPv6 `::1` first, and WSL2
+> mirrored networking does not forward the host's IPv6 loopback into the VM,
+> so `localhost:<port>` hangs until it times out with nothing logged. `figcite
+> ui` already prints and opens the address that works.
+
+---
+
+## Where the DOI comes from
+
+### Your Zotero library resolves first
+
+A window title is searched against your own library before CrossRef, because
+CrossRef title search is a search of ~150M works that reliably ranks a review
+above the paper it reviews, while your library is a few thousand works you
+chose. Same query, far better prior — and a hit is a paper you demonstrably
+have.
+
+```bash
+figcite zotero configure --api-key <key> --library-id 6532713 --type group
+figcite zotero status        # how much of the library can actually resolve
+figcite zotero sync          # refresh the local snapshot (auto after 7 days)
+figcite zotero resolve "Some paper title"
+```
+
+Credentials are written to `~/.config/figcite/zotero.json` mode 0600, **not**
+exported from a shell rc. That is not tidiness: the clipboard watcher is
+started by a Windows launcher running `wsl.exe … bash -lc`, and that shell
+inherits no exports at all — measured, every `ZOTERO_*` variable came back
+unset. An env-only credential would leave the watcher unable to resolve
+anything, silently.
+
+Only an **exact, unambiguous** title match is treated as grounded — the same
+bar the browser-history route uses. Measured on a real 4,824-item library: 536
+items resolve to a DOI (147 from the DOI field, 389 from a `doi.org` URL — most
+items are `webpage`, which has no DOI field), of which 497 have an unambiguous
+title. Twenty-four items share the title "Redirecting"; those ground nothing
+and offer candidates instead.
+
+### Browser snips are grounded from history
+
+The watcher records the foreground window title at snip time. For a browser
+that title joins exactly onto a row in the browser's own history, giving the
+URL of the page that was on screen; the DOI then comes from that URL. Because
+the URL is the address of the document rather than an inference about which
+paper was meant, it can be auto-confirmed and filed with no interaction.
+
+Resolution paths, tried in order, each verified against CrossRef:
+
+1. **The DOI is in the URL** (`/doi/10.1111/nph.71477`) — offline, instant.
+   Publisher tails like `/full`, `.pdf`, `/abstract` and `v2` are stripped.
+2. **A known publisher URL pattern** (`nature.com/articles/s41598-…` → `10.1038/…`).
+3. **A publisher article ID**: Elsevier/Cell PII, resolved through CrossRef's
+   `alternative-id` filter. ScienceDirect, OUP and Wiley return **403** to an
+   automated page fetch; the CrossRef route works anyway. Cell Press punctuates
+   the PII (`S1674-2052(18)30156-4`) and Elsevier does not; both normalise to
+   the same identifier.
+4. **PubMed/PMC identifiers**, via NCBI (`esummary` for a PMID, the ID
+   converter for a PMCID).
+5. Failing all of those, the page's own `<meta name="citation_doi">` — which
+   only works on publishers that serve bots (Nature and PLOS do; OUP, Wiley
+   and bioRxiv do not).
+
+Measured against a real 82-page reading history: **61% auto-grounded without
+any publisher page fetch** (34% from the URL alone, 27% via publisher/PubMed
+IDs). Several of the remainder are journal homepages and GEO accession pages
+that legitimately have no DOI.
+
+**Only an exact, unambiguous title match grounds a capture.** If the title is
+not in history, figcite falls back to the visit nearest the capture time — and
+that is a guess about which tab was showing, so it stays unconfirmed and goes
+to `figcite pending`. Private-browsing windows leave no history and always
+land there too.
+
+**A failed lookup is never reported as an absence of provenance.** CrossRef
+allows one request per second; a loop that trips that limit used to return
+"no DOI" for perfectly resolvable papers. Lookups are throttled, and a failure
+surfaces as `LOOKUP FAILED … retry` rather than silently filing the image as
+unsourced.
+
+---
+
+## Into the deck
 
 Insert the **tagged** file into your deck (not the original), then:
 
@@ -74,111 +248,7 @@ figcite apply  deck.pptx -o deck.cited.pptx  # alt-text + captions + credits + m
 `apply` is idempotent — re-running replaces its own captions and credits slide
 rather than stacking a second copy.
 
-### The browser UI
-
-    figcite ui --open
-
-Resolve pending captures and audit a deck by looking at the pictures rather
-than reading paths. Loopback only (127.0.0.1), no auth, single user.
-
-**On WSL, open the printed `http://127.0.0.1:<port>` literally -- not
-`localhost`.** Windows resolves `localhost` to the IPv6 `::1` first, and WSL2
-mirrored networking does not forward the host's IPv6 loopback into the VM, so
-`localhost:<port>` hangs until it times out with nothing logged. Measured on
-`networkingMode=mirrored`: a Windows client reaches a WSL listener on
-`127.0.0.1` but times out against one bound to `::1`. This is a platform
-property, not something the server can bind its way out of -- `figcite ui`
-already prints and opens the address that works.
-
-## Your Zotero library resolves first
-
-A window title is searched against your own library before CrossRef, because
-CrossRef title search is a search of ~150M works that reliably ranks a review
-above the paper it reviews, while your library is a few thousand works you
-chose. Same query, far better prior — and a hit is a paper you demonstrably
-have.
-
-```bash
-figcite zotero configure --api-key <key> --library-id 6532713 --type group
-figcite zotero status      # how much of the library can actually resolve
-figcite zotero sync        # refresh the local snapshot (auto after 7 days)
-figcite zotero resolve "Some paper title"
-```
-
-Credentials are written to `~/.config/figcite/zotero.json` mode 0600, **not**
-exported from a shell rc. That is not tidiness: the clipboard watcher is started
-by a Windows launcher running `wsl.exe … bash -lc`, and that shell inherits no
-exports at all — measured, every `ZOTERO_*` variable came back unset. An
-env-only credential would leave the watcher unable to resolve anything, silently.
-
-Only an **exact, unambiguous** title match is treated as grounded — the same bar
-the Firefox-history route uses. Measured on a real 4,824-item library: 536 items
-resolve to a DOI (147 from the DOI field, 389 from a `doi.org` URL — most items
-are `webpage`, which has no DOI field), of which 497 have an unambiguous title.
-Twenty-four items share the title "Redirecting"; those ground nothing and offer
-candidates instead.
-
-## Handing the bibliography to ghostcite
-
-```bash
-figcite bib deck.pptx -o deck.bib --check    # emits BibTeX, then runs ghostcite
-```
-
-BibTeX, not a DOI list, and the distinction is the whole point: ghostcite catches
-ghost citations by comparing the byline you _claim_ against the one CrossRef
-reports, and a bare DOI list claims nothing. Measured — two real DOIs as a plain
-list produced 0 findings; the same two as BibTeX with one fabricated author
-produced exactly 1.
-
-Unconfirmed records are excluded by default. Those are a machine's guess about
-_which paper a figure came from_, and no bibliography checker can catch that
-error — the byline would match the DOI perfectly, because both came from
-CrossRef. Every skip is counted in the output, because a bibliography that is
-short because entries vanished looks identical to one that is short because the
-deck was small.
-
-## Browser snips are grounded automatically
-
-The watcher records the foreground window title at snip time. For a browser that
-title joins exactly onto a row in the browser's own history, giving the URL of
-the page that was on screen; the DOI then comes from that URL. Because the URL
-is the address of the document rather than an inference about which paper was
-meant, it can be auto-confirmed and filed with no interaction.
-
-Four resolution paths, tried in order, each verified against CrossRef:
-
-1. **The DOI is in the URL** (`/doi/10.1111/nph.71477`) -- offline, instant.
-   Publisher tails like `/full`, `.pdf`, `/abstract` and `v2` are stripped.
-2. **A known publisher URL pattern** (`nature.com/articles/s41598-…` → `10.1038/…`).
-3. **A publisher article ID**: Elsevier/Cell PII, resolved through CrossRef's
-   `alternative-id` filter. This matters because ScienceDirect, OUP and Wiley
-   return **403** to an automated page fetch -- the CrossRef route works anyway.
-   Cell Press punctuates the PII (`S1674-2052(18)30156-4`) and Elsevier does not;
-   both normalise to the same identifier.
-4. **PubMed/PMC identifiers**, via NCBI (`esummary` for a PMID, the ID converter
-   for a PMCID).
-5. Failing all of those, the page's own `<meta name="citation_doi">` -- which
-   only works on publishers that serve bots (Nature and PLOS do; OUP, Wiley and
-   bioRxiv do not).
-
-Measured against a real 82-page reading history: **61% auto-grounded without any
-publisher page fetch** (34% from the URL alone, 27% via publisher/PubMed IDs).
-Several of the remainder are journal homepages and GEO accession pages that
-legitimately have no DOI.
-
-**Only an exact, unambiguous title match grounds a capture.** If the title is not
-in history, figcite falls back to the visit nearest the capture time -- and that
-is a guess about which tab was showing, so it stays unconfirmed and goes to
-`figcite pending`. Private-browsing windows leave no history and always land
-there too.
-
-**A failed lookup is never reported as an absence of provenance.** CrossRef
-allows one request per second; a loop that trips that limit used to return
-"no DOI" for perfectly resolvable papers. Lookups are now throttled, and a
-failure surfaces as `LOOKUP FAILED … retry` rather than silently filing the
-image as unsourced.
-
-## What `apply` writes
+### What `apply` writes
 
 - **Alt-text** on every picture: full citation, DOI, license, reuse verdict.
 - **A small grey caption** under each picture: `[1] Shiragaki et al. 2020 · doi:…`
@@ -189,118 +259,89 @@ image as unsourced.
   no source.
 
 Images with no recorded provenance are **named on the credits slide**, not
-silently dropped: `⚠ 1 image(s) on slide(s) 2 have no recorded source.` Pictures
-under 1 inch in both dimensions are treated as decorative and exempt
+silently dropped: `⚠ 1 image(s) on slide(s) 2 have no recorded source.`
+Pictures under 1 inch in both dimensions are treated as decorative and exempt
 (`--min-inches`).
 
-## PDF output: Affinity, Illustrator, InDesign, Slides, LaTeX
+### PDF output: Affinity, Illustrator, InDesign, Slides, LaTeX
 
-`audit` and `apply` take a `.pdf` as well as a `.pptx`, so anything that exports
-PDF is covered without parsing a proprietary document format:
+`audit` and `apply` take a `.pdf` as well as a `.pptx`, so anything that
+exports PDF is covered without parsing a proprietary document format:
 
 ```bash
 figcite audit  board.pdf                     # coverage report, changes nothing
 figcite apply  board.pdf -o board.cited.pdf  # captions + credits page + manifest
 ```
 
-Measured behaviour of a PDF export: it **strips embedded image metadata** and
-**re-encodes the pixels**, so layers 1 and 2 are both gone. The perceptual hash
-survives -- on two real figures from one paper, the exported copy matched the
-correct figure at hamming 0 and the other at 23. Recovery therefore runs entirely
-through layer 3, which is why the manifest matters more here than anywhere else.
+A PDF export **strips embedded image metadata** and **re-encodes the pixels**,
+so layers 1 and 2 are both gone. The perceptual hash survives — recovery runs
+entirely through layer 3, which is why the manifest matters more here than
+anywhere else.
 
-In Affinity specifically, keep placed images **linked** rather than embedded. The
-Resource Manager then shows every image's path, the files keep their own metadata
-and sidecars, and provenance never depends on hashing at all.
+In Affinity specifically, keep placed images **linked** rather than embedded.
+The Resource Manager then shows every image's path, the files keep their own
+metadata and sidecars, and provenance never depends on hashing at all.
 
-### How much export mangling survives
+<details>
+<summary><strong>How much export mangling survives</strong> — measured on 14 real figures × 14 export conditions</summary>
 
-Measured on 14 real project figures across 14 export conditions -- 300/150/96/72
-DPI downsampling x JPEG quality 95/75/50, plus CMYK roundtrips. Affinity's most
-aggressive preset ("PDF for web") downsamples anything above 108 DPI to 72.
+300/150/96/72 DPI downsampling × JPEG quality 95/75/50, plus CMYK roundtrips.
+Affinity's most aggressive preset ("PDF for web") downsamples anything above
+108 DPI to 72.
 
-| Transform                                | Recovered | False matches |
-| ---------------------------------------- | --------- | ------------- |
-| Any downsample tested, down to 64px wide | 14/14     | 0             |
-| JPEG quality down to 10                  | 14/14     | 0             |
-| CMYK roundtrip (print export)            | 14/14     | 0             |
-| Crop 10% off each edge                   | **0/14**  | 0             |
-| Rotate 90 deg / horizontal flip          | **0/14**  | 0             |
+| Transform | Recovered | False matches |
+| --- | --- | --- |
+| Any downsample tested, down to 64px wide | 14/14 | 0 |
+| JPEG quality down to 10 | 14/14 | 0 |
+| CMYK roundtrip (print export) | 14/14 | 0 |
+| Crop 10% off each edge | **0/14** | 0 |
+| Rotate 90° / horizontal flip | **0/14** | 0 |
 
 Worst self-distance under any encoding transform was 5; the nearest pair of
 _different_ figures sat 15 apart (median 26). The threshold of 6 therefore has
-roughly 3x headroom -- it is measured, not guessed.
+roughly 3× headroom — it is measured, not guessed.
 
 So compression and resolution are not the risk. **Geometry is**: cropping,
 rotating or flipping an image inside the design app moves every cell of the
-difference hash and recovery fails. It fails _safe_ -- a cropped figure reports
-no match rather than matching the wrong source -- but the provenance is lost.
-
+difference hash and recovery fails. It fails _safe_ — a cropped figure reports
+no match rather than matching the wrong source — but the provenance is lost.
 That is another reason to keep images **linked** in Affinity: a link points at
 the original file no matter how the placed copy is cropped or rotated.
 
-### Verified against PDFs we did not write
+</details>
+
+<details>
+<summary><strong>Verified against PDFs we did not write</strong> — Ghostscript and ImageMagick</summary>
 
 The table above was produced entirely in-process: PyMuPDF wrote the fixtures,
 PyMuPDF read them back, and the transforms were applied in PIL. That is
-self-consistent by construction -- it shows the matcher agrees with itself, and
+self-consistent by construction — it shows the matcher agrees with itself, and
 cannot show that a PDF from a real exporter is readable at all.
 
 So the same three real project figures were run through **ImageMagick** and
-**Ghostscript** (`/screen`, `/ebook`, `/prepress` -- `/screen` downsamples to 72
-DPI and re-encodes as JPEG, roughly a design app's "PDF for web"). All three
-figures recovered through every preset at a perceptual distance of 0-1 against a
-threshold of 6, and a deliberately unregistered fourth figure correctly matched
-nothing.
+**Ghostscript** (`/screen`, `/ebook`, `/prepress` — `/screen` downsamples to
+72 DPI and re-encodes as JPEG, roughly a design app's "PDF for web"). All
+three figures recovered through every preset at a perceptual distance of 0–1
+against a threshold of 6, and a deliberately unregistered fourth figure
+correctly matched nothing.
 
-That run found a real defect. Ghostscript promotes an image's **soft mask** (its
-greyscale alpha channel) to a top-level image object, where ImageMagick keeps it
-as a child. figcite counted the mask as a figure, so the _same document_ audited
-as 6 images under one writer and 4 under the other, reporting phantom unsourced
-images and sending you looking for the source of something that is not a figure.
-Masks are now excluded by xref, and both writers agree.
+That run found a real defect. Ghostscript promotes an image's **soft mask**
+(its greyscale alpha channel) to a top-level image object, where ImageMagick
+keeps it as a child. figcite counted the mask as a figure, so the _same
+document_ audited as 6 images under one writer and 4 under the other,
+reporting phantom unsourced images. Masks are now excluded by xref, and both
+writers agree.
 
 Affinity itself is still unverified: it is installed here (`Canva.Affinity
-3.2.3`) but has no scriptable export, so the check needs someone to place three
-images and press Export. The staged files are in
+3.2.3`) but has no scriptable export, so the check needs someone to place
+three images and press Export. The staged files are in
 `Downloads/figcite-affinity-test/`.
 
-## Nothing is ever lost
+</details>
 
-Every clipboard capture is filed, whether or not a citation could be established:
+---
 
-- **Grounded** (a DOI from the page's URL, or from the PDF the snip came from) ->
-  filed confirmed, with the full citation and license.
-- **Everything else** -> filed _unconfirmed_, carrying what was actually observed:
-  which app was in front, what the window title said, what URL was open, and when.
-
-That second case is the point of the design. A screenshot with no resolvable DOI
-still knows it came from Firefox showing a particular page at a particular minute,
-and an audit reports that instead of "no source recorded". It is a trail, not a
-citation, and it is stored as unconfirmed so nothing downstream can print it as
-one -- credits show the capture context and withhold the guess.
-
-`figcite pending` lists those filed-but-unresolved captures so you can attach a
-DOI later:
-
-```bash
-figcite pending
-figcite confirm m0 --doi 10.1111/nph.71477
-```
-
-## Licensing
-
-Every record carries the publisher's license URL from CrossRef and a
-conservative reuse verdict: `public-domain`, `reuse-ok-attribution-required`,
-`reuse-ok-share-alike-attribution-required`, `noncommercial-only`,
-`restricted-no-derivatives`, `publisher-terms-check-required`, or
-`unknown-ask-publisher`. Nothing is assumed reusable by default. CrossRef's
-retraction flag is checked too, and a retracted source is labelled as such.
-
-Use `--adapted-from <DOI>` when the figure you cropped was itself reproduced
-from an earlier paper — the PDF's own DOI cannot tell you that.
-
-## Finding where a figure came from
+## Reverse lookup: which paper is this figure from?
 
 The reverse of the usual direction. You have an image — a crop from a talk, a
 figure with no sidecar, something a collaborator sent — and you want to know
@@ -322,12 +363,12 @@ ran it".
 **Only open-access papers can be indexed at all.** Measured against this
 author's 535-DOI library:
 
-|           |                               |
-| --------: | :---------------------------- |
-| 226 (42%) | open access — indexable       |
-| 143 (27%) | in Europe PMC, no PMC copy    |
-| 115 (22%) | not in Europe PMC             |
-|  51 (10%) | PMC copy, but not open access |
+| | |
+| --: | :-- |
+| 226 (42%) | open access — indexable |
+| 143 (27%) | in Europe PMC, no PMC copy |
+| 115 (22%) | not in Europe PMC |
+| 51 (10%) | PMC copy, but not open access |
 
 So expect to reverse-source a bit under half your library, and expect the
 misses to be the paywalled half. A figure that is not found is very often a
@@ -350,7 +391,6 @@ confirm; nothing is written to a record on the strength of a pixel match.
 
 `figcite ui` carries the same search on its **Where is** tab — the same
 `service.whereis()` call the CLI makes, so the two front ends cannot drift.
-Give it a path or a ref and it answers with the same three verdicts.
 
 One thing the screen shows that the CLI does not: your open browser tabs are
 listed **separately, under the pixel matches, labelled as leads**. A tab is a
@@ -362,16 +402,16 @@ looks like a hit.
 ### opencv is optional
 
 ```bash
-pip install 'figcite[match]'
+pip install '.[match]'
 ```
 
 Without it, matching is perceptual-hash only, which recognises the same figure
 rescaled or re-encoded but is blind to **crops** — a panel cut out of a figure
 hashes to something unrelated. With opencv, cropped panels are matched by ORB
-keypoints scored on RANSAC inliers, which measured a median 38.9x separation
+keypoints scored on RANSAC inliers, which measured a median 38.9× separation
 between the true source and an unrelated document where raw match counts gave
-only 1.5x. Measured end to end on a real six-figure paper, two crop positions
-each: 11 matched, 1 declined for too few features, 0 wrong.
+only 1.5×. Measured end to end on a real six-figure paper, two crop positions
+each: 11 matched, 1 declined for too few features, **0 wrong**.
 
 Zero wrong is the number that matters. A tool whose whole premise is refusing
 to guess must not confidently name the wrong paper.
@@ -386,7 +426,93 @@ can also flag a figure you credited to one paper that appears in another:
 It reports and never rewrites. Republication, a reused panel and a genuine
 miscredit are indistinguishable from the pixels, and only you know which.
 
-## Tests
+---
+
+## Bibliography and licensing
+
+### Handing the bibliography to ghostcite
+
+```bash
+figcite bib deck.pptx -o deck.bib --check    # emits BibTeX, then runs ghostcite
+```
+
+BibTeX, not a DOI list, and the distinction is the whole point: ghostcite
+catches ghost citations by comparing the byline you _claim_ against the one
+CrossRef reports, and a bare DOI list claims nothing. Measured — two real DOIs
+as a plain list produced 0 findings; the same two as BibTeX with one
+fabricated author produced exactly 1.
+
+Unconfirmed records are excluded by default. Those are a machine's guess about
+_which paper a figure came from_, and no bibliography checker can catch that
+error — the byline would match the DOI perfectly, because both came from
+CrossRef. Every skip is counted in the output, because a bibliography that is
+short because entries vanished looks identical to one that is short because
+the deck was small.
+
+### Licensing
+
+Every record carries the publisher's license URL from CrossRef and a
+conservative reuse verdict:
+
+`public-domain` · `reuse-ok-attribution-required` ·
+`reuse-ok-share-alike-attribution-required` · `noncommercial-only` ·
+`restricted-no-derivatives` · `publisher-terms-check-required` ·
+`unknown-ask-publisher`
+
+Nothing is assumed reusable by default. CrossRef's retraction flag is checked
+too, and a retracted source is labelled as such.
+
+Use `--adapted-from <DOI>` when the figure you cropped was itself reproduced
+from an earlier paper — the PDF's own DOI cannot tell you that.
+
+---
+
+## Command reference
+
+| Command | What it does |
+| --- | --- |
+| **Capture** | |
+| `watch` | watch the Windows clipboard for snipped images |
+| `autostart` | keep the clipboard watcher running across logons |
+| `images <pdf> --page N` | list embedded images on a PDF page with bboxes |
+| `grab <pdf>` | crop a figure out of a PDF, DOI attached |
+| `tag <image>` | attach provenance to an existing image file |
+| `register <image>` | record provenance for an existing image **without** modifying it |
+| **Resolve** | |
+| `pending` | list captured-but-unconfirmed clipboard images |
+| `confirm <ref>` | attach a DOI to a pending capture (`--doi`, `--pick`, `--own-work`) |
+| `dismiss <ref> --reason` | resolve a capture as **not** attributable; `--undo` restores |
+| `ui` | browser UI for pending captures, decks, and reverse lookup |
+| **Sources** | |
+| `zotero configure / sync / status / resolve` | resolve against your Zotero library first |
+| `resolve <doi>` | show the citation + license for a DOI |
+| `search "<title>"` | find a DOI by title — candidates only, never an answer |
+| **Reverse lookup** | |
+| `corpus build / status` | the local figure index `whereis` searches |
+| `whereis <image>` | find which paper a figure came from |
+| **Decks** | |
+| `audit <deck>` | report provenance coverage of a `.pptx` or `.pdf` |
+| `apply <deck> -o out` | write alt-text, captions, credits slide, manifest |
+| `bib <deck> -o out.bib` | emit BibTeX for the works a deck's figures came from |
+
+`figcite <command> --help` for the full options of any of them.
+
+---
+
+## Install, tests, and the push gate
+
+```bash
+git clone https://github.com/musharna/figcite && cd figcite
+pip install .                    # dhash matching, all the deck tooling
+pip install '.[match]'           # + opencv, for cropped-figure identification
+figcite --version
+```
+
+Python 3.10+. The clipboard watcher needs Windows: it is a PowerShell
+listener that figcite starts from WSL through `powershell.exe`. Everything
+else runs anywhere.
+
+### Tests
 
 ```bash
 python3 -m pytest tests/ -q -m "not live"   # 1203 tests, no network
@@ -399,54 +525,51 @@ python3 -m pytest tests/ -q -m live         # 30 tests: real CrossRef, real PDF,
 
 The live tests drive the actual system boundaries — they are the only ones that
 can catch a broken one, since the synthetic tests only prove the code is
-self-consistent with itself. The clipboard test overwrites your clipboard with a
-small test bitmap while it runs, and pauses any installed watcher first: the
-clipboard is a single global object, so without that, test bitmaps land in your
-real manifest (measured — seven of them did).
+self-consistent with itself. **They are opt-in, not opt-out.** The clipboard
+test overwrites your clipboard with a small test bitmap while it runs, and the
+PowerPoint test drives the _running_ PowerPoint via COM, so a bare `pytest`
+deliberately excludes them.
 
 ### Before every push
 
-The unit suite runs automatically on `git push`, via a hook in the repo:
+The unit suite, ruff, and pyright run automatically on `git push`, via a hook
+in the repo:
 
 ```bash
 git config core.hooksPath .githooks   # once per clone; hooks are not cloned
 ```
 
 This is deliberately not GitHub Actions. The repository is private, so
-GitHub-hosted minutes bill against the account's free tier, and a pre-push hook
-gives a one-developer repo the same signal in six seconds for nothing. It runs
-the non-live tests, ruff and pyright, and refuses the push if any fail; `git push --no-verify`
-overrides it when you mean to.
+GitHub-hosted minutes bill against the account's free tier, and a pre-push
+hook gives a one-developer repo the same signal for nothing. It refuses the
+push if anything fails; `git push --no-verify` overrides it when you mean to.
+
+---
 
 ## Known limits
 
-- **Clipboard paste strips layer 1.** If you paste rather than insert, the image
-  bytes are re-encoded and only the dhash fallback can recover the source.
-  Insert the tagged file from disk when you can.
+- **Clipboard paste strips layer 1.** If you paste rather than insert, the
+  image bytes are re-encoded and only the dhash fallback can recover the
+  source. Insert the tagged file from disk when you can.
 - **JPEG can't hold the structured record** — only the human-readable citation
   goes into EXIF; the rest lives in the sidecar and manifest.
-- ~~**Verified against python-pptx, not Microsoft PowerPoint.**~~ Now driven
-  against PowerPoint 16 itself via COM, in all three directions: PowerPoint
-  writes a deck and figcite recovers 3/3 by exact sha256 (it does not recompress
-  on insert); PowerPoint opens figcite's output **without a repair prompt**, with
-  alt-text, captions and the credits slide intact; and a real edit-and-resave,
-  which rewrites the whole package, still leaves 3/3 recoverable.
-- **PowerPoint's "Compress Pictures" is still unverified** — it is a UI dialog
-  with no COM entry point, so it cannot be driven from a test. The recompression
-  it performs is the class already covered by the Ghostscript/ImageMagick runs
-  above, but that specific button has not been pressed.
-- The watcher deliberately ignores whatever is already on the clipboard when it
-  starts, because the focused window at that moment is not where the image came
-  from. `-CaptureExisting` opts in.
-- **The watcher is woken, not ticking.** It used to ask the clipboard every
-  800ms whether anything had changed — 75 times a minute, ~108,000 times a day,
-  and every ask *opens* the clipboard so nothing else can while it is open. It
-  now registers with `AddClipboardFormatListener` and sleeps until Windows sends
-  `WM_CLIPBOARDUPDATE`. Measured over 12 idle seconds: 94ms of CPU before, 0ms
-  after. There is no polling fallback — failing to subscribe prints
+- **PowerPoint's "Compress Pictures" is unverified** — it is a UI dialog with
+  no COM entry point, so it cannot be driven from a test. The recompression it
+  performs is the class already covered by the Ghostscript/ImageMagick runs
+  above, but that specific button has not been pressed. Everything else about
+  PowerPoint _is_ verified against PowerPoint 16 itself via COM: it inserts
+  without recompressing (3/3 recovered by exact sha256), opens figcite's
+  output without a repair prompt, and a real edit-and-resave still leaves 3/3
+  recoverable.
+- **The watcher ignores whatever is already on the clipboard when it starts**,
+  because the focused window at that moment is not where the image came from.
+  `-CaptureExisting` opts in.
+- **The watcher is woken, not ticking.** It registers with
+  `AddClipboardFormatListener` and sleeps until Windows sends
+  `WM_CLIPBOARDUPDATE` (measured: 94ms of CPU per 12 idle seconds before, 0ms
+  after). There is no polling fallback — failing to subscribe prints
   `WATCH_FAILED` and exits, because a fallback would restore the cost silently
   on the one machine nobody is watching.
-- **A clipboard it cannot read is not a clipboard with nothing on it.** The read
-  has three outcomes — an image, no image, or `CLIPBOARD_UNREADABLE` when another
-  application is holding it — instead of the old `catch { }` that reported the
-  third as the second.
+- **A clipboard it cannot read is not a clipboard with nothing on it.** The
+  read has three outcomes — an image, no image, or `CLIPBOARD_UNREADABLE` when
+  another application is holding it — never the second reported as the third.
