@@ -4,6 +4,26 @@ Notable changes to figcite. Sections are dated by the commit that closed the
 milestone. `v0.1.0` was tagged after the three milestones below had already
 landed, so 0.2.0 is the first tag whose notes match its contents.
 
+## 0.2.1 (2026-09-10)
+
+### Fixed
+
+- **The deck screen showed "(image unavailable)" for every figure matched by
+  its embedded metadata** -- the most common match a tagged deck produces.
+  `embed` serialises the record into the PNG and only then hashes the finished
+  file, so the copy inside the image has `sha256 == ""`; `read_embedded`
+  returned it verbatim and the UI built a thumbnail ref of `sha:` with nothing
+  after the colon. The reader now stamps the blob's own hashes on the record,
+  as the JPEG branch always did. Found while screenshotting the UI for the
+  README; the same demo deck audited "(image unavailable)" on its one sourced
+  slide.
+
+### Docs
+
+- README rebuilt around the user's path, with a command reference checked
+  against `--help`, two diagrams, six screenshots shot against an isolated demo
+  home, and a CC BY credit for the one borrowed figure.
+
 ## 0.2.0 (2026-09-10)
 
 Suite 1203 non-live + 30 live.
@@ -33,16 +53,6 @@ Suite 1203 non-live + 30 live.
 - 15 pyright and 7 ruff findings; both now run in the pre-push gate. One was
   real: `register --this-work` typed its detail dict as `str`-valued, so the
   deliberate `git_commit: None` for "git did not answer" was a type error.
-
-- **The deck screen showed "(image unavailable)" for every figure matched by
-  its embedded metadata** -- the most common match a tagged deck produces.
-  `embed` serialises the record into the PNG and only then hashes the finished
-  file, so the copy inside the image has `sha256 == ""`; `read_embedded`
-  returned it verbatim and the UI built a thumbnail ref of `sha:` with nothing
-  after the colon. The reader now stamps the blob's own hashes on the record,
-  as the JPEG branch always did. Found while screenshotting the UI for the
-  README; the same demo deck audited "(image unavailable)" on its one sourced
-  slide.
 
 ### Not a bug, checked
 
