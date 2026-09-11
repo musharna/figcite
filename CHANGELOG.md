@@ -34,6 +34,16 @@ Suite 1203 non-live + 30 live.
   real: `register --this-work` typed its detail dict as `str`-valued, so the
   deliberate `git_commit: None` for "git did not answer" was a type error.
 
+- **The deck screen showed "(image unavailable)" for every figure matched by
+  its embedded metadata** -- the most common match a tagged deck produces.
+  `embed` serialises the record into the PNG and only then hashes the finished
+  file, so the copy inside the image has `sha256 == ""`; `read_embedded`
+  returned it verbatim and the UI built a thumbnail ref of `sha:` with nothing
+  after the colon. The reader now stamps the blob's own hashes on the record,
+  as the JPEG branch always did. Found while screenshotting the UI for the
+  README; the same demo deck audited "(image unavailable)" on its one sourced
+  slide.
+
 ### Not a bug, checked
 
 - A snip from the Microsoft Teams web app produced the CrossRef candidate

@@ -240,9 +240,17 @@ def read_embedded(blob: bytes) -> Optional[Record]:
     txt = getattr(im, "text", None) or {}
     if TEXT_KEY in txt:
         try:
-            return Record.from_dict(json.loads(txt[TEXT_KEY]))
+            r = Record.from_dict(json.loads(txt[TEXT_KEY]))
         except Exception:
-            pass
+            r = None
+        if r is not None:
+            # The record was serialised into this file BEFORE the file's final
+            # bytes existed, so the embedded copy cannot carry its own hashes.
+            # The reader has the bytes, so the record it returns names them --
+            # exactly as the JPEG branch below already does.
+            r.sha256 = sha256_bytes(blob)
+            r.dhash = dhash_bytes(blob)
+            return r
     # JPEG fallback: only the human-readable cite is recoverable from EXIF.
     try:
         exif = im.getexif()

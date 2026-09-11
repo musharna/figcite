@@ -16,6 +16,19 @@ figcite audit  deck.pptx       # which pictures in a deck have a source
 figcite apply  deck.pptx -o deck.cited.pptx   # alt-text, captions, credits slide, manifest
 ```
 
+```mermaid
+flowchart LR
+    A[Snip / PDF crop /<br>own plot / download] --> B{Source<br>grounded?}
+    B -- yes --> C[Filed <b>confirmed</b><br>DOI · citation · licence]
+    B -- no --> D[Filed <b>unconfirmed</b><br>app · window title · URL · time]
+    D --> E[figcite pending]
+    E -- confirm --> C
+    E -- dismiss --> F[Resolved:<br>not attributable]
+    C --> G[Insert into deck]
+    G --> H[figcite audit / apply]
+    H --> I[Alt-text · captions ·<br>credits slide · manifest · BibTeX]
+```
+
 ---
 
 **Contents**
@@ -75,8 +88,10 @@ figcite watch                     # leave running; catches every image you copy
 figcite autostart                 # or keep it running across logons
 ```
 
-Snips from a browser or a local PDF are grounded and filed automatically — no
-step. Everything else lands in `figcite pending` (next section).
+A snip from a browser tab whose title is in your history, or from a local
+PDF, is grounded and filed automatically — no step. Everything else, including
+a browser tab the history cannot place, lands in `figcite pending` (next
+section).
 
 ### 2. A figure inside a paper PDF
 
@@ -154,6 +169,12 @@ figcite ui --open
 Resolve pending captures and audit a deck by looking at the pictures rather
 than reading paths. Loopback only (127.0.0.1), no auth, single user.
 
+<img src="docs/img/ui-pending.png" alt="The Pending tab: each capture shows its thumbnail, the app and window title it was snipped from, CrossRef candidates with radio buttons, a DOI field, and Confirm / This is my own work / Skip buttons" width="900">
+
+*The pending queue in `figcite ui`. Top: a Firefox snip whose title produced two
+CrossRef candidates, neither accepted for you. Bottom: a snip out of a
+PowerPoint window, which no rule can ground.*
+
 > **On WSL, open the printed `http://127.0.0.1:<port>` literally — not
 > `localhost`.** Windows resolves `localhost` to the IPv6 `::1` first, and WSL2
 > mirrored networking does not forward the host's IPv6 loopback into the VM,
@@ -164,6 +185,22 @@ than reading paths. Loopback only (127.0.0.1), no auth, single user.
 
 ## Where the DOI comes from
 
+```mermaid
+flowchart TD
+    T[Foreground window title<br>at snip time] --> Z{In your<br>Zotero library?}
+    Z -- exact, unambiguous title --> G[Grounded · confirmed]
+    Z -- ambiguous title --> Q
+    Z -- no --> H{Browser?<br>title in history?}
+    H -- exact row --> U[URL of the page on screen]
+    H -- nearest visit only --> Q
+    U --> P["DOI in URL → publisher pattern →<br>PII / PubMed ID → citation_doi meta"]
+    P -- DOI verified<br>against CrossRef --> G
+    H -- no / private window --> Q[figcite pending<br>+ candidates as leads]
+    P -- no DOI --> Q
+    T -- a PDF viewer --> F[Read the DOI out of the PDF itself]
+    F --> G
+```
+
 ### Your Zotero library resolves first
 
 A window title is searched against your own library before CrossRef, because
@@ -173,7 +210,7 @@ chose. Same query, far better prior — and a hit is a paper you demonstrably
 have.
 
 ```bash
-figcite zotero configure --api-key <key> --library-id 6532713 --type group
+figcite zotero configure --api-key <key> --library-id <id> --type group
 figcite zotero status        # how much of the library can actually resolve
 figcite zotero sync          # refresh the local snapshot (auto after 7 days)
 figcite zotero resolve "Some paper title"
@@ -248,6 +285,12 @@ figcite apply  deck.pptx -o deck.cited.pptx  # alt-text + captions + credits + m
 `apply` is idempotent — re-running replaces its own captions and credits slide
 rather than stacking a second copy.
 
+<img src="docs/img/ui-deck.png" alt="The Deck tab: an audit table with a thumbnail per picture, its status and how it was matched (embedded-metadata, manifest-dhash), the citation, and a licence badge" width="900">
+
+*The same audit in the browser. Slide 1 matched by the metadata embedded in the
+tagged file; slide 2 matched perceptually to a capture that is still pending,
+so it is reported* unconfirmed *and gets no credit line.*
+
 ### What `apply` writes
 
 - **Alt-text** on every picture: full citation, DOI, license, reuse verdict.
@@ -259,7 +302,8 @@ rather than stacking a second copy.
   no source.
 
 Images with no recorded provenance are **named on the credits slide**, not
-silently dropped: `⚠ 1 image(s) on slide(s) 2 have no recorded source.`
+silently dropped: `⚠ 1 image(s) on slide(s) 2 have no recorded source.` (The
+PDF credits page says `page(s)` and drops the glyph, which its base font lacks.)
 Pictures under 1 inch in both dimensions are treated as decorative and exempt
 (`--min-inches`).
 
@@ -281,6 +325,15 @@ anywhere else.
 In Affinity specifically, keep placed images **linked** rather than embedded.
 The Resource Manager then shows every image's path, the files keep their own
 metadata and sidecars, and provenance never depends on hashing at all.
+
+<img src="docs/img/pdf-caption-zoom.png" alt="The bottom of a figure on an exported PDF page, with the small grey caption figcite wrote underneath: [1] Shiragaki et al. 2020 · doi:10.3390/horticulturae6040087" width="700">
+
+*The caption `apply` wrote under a figure on a PDF exported from Affinity.*
+
+<img src="docs/img/pdf-credits.png" alt="The appended Image credits page: a numbered full citation with DOI and licence URL, and a red line reporting that one image on page 1 has no recorded source" width="900">
+
+*The appended credits page. The unsourced image on the same board is named,
+not dropped.*
 
 <details>
 <summary><strong>How much export mangling survives</strong> — measured on 14 real figures × 14 export conditions</summary>
@@ -374,6 +427,17 @@ So expect to reverse-source a bit under half your library, and expect the
 misses to be the paywalled half. A figure that is not found is very often a
 figure that could never have been indexed, which is why `whereis` reports
 _why_ it could not answer rather than a bare "no".
+
+<table>
+<tr>
+<td width="24%"><img src="docs/img/whereis-query.png" alt="The query: a cropped, downscaled section of the Capsicum traits figure with no metadata"></td>
+<td><img src="docs/img/ui-whereis.png" alt="The Where is tab: the crop was matched by ORB with 125 inliers to 10.3390/horticulturae6040087, with the figure's caption; below it, an open browser tab is listed separately as a lead"></td>
+</tr>
+</table>
+
+*Left: the query, a crop of the middle of a figure, downscaled, carrying no
+metadata. Right: identified by ORB keypoints. The open browser tab underneath is
+listed as a lead, deliberately apart from the pixel match.*
 
 ### It answers in three ways, never two
 
