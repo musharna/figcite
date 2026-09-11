@@ -63,6 +63,12 @@ class Record:
     captured_utc: str = ""
     captured_local: str = ""
     confirmed: bool = False  # False => a machine guessed this; never auto-cite it
+    # Why this capture is resolved as NOT attributable; "" means it is not
+    # dismissed. A reason rather than a bool, because a dismissal with no
+    # stated reason is indistinguishable from a mistake six months later.
+    # Deliberately NOT a form of `confirmed`: a dismissed record carries no
+    # citation and must never read as sourced.
+    dismissed: str = ""
     note: str = ""
 
     def to_json(self) -> str:

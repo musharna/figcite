@@ -332,8 +332,25 @@ def cmd_pending(a) -> int:
     from . import service
 
     items = service.pending_items()
+    # Printed even when the queue is empty. A dismissal that leaves no trace
+    # anywhere is a disappearance, and an unreviewable one: the whole reason
+    # `dismiss` demands a reason is so the call can be second-guessed later.
+    dropped = service.dismissed_items()
+
+    def _report_dismissed() -> None:
+        if not dropped:
+            return
+        print(
+            f"\n{len(dropped)} dismissed as not attributable "
+            f"(`figcite dismiss --undo dN` restores one):"
+        )
+        for di, it in enumerate(dropped):
+            print(f"[d{di}] {it.context[:92]}")
+            print(f"      reason: {it.note[:92]}")
+
     if not items:
         print("nothing pending (run `figcite watch`, then snip something)")
+        _report_dismissed()
         return 0
     staged = [i for i in items if i.kind == "staged"]
     filed = [i for i in items if i.kind == "filed"]
@@ -381,6 +398,51 @@ def cmd_pending(a) -> int:
         else:
             print(f"     no source inferred: {it.doi_evidence}")
             print(f"     confirm: figcite confirm {i} --doi 10.x/y")
+    _report_dismissed()
+    return 0
+
+
+def cmd_dismiss(a) -> int:
+    """Resolve a capture as not attributable, or put one back.
+
+    `--undo` addresses the DISMISSED list (`d0, d1, ...`), not the pending one:
+    a dismissed capture is by definition no longer in `pending`, so reusing
+    `mN` there would silently act on whatever item had slid into that slot.
+    """
+    from . import service
+
+    idx = str(a.index)
+
+    if a.undo:
+        items = service.dismissed_items()
+        n = idx[1:] if idx.startswith("d") else idx
+        try:
+            ref = items[int(n)].ref
+        except (ValueError, IndexError):
+            print(f"no dismissed item {a.index} (have {len(items)})", file=sys.stderr)
+            return 2
+        service.undismiss(ref)
+        print(f"restored {a.index} to the pending queue")
+        return 0
+
+    items = service.pending_items()
+    pool = [i for i in items if i.kind == "filed"]
+    n = idx[1:] if idx.startswith("m") else idx
+    try:
+        ref = pool[int(n)].ref
+    except (ValueError, IndexError):
+        print(f"no pending item {a.index} (have {len(pool)})", file=sys.stderr)
+        return 2
+    try:
+        service.dismiss(ref, reason=a.reason)
+    except ValueError as e:
+        print(_in_cli_words(str(e)), file=sys.stderr)
+        return 2
+    except KeyError as e:
+        print(_in_cli_words(e.args[0] if e.args else str(e)), file=sys.stderr)
+        return 2
+    print(f"dismissed {a.index}: {a.reason.strip()}")
+    print("  (no citation was written; `figcite dismiss --undo` puts it back)")
     return 0
 
 
@@ -905,6 +967,20 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--note", default="")
     c.add_argument("-o", "--out")
     c.set_defaults(func=cmd_confirm)
+
+    dm = sub.add_parser(
+        "dismiss", help="resolve a capture as NOT attributable, with a reason"
+    )
+    dm.add_argument("index")
+    dm.add_argument(
+        "--reason",
+        default="",
+        help="why this is not attributable (required unless --undo)",
+    )
+    dm.add_argument(
+        "--undo", action="store_true", help="return a dismissed capture to the queue"
+    )
+    dm.set_defaults(func=cmd_dismiss)
 
     rg = sub.add_parser(
         "register", help="record provenance for an existing image WITHOUT modifying it"

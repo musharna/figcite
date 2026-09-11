@@ -101,7 +101,9 @@ def pending_items() -> list[PendingItem]:
     out: list[PendingItem] = []
 
     for rec in store.all_records().values():
-        if rec.confirmed or rec.source_kind != "clipboard":
+        # `dismissed` sits beside `confirmed` rather than inside it: both are
+        # terminal, but only one of them means "this carries provenance".
+        if rec.confirmed or rec.dismissed or rec.source_kind != "clipboard":
             continue
         detail = rec.source_detail or {}
         cap = detail.get("clipboard_capture") or {}
@@ -179,6 +181,78 @@ def skip(ref: str) -> None:
     with _WRITE_LOCK:
         if ref not in _skipped:
             _skipped.append(ref)
+
+
+def _filed_record(ref: str) -> Record:
+    """The manifest record `ref` addresses, or KeyError."""
+    sha = ref.split(":", 1)[1] if ":" in ref else ref
+    target = store.get(sha)
+    if target is None:
+        raise KeyError(f"no filed record {ref!r}")
+    return target
+
+
+def dismiss(ref: str, *, reason: str) -> Record:
+    """Resolve a capture as NOT attributable, permanently and with a reason.
+
+    Distinct from `skip`, which is process-local, never persisted, and only
+    reorders the web queue -- "later", not "resolved". Some captures can never
+    be resolved by any amount of looking: a stray Ctrl+C over a blank region
+    files a featureless image that `whereis` correctly refuses to identify,
+    and every other verb here ATTACHES PROVENANCE, so it had no exit at all.
+    Measured 2026-09-10: 17 of 26 remaining captures were in exactly that
+    state, and the queue could only grow.
+
+    This writes no citation, no DOI, and leaves `confirmed` False. A dismissal
+    is the absence of a source, recorded -- not a source.
+    """
+    if not (reason or "").strip():
+        # Optional would make the empty reason the path of least resistance,
+        # and an unexplained dismissal is indistinguishable from a misfire.
+        raise ValueError("a dismissal needs a reason: say why this is not attributable")
+    target = _filed_record(ref)
+    if target.confirmed:
+        raise ValueError(
+            f"{ref} is already confirmed as {target.citation or target.doi!r}; "
+            "dismissing it would discard a citation someone accepted"
+        )
+    rec = Record.from_dict(asdict(target))
+    rec.dismissed = reason.strip()
+    with _WRITE_LOCK:
+        store.put(rec)
+    return rec
+
+
+def dismissed_items() -> list[PendingItem]:
+    """Captures resolved as not attributable, newest capture last.
+
+    Dismissal must not be a disappearance: something that silently vanishes
+    cannot be reviewed or undone, and a reason nobody can read is no better
+    than no reason. `pending` reports the count and these are addressable as
+    `d0, d1, ...` for `--undo`.
+    """
+    out = [
+        PendingItem(
+            ref=f"filed:{rec.sha256}",
+            kind="dismissed",
+            context=rec.context_line(),
+            note=rec.dismissed,
+        )
+        for rec in store.all_records().values()
+        if rec.dismissed and not rec.confirmed
+    ]
+    out.sort(key=lambda i: i.ref)
+    return out
+
+
+def undismiss(ref: str) -> Record:
+    """Return a dismissed capture to the queue. Dismissal is recoverable."""
+    target = _filed_record(ref)
+    rec = Record.from_dict(asdict(target))
+    rec.dismissed = ""
+    with _WRITE_LOCK:
+        store.put(rec)
+    return rec
 
 
 def confirm(
