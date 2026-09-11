@@ -8,7 +8,7 @@ a bibliography, and a manifest.
 that one rule.
 
 ```bash
-pip install .                  # from a clone; add '[match]' to identify cropped figures
+pip install figcite            # add '[match]' to identify cropped figures (pulls opencv)
 
 figcite watch                  # Windows: file every snip you take, grounded when it can be
 figcite pending                # what it could NOT ground -- confirm or dismiss each one
@@ -169,7 +169,7 @@ figcite ui --open
 Resolve pending captures and audit a deck by looking at the pictures rather
 than reading paths. Loopback only (127.0.0.1), no auth, single user.
 
-<img src="docs/img/ui-pending.png" alt="The Pending tab: each capture shows its thumbnail, the app and window title it was snipped from, CrossRef candidates with radio buttons, a DOI field, and Confirm / This is my own work / Skip buttons" width="900">
+<img src="https://raw.githubusercontent.com/musharna/figcite/master/docs/img/ui-pending.png" alt="The Pending tab: each capture shows its thumbnail, the app and window title it was snipped from, CrossRef candidates with radio buttons, a DOI field, and Confirm / This is my own work / Skip buttons" width="900">
 
 *The pending queue in `figcite ui`. Top: a Firefox snip whose title produced two
 CrossRef candidates, neither accepted for you. Bottom: a snip out of a
@@ -285,7 +285,7 @@ figcite apply  deck.pptx -o deck.cited.pptx  # alt-text + captions + credits + m
 `apply` is idempotent — re-running replaces its own captions and credits slide
 rather than stacking a second copy.
 
-<img src="docs/img/ui-deck.png" alt="The Deck tab: an audit table with a thumbnail per picture, its status and how it was matched (embedded-metadata, manifest-dhash), the citation, and a licence badge" width="900">
+<img src="https://raw.githubusercontent.com/musharna/figcite/master/docs/img/ui-deck.png" alt="The Deck tab: an audit table with a thumbnail per picture, its status and how it was matched (embedded-metadata, manifest-dhash), the citation, and a licence badge" width="900">
 
 *The same audit in the browser. Slide 1 matched by the metadata embedded in the
 tagged file; slide 2 matched perceptually to a capture that is still pending,
@@ -326,11 +326,11 @@ In Affinity specifically, keep placed images **linked** rather than embedded.
 The Resource Manager then shows every image's path, the files keep their own
 metadata and sidecars, and provenance never depends on hashing at all.
 
-<img src="docs/img/pdf-caption-zoom.png" alt="The bottom of a figure on an exported PDF page, with the small grey caption figcite wrote underneath: [1] Shiragaki et al. 2020 · doi:10.3390/horticulturae6040087" width="700">
+<img src="https://raw.githubusercontent.com/musharna/figcite/master/docs/img/pdf-caption-zoom.png" alt="The bottom of a figure on an exported PDF page, with the small grey caption figcite wrote underneath: [1] Shiragaki et al. 2020 · doi:10.3390/horticulturae6040087" width="700">
 
 *The caption `apply` wrote under a figure on a PDF exported from Affinity.*
 
-<img src="docs/img/pdf-credits.png" alt="The appended Image credits page: a numbered full citation with DOI and licence URL, and a red line reporting that one image on page 1 has no recorded source" width="900">
+<img src="https://raw.githubusercontent.com/musharna/figcite/master/docs/img/pdf-credits.png" alt="The appended Image credits page: a numbered full citation with DOI and licence URL, and a red line reporting that one image on page 1 has no recorded source" width="900">
 
 *The appended credits page. The unsourced image on the same board is named,
 not dropped.*
@@ -430,8 +430,8 @@ _why_ it could not answer rather than a bare "no".
 
 <table>
 <tr>
-<td width="24%"><img src="docs/img/whereis-query.png" alt="The query: a cropped, downscaled section of the Capsicum traits figure with no metadata"></td>
-<td><img src="docs/img/ui-whereis.png" alt="The Where is tab: the crop was matched by ORB with 125 inliers to 10.3390/horticulturae6040087, with the figure's caption; below it, an open browser tab is listed separately as a lead"></td>
+<td width="24%"><img src="https://raw.githubusercontent.com/musharna/figcite/master/docs/img/whereis-query.png" alt="The query: a cropped, downscaled section of the Capsicum traits figure with no metadata"></td>
+<td><img src="https://raw.githubusercontent.com/musharna/figcite/master/docs/img/ui-whereis.png" alt="The Where is tab: the crop was matched by ORB with 125 inliers to 10.3390/horticulturae6040087, with the figure's caption; below it, an open browser tab is listed separately as a lead"></td>
 </tr>
 </table>
 
@@ -466,7 +466,7 @@ looks like a hit.
 ### opencv is optional
 
 ```bash
-pip install '.[match]'
+pip install 'figcite[match]'
 ```
 
 Without it, matching is perceptual-hash only, which recognises the same figure
@@ -566,9 +566,8 @@ from an earlier paper — the PDF's own DOI cannot tell you that.
 ## Install, tests, and the push gate
 
 ```bash
-git clone https://github.com/musharna/figcite && cd figcite
-pip install .                    # dhash matching, all the deck tooling
-pip install '.[match]'           # + opencv, for cropped-figure identification
+pip install figcite              # dhash matching, all the deck tooling
+pip install 'figcite[match]'     # + opencv, for cropped-figure identification
 figcite --version
 ```
 
@@ -603,9 +602,8 @@ in the repo:
 git config core.hooksPath .githooks   # once per clone; hooks are not cloned
 ```
 
-This is deliberately not GitHub Actions. The repository is private, so
-GitHub-hosted minutes bill against the account's free tier, and a pre-push
-hook gives a one-developer repo the same signal for nothing. It refuses the
+This is deliberately not GitHub Actions: a pre-push hook gives a
+one-developer repo the same signal with no queue, no runner and no minutes. It refuses the
 push if anything fails; `git push --no-verify` overrides it when you mean to.
 
 ---

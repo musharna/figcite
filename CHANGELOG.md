@@ -4,6 +4,19 @@ Notable changes to figcite. Sections are dated by the commit that closed the
 milestone. `v0.1.0` was tagged after the three milestones below had already
 landed, so 0.2.0 is the first tag whose notes match its contents.
 
+## 0.2.2 (2026-09-11)
+
+First release on PyPI; the repository goes public with it.
+
+### Packaging
+
+- PyPI metadata: long description from the README, author, classifiers,
+  project URLs. README images point at absolute GitHub URLs so PyPI renders
+  them; install lines are `pip install figcite`.
+- The pre-push hook and README no longer explain themselves in terms of a
+  private repo's Actions quota; the hook stays because it is the right shape
+  for a one-developer project, not because minutes cost money.
+
 ## 0.2.1 (2026-09-10)
 
 ### Fixed

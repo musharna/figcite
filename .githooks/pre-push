@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # Run the unit suite before anything leaves this machine.
 #
-# This repo is PRIVATE, so GitHub-hosted Actions minutes bill against the free
-# tier -- and this account is already at roughly half of it. A pre-push hook is
-# the honest free equivalent for a one-developer repo: same tests, same failure,
-# 14 seconds, no quota.
+# Deliberately a hook rather than GitHub Actions: for a one-developer repo it is
+# the same tests and the same failure, with no runner, no queue and no quota.
 #
 # Install (once per clone, hooks are not cloned):
 #     git config core.hooksPath .githooks
