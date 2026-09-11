@@ -610,6 +610,19 @@ push if anything fails; `git push --no-verify` overrides it when you mean to.
 
 ---
 
+## Image credits for this README
+
+The figure that appears in the screenshots, crops and PDF renders above is
+Figure 1 of Shiragaki, K. et al. (2020), *Phylogenetic Analysis and Molecular
+Diversity of Capsicum Based on rDNA-ITS Region*, Horticulturae 6(4): 87,
+<https://doi.org/10.3390/horticulturae6040087>, licensed
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). It is reproduced,
+cropped and downscaled here as demo material; no changes were made to its
+content. Which is, of course, exactly the kind of credit line this tool exists
+to write.
+
+---
+
 ## Known limits
 
 - **Clipboard paste strips layer 1.** If you paste rather than insert, the
