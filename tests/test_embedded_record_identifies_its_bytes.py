@@ -12,11 +12,9 @@ recovered record. The PNG branch is the same situation and gets the same
 treatment: the reader knows the bytes, so the record it returns names them.
 """
 
-import io
-
 from PIL import Image
 
-from figcite import deck, service, store
+from figcite import service, store
 from figcite.provenance import Record, dhash_bytes, embed, read_embedded, sha256_bytes
 
 
