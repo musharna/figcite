@@ -223,8 +223,8 @@ def test_pictures_in_layout_placeholders_are_found(tmp_path):
     """
     prs = Presentation()
     # layout 8 in the default template is "Picture with Caption"
-    lay = next(l for l in prs.slide_layouts
-               if any(ph.placeholder_format.type == 18 for ph in l.placeholders))
+    lay = next(lay for lay in prs.slide_layouts
+               if any(ph.placeholder_format.type == 18 for ph in lay.placeholders))
     slide = prs.slides.add_slide(lay)
     ph = next(p for p in slide.placeholders if p.placeholder_format.type == 18)
     img = _make_image(tmp_path / "in-placeholder.png", 77)

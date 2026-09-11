@@ -11,7 +11,7 @@ import pytest
 from PIL import Image, ImageDraw
 
 from figcite import store
-from figcite.pdfdeck import apply, audit, match_image
+from figcite.pdfdeck import apply, audit
 from figcite.provenance import (Record, dhash_bytes, embed, hamming,
                                 read_embedded, sha256_bytes)
 

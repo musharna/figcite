@@ -190,7 +190,7 @@ def by_orb(query_bytes: bytes, rows, image_root, descriptor_dir=None) -> Verdict
     if query is None:
         return CouldNotDecide("the query image could not be decoded")
 
-    orb = cv2.ORB_create(nfeatures=ORB_FEATURES)
+    orb = cv2.ORB.create(nfeatures=ORB_FEATURES)
     kq, dq = orb.detectAndCompute(query, None)
     if dq is None or len(kq) < MIN_KEYPOINTS:
         return CouldNotDecide(
@@ -202,14 +202,14 @@ def by_orb(query_bytes: bytes, rows, image_root, descriptor_dir=None) -> Verdict
     scored = []
     for row in rows:
         d, pts = _target_features(row, image_root, descriptor_dir, orb)
-        if d is None or len(d) < 10:
+        if d is None or pts is None or len(d) < 10:
             continue
         pairs = [p for p in bf.knnMatch(dq, d, k=2) if len(p) == 2]
         good = [m for m, s in pairs if m.distance < 0.75 * s.distance]
         inliers = 0
         if len(good) >= 8:
-            src = np.float32([kq[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
-            dst = np.float32([pts[m.trainIdx] for m in good]).reshape(-1, 1, 2)
+            src = np.asarray([kq[m.queryIdx].pt for m in good], dtype=np.float32).reshape(-1, 1, 2)
+            dst = np.asarray([pts[m.trainIdx] for m in good], dtype=np.float32).reshape(-1, 1, 2)
             _, mask = cv2.findHomography(src, dst, cv2.RANSAC, 5.0)
             inliers = int(mask.sum()) if mask is not None else 0
         scored.append((inliers, row))
@@ -277,4 +277,4 @@ def _target_features(row, image_root, descriptor_dir, orb):
         return None, None
     if desc is None or not kp:
         return None, None
-    return desc, np.float32([k.pt for k in kp]).reshape(-1, 2)
+    return desc, np.asarray([k.pt for k in kp], dtype=np.float32).reshape(-1, 2)

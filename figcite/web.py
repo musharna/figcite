@@ -166,7 +166,9 @@ class _Handler(BaseHTTPRequestHandler):
         `127.0.0.1` are the only two names this server is ever legitimately
         reached under -- both accepted, nothing else.
         """
-        port = self.server.server_address[1]
+        srv = self.server
+        assert isinstance(srv, ThreadingHTTPServer)  # only ever mounted on one; narrows the type
+        port = srv.server_port
         return {f"127.0.0.1:{port}", f"localhost:{port}"}
 
     def _host_ok(self) -> bool:

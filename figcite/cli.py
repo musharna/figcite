@@ -7,7 +7,7 @@ import subprocess
 import sys
 import traceback
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from . import store
 from ._actions import finalize as _finalize_no_print
@@ -102,13 +102,13 @@ def cmd_grab(a) -> int:
     if not pdf.exists():
         print(f"no such pdf: {pdf}", file=sys.stderr)
         return 2
-    rect = None
+    rect: Optional[tuple[float, float, float, float]] = None
     if a.rect:
         parts = [float(x) for x in a.rect.replace(" ", "").split(",")]
         if len(parts) != 4:
             print("--rect wants x0,y0,x1,y1", file=sys.stderr)
             return 2
-        rect = tuple(parts)  # type: ignore[assignment]
+        rect = (parts[0], parts[1], parts[2], parts[3])
     tmp = Path(a.out) if a.out else Path(store.DATA_DIR) / "tmp-crop.png"
     tmp.parent.mkdir(parents=True, exist_ok=True)
     detail = crop(
@@ -512,10 +512,10 @@ def cmd_register(a) -> int:
     if not src.exists():
         print(f"no such image: {src}", file=sys.stderr)
         return 2
-    detail = {"original_file": str(src.resolve())}
+    detail: dict[str, Any] = {"original_file": str(src.resolve())}
     if a.this_work:
         u, loc = now_stamps()
-        commit = None
+        commit: Optional[str] = None
         try:
             r = subprocess.run(
                 ["git", "-C", str(src.parent), "rev-parse", "HEAD"],
@@ -856,6 +856,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="figcite",
         description="Keep DOI/citation provenance attached to images through to your slides.",
     )
+    from . import __version__
+
+    p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     t = sub.add_parser("tag", help="attach provenance to an existing image file")

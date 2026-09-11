@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import re
+from urllib.parse import unquote
 import shutil
 import sqlite3
 import tempfile
@@ -190,7 +191,7 @@ def lookup_by_time(
 
 
 def _clean_doi_from_url(raw: str) -> str:
-    d = requests.utils.unquote(raw)
+    d = unquote(raw)
     d = URL_DOI_TAIL.sub("", d)
     return normalize_doi(d.rstrip("/.,;"))
 
@@ -233,7 +234,7 @@ def doi_from_ncbi_id(url: str, timeout: int = FETCH_TIMEOUT) -> Optional[str]:
     """PubMed/PMC pages carry a PMID or PMCID; NCBI maps those to a DOI."""
     pmc = NCBI_PMC.search(url or "")
     pmid = NCBI_PMID.search(url or "")
-    if not (pmc or pmid):
+    if pmc is None and pmid is None:
         return None
     if pmc:
         ident = pmc.group(1)
@@ -260,6 +261,7 @@ def doi_from_ncbi_id(url: str, timeout: int = FETCH_TIMEOUT) -> Optional[str]:
 
     # A PMID need not be in PMC at all, so idconv is the wrong endpoint for it;
     # esummary carries the DOI in articleids.
+    assert pmid is not None  # the early return above covers the other case
     ident = pmid.group(1)
     try:
         r = requests.get(

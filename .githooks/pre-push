@@ -44,10 +44,21 @@ echo "pre-push: running the unit suite (live tests excluded)..."
 # the status of the *if construct* (0 when the condition merely failed), which
 # made this hook block correctly while reporting "pytest exit 0" -- a message
 # that pointed away from the actual failure.
+# Lint and types first: they are seconds, and a type error the suite happens
+# not to exercise is exactly what a push gate is for.
 set +e
+ruff check figcite tests
+lint=$?
+pyright figcite
+types=$?
 python3 -m pytest tests/ -q -m "not live"
 status=$?
 set -e
+
+if [ "$lint" -ne 0 ] || [ "$types" -ne 0 ]; then
+  echo "pre-push: BLOCKED -- ruff exit $lint, pyright exit $types. Nothing was pushed." >&2
+  exit 1
+fi
 
 if [ "$status" -eq 0 ]; then
   echo "pre-push: OK"

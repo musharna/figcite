@@ -348,7 +348,8 @@ def _measure(text: str, width: float, fontsize: float, fontname: str = "helv") -
     font = fitz.Font(fontname=fontname)
     lines, cur = 1, 0.0
     for word in (text or "").split():
-        w = font.text_length(word + " ", fontsize=fontsize)
+        # PyMuPDF's stub says int; the C call takes a float and layout is in points.
+        w = font.text_length(word + " ", fontsize=fontsize)  # pyright: ignore[reportArgumentType]
         if cur + w > width:
             lines += 1
             cur = w

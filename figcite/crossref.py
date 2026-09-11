@@ -286,7 +286,7 @@ def record_from_doi(
     if msg is None:
         raise LookupError(f"DOI not found in CrossRef: {doi}")
     full, short = format_citation(msg)
-    lic_urls = [l.get("URL", "") for l in msg.get("license", []) or []]
+    lic_urls = [entry.get("URL", "") for entry in msg.get("license", []) or []]
     lic, reuse = classify_reuse(lic_urls)
     u, loc = now_stamps()
     return Record(

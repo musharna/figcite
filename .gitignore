@@ -7,3 +7,9 @@ demo/*.json
 
 # codex-consult session traces -- tool scratch, not source
 .codex-consult/
+
+# packaging output
+*.egg-info/
+build/
+dist/
+.ruff_cache/

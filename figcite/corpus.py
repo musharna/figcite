@@ -218,7 +218,7 @@ def write_descriptors(rel: str, blob: bytes) -> bool:
     img = match._decode(blob)
     if img is None:
         return False
-    kp, desc = cv2.ORB_create(nfeatures=match.ORB_FEATURES).detectAndCompute(img, None)
+    kp, desc = cv2.ORB.create(nfeatures=match.ORB_FEATURES).detectAndCompute(img, None)
     if desc is None or not kp:
         return False
     dest = descriptor_path(rel)
@@ -226,7 +226,7 @@ def write_descriptors(rel: str, blob: bytes) -> bool:
     np.savez(
         str(dest),
         desc=desc,
-        pts=np.float32([k.pt for k in kp]).reshape(-1, 2),
+        pts=np.asarray([k.pt for k in kp], dtype=np.float32).reshape(-1, 2),
     )
     return True
 

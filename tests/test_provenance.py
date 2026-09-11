@@ -3,10 +3,6 @@
 Each negative assertion here ships with a positive control in the same test, so
 a broken harness reads as a failure rather than as a clean "nothing matched".
 """
-import io
-import json
-
-import pytest
 from PIL import Image
 
 from figcite.provenance import (Record, dhash_bytes, embed, hamming,

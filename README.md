@@ -38,6 +38,7 @@ figcite watch                     # leave running; catches every image you copy
                                   # snips from a browser or a local PDF are
                                   # GROUNDED and filed automatically -- no step
 figcite pending                   # only what could NOT be grounded lands here
+figcite dismiss m0 --reason "..." # a blank snip is not a figure; say why, --undo restores
 figcite confirm 0 --doi 10.3390/horticulturae6040087
 figcite confirm 0 --pick 1        # or accept a listed candidate
 
@@ -388,8 +389,8 @@ miscredit are indistinguishable from the pixels, and only you know which.
 ## Tests
 
 ```bash
-python3 -m pytest tests/ -q -m "not live"   # 383 tests, no network
-python3 -m pytest tests/ -q -m live         # 28 tests (1 skipped): real CrossRef, real PDF,
+python3 -m pytest tests/ -q -m "not live"   # 1203 tests, no network
+python3 -m pytest tests/ -q -m live         # 30 tests: real CrossRef, real PDF,
                                             # real clipboard, real ghostcite,
                                             # real Ghostscript/ImageMagick,
                                             # real Microsoft PowerPoint via COM,
@@ -414,7 +415,7 @@ git config core.hooksPath .githooks   # once per clone; hooks are not cloned
 This is deliberately not GitHub Actions. The repository is private, so
 GitHub-hosted minutes bill against the account's free tier, and a pre-push hook
 gives a one-developer repo the same signal in six seconds for nothing. It runs
-the 383 non-live tests and refuses the push if any fail; `git push --no-verify`
+the non-live tests, ruff and pyright, and refuses the push if any fail; `git push --no-verify`
 overrides it when you mean to.
 
 ## Known limits

@@ -552,6 +552,22 @@ def _duplicate_dois(dhash: str, credited_doi: str) -> list[str]:
         return []
 
 
+def _pdf_where(r) -> str:
+    return f"page {r['page']}"
+
+
+def _pdf_label(r) -> str:
+    return f"xref {r['xref']}"
+
+
+def _pptx_where(r) -> str:
+    return f"slide {r['slide']}"
+
+
+def _pptx_label(r) -> str:
+    return r["shape"]
+
+
 def audit(path, min_inches: float = 1.0) -> dict:
     """One report shape for a deck OR a PDF, so the UI needs none of its own.
 
@@ -561,20 +577,10 @@ def audit(path, min_inches: float = 1.0) -> dict:
     """
     if _is_pdf(path):
         raw, kind = pdfdeck.audit(path, min_inches=min_inches), "pdf"
-
-        def where(r):
-            return f"page {r['page']}"
-
-        def label(r):
-            return f"xref {r['xref']}"
+        where, label = _pdf_where, _pdf_label
     else:
         raw, kind = deck.audit(path, min_inches=min_inches), "pptx"
-
-        def where(r):
-            return f"slide {r['slide']}"
-
-        def label(r):
-            return r["shape"]
+        where, label = _pptx_where, _pptx_label
 
     rows = []
     for r in raw["rows"]:

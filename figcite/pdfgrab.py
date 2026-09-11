@@ -34,7 +34,7 @@ def discover_doi(pdf: str | os.PathLike, scan_pages: int = 2) -> tuple[Optional[
         except Exception:
             pass
         for pno in range(min(scan_pages, doc.page_count)):
-            hits = find_dois(doc[pno].get_text())
+            hits = find_dois(str(doc[pno].get_text()))
             if hits:
                 return hits[0], f"text of page {pno + 1}"
         return None, f"no DOI in metadata, XMP, or the first {scan_pages} pages of text"

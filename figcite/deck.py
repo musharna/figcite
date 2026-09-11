@@ -164,7 +164,7 @@ def _blank_layout(prs):
     for lay in prs.slide_layouts:
         if "blank" in (lay.name or "").lower():
             return lay
-    return min(prs.slide_layouts, key=lambda l: len(l.placeholders))
+    return min(prs.slide_layouts, key=lambda lay: len(lay.placeholders))
 
 
 def _drop_existing_figcite_shapes(prs) -> int:

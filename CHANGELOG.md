@@ -1,13 +1,57 @@
 # Changelog
 
-Notable changes to figcite. Backfilled at the first entry; no releases are
-tagged yet, so sections are dated by the commit that closed the milestone.
+Notable changes to figcite. Sections are dated by the commit that closed the
+milestone. `v0.1.0` was tagged after the three milestones below had already
+landed, so 0.2.0 is the first tag whose notes match its contents.
 
-## Unreleased — `whereis` in the browser (2026-08-20)
+## 0.2.0 (2026-09-10)
+
+Suite 1203 non-live + 30 live.
+
+### Added
+
+- **`figcite dismiss`** — a persistent terminal state for a capture that is
+  NOT attributable, with a required reason; `--undo` restores it. Every other
+  verb attaches provenance, so a stray snip of a blank region had no way out
+  of `pending`. Dismissal sits beside `confirmed`, never inside it: a dismissed
+  record carries no citation and can never read as sourced.
+- `figcite --version`, read from the installed package metadata so the
+  version is declared once, in `pyproject.toml`.
+- `LICENSE` (MIT) and the matching `license` field; a repo with no license file
+  is not permissive by default.
+
+### Fixed
+
+- **A featureless image was a confident false dhash match.** A flat fill or a
+  monotonic gradient hashes to all zeros, which sits close to many corpus
+  hashes. `corpus.can_compare_dhash` existed and was correct but was never
+  called at two of the three sites where a distance becomes a verdict
+  (`match.by_dhash`, `store.find_similar`). Both now decline instead of naming
+  a figure at random. The test puts a blank row in the CORPUS as well as the
+  query, because an all-textured corpus made the first version pass against
+  the broken code.
+- 15 pyright and 7 ruff findings; both now run in the pre-push gate. One was
+  real: `register --this-work` typed its detail dict as `str`-valued, so the
+  deliberate `git_commit: None` for "git did not answer" was a type error.
+
+### Not a bug, checked
+
+- A snip from the Microsoft Teams web app produced the CrossRef candidate
+  "Introduction: Microsoft Teams" (score 37.3). Audited as junk; it is not.
+  That is a real Apress book chapter whose title exactly matches the tab
+  title, offered as a candidate the user must pick explicitly, which is the
+  contract. The number beside it is CrossRef's unnormalised relevance score
+  and says nothing about whether the page was a paper. Left as is: the
+  discriminator that would help is the tab's URL, not its title, and a
+  domain list is the open-set guard this file already refuses to carry.
+
+### Milestones folded into 0.2.0
+
+### `whereis` in the browser (2026-08-20)
 
 Branch `feat/whereis-web`. Suite 383 -> 404 non-live + 28 live.
 
-### Added
+#### Added
 
 - **A "Where is" tab in `figcite ui`.** `service.whereis()` was built as the
   one entry point both front ends call and only the CLI ever called it, while
@@ -21,7 +65,7 @@ Branch `feat/whereis-web`. Suite 383 -> 404 non-live + 28 live.
   button never wired to a listener, passes all of them. Skipped when
   playwright is absent, matching how the node tests skip without node.
 
-### Fixed
+#### Fixed
 
 - **The CLI dropped its leads on a no-match, and mixed them in on a match.**
   `service.whereis` returns open tabs on EVERY verdict — it ranks them last,
@@ -47,7 +91,7 @@ Branch `feat/whereis-web`. Suite 383 -> 404 non-live + 28 live.
   the screen can report. Found by putting the real corpus through the real
   route; every unit test passed because they all asserted on the DOI.
 
-### Notes
+#### Notes
 
 - `service.whereis()` now marks each candidate `evidence: true|false`. The
   browser must not derive that from `source in {"dhash","orb"}` — a list of
@@ -62,11 +106,11 @@ Branch `feat/whereis-web`. Suite 383 -> 404 non-live + 28 live.
   `show()` that does not know the section, a blanked failure box, and the
   score fix reverted.
 
-## Unreleased — figure corpus and reverse sourcing (2026-08-20)
+### Figure corpus and reverse sourcing (2026-08-20)
 
 Branch `feat/figure-corpus`, 17 commits. Suite 258 -> 383 non-live + 28 live.
 
-### Added
+#### Added
 
 - `figcite corpus build` / `corpus status` — indexes the open-access figures
   of the papers already in your library via Europe PMC and the PMC Open Data
@@ -99,7 +143,7 @@ Branch `feat/figure-corpus`, 17 commits. Suite 258 -> 383 non-live + 28 live.
 - `tests/test_pmc_live.py` — the real Europe PMC and S3 boundary, the only
   test that would notice PMC changing its published layout.
 
-### Fixed
+#### Fixed
 
 - **One failing request no longer erases every other answer.** A single
   transient 504 on batch 3 of 67 made all 535 DOIs report `failed`, because
@@ -110,7 +154,7 @@ Branch `feat/figure-corpus`, 17 commits. Suite 258 -> 383 non-live + 28 live.
 - Bounded retries on transient HTTP codes (429/500/502/503/504) only.
 - `python -m figcite.cli` printed nothing and exited 0.
 
-### Notes
+#### Notes
 
 - `opencv` is optional (`pip install 'figcite[match]'`). Without it, crops
   cannot be matched; everything else works.
@@ -118,11 +162,11 @@ Branch `feat/figure-corpus`, 17 commits. Suite 258 -> 383 non-live + 28 live.
   other, so removing either left the suite green. Their real coverage is the
   mirrored near-flat cases, now pinned.
 
-## Unreleased — web UI and service layer (2026-08-18)
+### Web UI and service layer (2026-08-18)
 
 Branch `feat/web-ui`, 35 commits. Suite 130 -> 258 passing.
 
-### Added
+#### Added
 
 - `figcite/service.py` — one implementation of "attach a citation to an
   image", consumed by both front ends. `pending_items`, `confirm`, `skip`,
@@ -141,7 +185,7 @@ Branch `feat/web-ui`, 35 commits. Suite 130 -> 258 passing.
 - A parity test asserting the browser and the CLI produce field-identical
   records for the same choice, so the two doors cannot drift.
 
-### Changed
+#### Changed
 
 - `cmd_pending` and `cmd_confirm` are printers over `service.py`. Every other
   `cmd_*` is untouched and the pre-existing CLI tests passed unmodified.
@@ -150,7 +194,7 @@ Branch `feat/web-ui`, 35 commits. Suite 130 -> 258 passing.
 - The push gate (`.githooks/pre-push`) now covers the web server: 210 -> 239
   non-live tests.
 
-### Fixed
+#### Fixed
 
 - **Arbitrary file write via `/api/confirm`.** Client JSON was splatted into
   `service.confirm(**payload)`, exposing the `out=` destination path; a POST
@@ -167,7 +211,7 @@ Branch `feat/web-ui`, 35 commits. Suite 130 -> 258 passing.
   call, blocking unrelated requests for up to 25s. The lock now covers state
   mutation only.
 
-### Deferred
+#### Deferred
 
 - **SP2** — Europe PMC figure index for reverse sourcing and duplication
   detection.
