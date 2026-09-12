@@ -44,10 +44,11 @@ _last_call = 0.0
 
 def throttled_get(url: str, **kw):
     global _last_call
+    timeout = kw.pop("timeout", TIMEOUT)  # a hung CrossRef socket must not hang the watcher
     wait = _MIN_INTERVAL - (time.monotonic() - _last_call)
     if wait > 0:
         time.sleep(wait)
-    r = requests.get(url, **kw)
+    r = requests.get(url, timeout=timeout, **kw)
     _last_call = time.monotonic()
     if r.status_code == 429:
         delay = 2.0
@@ -56,7 +57,7 @@ def throttled_get(url: str, **kw):
         except ValueError:
             pass
         time.sleep(min(max(delay, 1.0), 15.0))
-        r = requests.get(url, **kw)
+        r = requests.get(url, timeout=timeout, **kw)
         _last_call = time.monotonic()
     return r
 

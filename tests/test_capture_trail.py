@@ -110,6 +110,7 @@ def test_malformed_capture_announcement_is_ignored(monkeypatch, tmp_path, capsys
     far downstream as a confusing FileNotFoundError. Measured on a real capture.
     """
     import subprocess
+    import sys
 
     real = tmp_path / "clip-20260101-000000-AAAABBBB.png"
     Image.new("RGB", (40, 30), (10, 10, 10)).save(real)
@@ -131,6 +132,9 @@ def test_malformed_capture_announcement_is_ignored(monkeypatch, tmp_path, capsys
     monkeypatch.setattr(C, "wsl_to_win", lambda p: str(p))
     monkeypatch.setattr(C, "staging_dirs", lambda: (str(tmp_path), tmp_path))
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: FakeProc())
+    # watch() checks that PS_EXE exists before the (faked) Popen; any real file
+    # satisfies it off-Windows, as test_clipboard_guards already does
+    monkeypatch.setattr(C, "PS_EXE", sys.executable)
 
     seen = []
     monkeypatch.setattr(C, "enrich", lambda p: (seen.append(str(p)), {})[1])

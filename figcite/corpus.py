@@ -79,7 +79,7 @@ def upsert(conn: sqlite3.Connection, row: FigureRow) -> None:
 
 
 def all_rows(conn: sqlite3.Connection) -> list[FigureRow]:
-    cur = conn.execute(f"SELECT {','.join(_COLS)} FROM figures")
+    cur = conn.execute(f"SELECT {','.join(_COLS)} FROM figures")  # nosec B608 - _COLS is a constant
     return [FigureRow(*r) for r in cur.fetchall()]
 
 
