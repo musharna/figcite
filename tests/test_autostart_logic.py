@@ -171,6 +171,9 @@ def test_install_does_not_start_a_second_supervisor(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(autostart, "_log_path", lambda: tmp_path / "watch.log")
     monkeypatch.setattr(autostart, "supervisor_processes", lambda: [{"pid": "1"}])
+    # the launcher is a real-machine artifact (~/.local/bin/figcite); fake it like
+    # every other boundary here, or the test only passes where figcite is installed
+    monkeypatch.setattr(autostart, "_launcher", lambda: str(tmp_path / "figcite"))
 
     res = autostart.install(hours=1.0, start_now=True)
 
@@ -197,6 +200,7 @@ def test_install_starts_one_when_none_is_running(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(autostart, "_log_path", lambda: tmp_path / "watch.log")
     monkeypatch.setattr(autostart, "supervisor_processes", lambda: [])
+    monkeypatch.setattr(autostart, "_launcher", lambda: str(tmp_path / "figcite"))
 
     res = autostart.install(hours=1.0, start_now=True)
 

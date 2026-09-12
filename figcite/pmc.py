@@ -13,7 +13,7 @@ import re
 import socket
 import time
 import urllib.parse
-import xml.etree.ElementTree as ET
+from defusedxml import ElementTree as ET  # PMC XML is remote input
 from dataclasses import dataclass
 
 import requests
@@ -63,8 +63,9 @@ def _get(url: str, **kw) -> bytes:
     wait = MIN_INTERVAL - (time.monotonic() - _last_call)
     if wait > 0:
         time.sleep(wait)
+    timeout = kw.pop("timeout", 45)
     try:
-        r = requests.get(url, timeout=kw.pop("timeout", 45), **kw)
+        r = requests.get(url, timeout=timeout, **kw)
     except requests.exceptions.ConnectionError as e:
         if isinstance(e.__cause__, socket.gaierror) or "NameResolution" in str(e):
             host = urllib.parse.urlsplit(url).hostname or url

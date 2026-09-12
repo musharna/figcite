@@ -10,6 +10,8 @@ import subprocess
 import time
 from pathlib import Path
 
+import os
+
 import pytest
 
 from figcite.crossref import record_from_doi, search_bibliographic
@@ -23,11 +25,10 @@ from figcite.provenance import read_embedded
 # goes on the test that earns it.
 pytestmark = [pytest.mark.live]
 
-REAL_PDF = (
-    "/mnt/c/Users/a2b32/Zotero/storage/497VPIMU/"
-    "Shiragaki et al. - 2020 - Phylogenetic Analysis and Molecular "
-    "Diversity of Capsicum Based on rDNA-ITS Region.pdf"
-)
+# A real, DOI-bearing PDF on the machine running the live suite. Machine-local
+# by nature, so it comes from the environment rather than a path in the repo;
+# the tests that use it skip when it is unset or absent.
+REAL_PDF = os.environ.get("FIGCITE_LIVE_PDF", "")
 PS_EXE = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 
 
@@ -65,8 +66,8 @@ def test_crossref_title_search_is_untrustworthy_by_design():
 
 
 def test_real_pdf_crop_end_to_end(tmp_path):
-    if not Path(REAL_PDF).exists():
-        pytest.skip(f"fixture PDF not present: {REAL_PDF}")
+    if not REAL_PDF or not Path(REAL_PDF).exists():
+        pytest.skip(f"set FIGCITE_LIVE_PDF to a real DOI-bearing PDF (got {REAL_PDF!r})")
     doi, where = discover_doi(REAL_PDF)
     assert doi == "10.3390/horticulturae6040087", (doi, where)
     assert "page" in where
