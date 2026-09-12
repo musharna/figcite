@@ -44,7 +44,7 @@ _last_call = 0.0
 
 def throttled_get(url: str, **kw):
     global _last_call
-    timeout = kw.pop("timeout", 30)  # a hung CrossRef socket must not hang the watcher
+    timeout = kw.pop("timeout", TIMEOUT)  # a hung CrossRef socket must not hang the watcher
     wait = _MIN_INTERVAL - (time.monotonic() - _last_call)
     if wait > 0:
         time.sleep(wait)
