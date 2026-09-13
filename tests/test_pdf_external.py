@@ -79,9 +79,7 @@ def deck(tmp_path):
 
 
 def _imagemagick_pdf(paths, out):
-    subprocess.run(
-        [CONVERT, *[str(p) for p in paths], str(out)], check=True, timeout=300
-    )
+    subprocess.run([CONVERT, *[str(p) for p in paths], str(out)], check=True, timeout=300)
     return out
 
 

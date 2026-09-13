@@ -83,9 +83,7 @@ def _staged(monkeypatch, inference):
         "out-of-range",
     ],
 )
-def test_a_pick_that_cannot_be_resolved_is_refused_not_raised(
-    inference, pick, arm, monkeypatch
-):
+def test_a_pick_that_cannot_be_resolved_is_refused_not_raised(inference, pick, arm, monkeypatch):
     """Every one of the three caught types, reached by its own real route.
 
     `pick` is a parameter, not derived from `arm`. The first draft computed it

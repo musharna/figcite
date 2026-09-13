@@ -56,8 +56,7 @@ def test_a_short_library_title_is_not_offered_as_a_partial_match(monkeypatch):
 
     dois = [c["doi"] for c in out["candidates"]]
     assert "10.1/junk" not in dois, (
-        f"a library item titled 'Data' was offered as a partial title match: "
-        f"{out['candidates']}"
+        f"a library item titled 'Data' was offered as a partial title match: {out['candidates']}"
     )
     assert "10.1/alsojunk" not in dois, out["candidates"]
     assert out["doi"] is None and out["grounded"] is False, out
@@ -72,9 +71,7 @@ def test_a_real_title_is_still_matched_by_substring(monkeypatch):
     out = zotero.resolve_title(truncated)
 
     dois = [c["doi"] for c in out["candidates"]]
-    assert "10.1111/nph.71477" in dois, (
-        f"a truncated window title no longer finds its paper: {out}"
-    )
+    assert "10.1111/nph.71477" in dois, f"a truncated window title no longer finds its paper: {out}"
 
 
 def test_the_short_titles_really_are_below_the_threshold(monkeypatch):
@@ -123,9 +120,7 @@ def test_the_matched_variant_is_named_even_for_a_title_with_leading_space(
         "evidence": "exact title match in Zotero",
         "candidates": [],
     }
-    monkeypatch.setattr(
-        zotero, "resolve", lambda cand, max_age_hours=None: dict(grounded)
-    )
+    monkeypatch.setattr(zotero, "resolve", lambda cand, max_age_hours=None: dict(grounded))
 
     out = zotero.resolve_page_title(" Some Paper | Journal")
 
@@ -144,9 +139,7 @@ def test_no_variant_is_named_when_the_title_itself_matched(monkeypatch):
         "evidence": "exact title match in Zotero",
         "candidates": [],
     }
-    monkeypatch.setattr(
-        zotero, "resolve", lambda cand, max_age_hours=None: dict(grounded)
-    )
+    monkeypatch.setattr(zotero, "resolve", lambda cand, max_age_hours=None: dict(grounded))
 
     exact = "Some Paper"
     out = zotero.resolve_page_title(exact)

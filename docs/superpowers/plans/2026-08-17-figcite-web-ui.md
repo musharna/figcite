@@ -50,11 +50,17 @@ from figcite.provenance import Record, now_stamps
 
 def test_a_filed_unconfirmed_capture_becomes_a_pending_item():
     u, loc = now_stamps()
-    store.put(Record(
-        sha256="a" * 64, dhash="0" * 16, source_kind="clipboard",
-        confirmed=False, captured_utc=u, captured_local=loc,
-        source_detail={"clipboard_capture": {"process": "firefox", "title": "A paper"}},
-    ))
+    store.put(
+        Record(
+            sha256="a" * 64,
+            dhash="0" * 16,
+            source_kind="clipboard",
+            confirmed=False,
+            captured_utc=u,
+            captured_local=loc,
+            source_detail={"clipboard_capture": {"process": "firefox", "title": "A paper"}},
+        )
+    )
     items = service.pending_items()
     refs = [i.ref for i in items]
     assert f"filed:{'a' * 64}" in refs
@@ -62,7 +68,7 @@ def test_a_filed_unconfirmed_capture_becomes_a_pending_item():
     assert it.kind == "filed"
     assert it.doi is None
     assert it.candidates == []
-    assert it.error is None          # "looked, found nothing"
+    assert it.error is None  # "looked, found nothing"
 
 
 def test_a_lookup_failure_is_not_an_empty_candidate_list(tmp_path, monkeypatch):
@@ -71,11 +77,15 @@ def test_a_lookup_failure_is_not_an_empty_candidate_list(tmp_path, monkeypatch):
     staging.mkdir()
     png = staging / "clip-1.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
-    (staging / "clip-1.pending.json").write_text(json.dumps({
-        "png": str(png),
-        "capture": {"process": "firefox", "title": "A paper", "width": 800, "height": 600},
-        "inference": {"kind": "browser", "candidates": [], "error": "CrossRef unreachable"},
-    }))
+    (staging / "clip-1.pending.json").write_text(
+        json.dumps(
+            {
+                "png": str(png),
+                "capture": {"process": "firefox", "title": "A paper", "width": 800, "height": 600},
+                "inference": {"kind": "browser", "candidates": [], "error": "CrossRef unreachable"},
+            }
+        )
+    )
     monkeypatch.setattr(service.clipboard, "staging_dirs", lambda: (None, staging))
 
     it = [i for i in service.pending_items() if i.kind == "staged"][0]
@@ -98,6 +108,7 @@ Both the CLI and the web UI call these. Nothing here prints, parses argv, or
 knows about HTTP. The reason this module exists at all: two implementations of
 "attach a citation to an image" is the one drift this codebase cannot survive.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -109,16 +120,16 @@ from . import clipboard, store
 
 @dataclass
 class PendingItem:
-    ref: str                       # opaque; "staged:<png name>" or "filed:<sha256>"
-    kind: str                      # "staged" | "filed"
-    context: str                   # app, window title, timestamp
+    ref: str  # opaque; "staged:<png name>" or "filed:<sha256>"
+    kind: str  # "staged" | "filed"
+    context: str  # app, window title, timestamp
     width: Optional[int] = None
     height: Optional[int] = None
     doi: Optional[str] = None
     doi_evidence: str = ""
-    grounded: bool = False         # True => the DOI is evidence, not a guess
+    grounded: bool = False  # True => the DOI is evidence, not a guess
     candidates: list[dict] = field(default_factory=list)
-    error: Optional[str] = None    # None + empty candidates == "looked, found nothing"
+    error: Optional[str] = None  # None + empty candidates == "looked, found nothing"
 
 
 def pending_items() -> list[PendingItem]:
@@ -127,29 +138,33 @@ def pending_items() -> list[PendingItem]:
     for rec in store.all_records().values():
         if rec.confirmed or rec.source_kind != "clipboard":
             continue
-        out.append(PendingItem(
-            ref=f"filed:{rec.sha256}",
-            kind="filed",
-            context=rec.context_line(),
-            error=None,
-        ))
+        out.append(
+            PendingItem(
+                ref=f"filed:{rec.sha256}",
+                kind="filed",
+                context=rec.context_line(),
+                error=None,
+            )
+        )
 
     for it in clipboard.list_pending():
         png = Path(it["png"])
         cap = it.get("capture", {}) or {}
         inf = it.get("inference", {}) or {}
-        out.append(PendingItem(
-            ref=f"staged:{png.name}",
-            kind="staged",
-            context=_context_of(cap),
-            width=cap.get("width"),
-            height=cap.get("height"),
-            doi=inf.get("doi"),
-            doi_evidence=inf.get("doi_evidence", "") or "",
-            grounded=bool(inf.get("grounded")),
-            candidates=list(inf.get("candidates") or []),
-            error=inf.get("error"),
-        ))
+        out.append(
+            PendingItem(
+                ref=f"staged:{png.name}",
+                kind="staged",
+                context=_context_of(cap),
+                width=cap.get("width"),
+                height=cap.get("height"),
+                doi=inf.get("doi"),
+                doi_evidence=inf.get("doi_evidence", "") or "",
+                grounded=bool(inf.get("grounded")),
+                candidates=list(inf.get("candidates") or []),
+                error=inf.get("error"),
+            )
+        )
     return out
 
 
@@ -211,11 +226,15 @@ def _stage(tmp_path, monkeypatch, inference):
     staging.mkdir()
     png = staging / "clip-1.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
-    (staging / "clip-1.pending.json").write_text(json.dumps({
-        "png": str(png),
-        "capture": {"process": "firefox", "title": "A paper"},
-        "inference": inference,
-    }))
+    (staging / "clip-1.pending.json").write_text(
+        json.dumps(
+            {
+                "png": str(png),
+                "capture": {"process": "firefox", "title": "A paper"},
+                "inference": inference,
+            }
+        )
+    )
     monkeypatch.setattr(service.clipboard, "staging_dirs", lambda: (None, staging))
     return png
 
@@ -237,17 +256,25 @@ def test_the_same_guess_is_accepted_when_named_explicitly(tmp_path, monkeypatch)
     assert rec.doi == "10.1/guess"
 
 
-def _fake_record_for(doi, cite, url, *, confirmed, kind, detail,
-                     adapted_from=None, note=""):
+def _fake_record_for(doi, cite, url, *, confirmed, kind, detail, adapted_from=None, note=""):
     u, loc = now_stamps()
-    return Record(doi=doi, confirmed=confirmed, source_kind=kind,
-                  source_detail=detail, captured_utc=u, captured_local=loc)
+    return Record(
+        doi=doi,
+        confirmed=confirmed,
+        source_kind=kind,
+        source_detail=detail,
+        captured_utc=u,
+        captured_local=loc,
+    )
 
 
-@pytest.mark.parametrize("kwargs", [
-    {"doi": "10.1/a", "own_work": True},       # two selectors
-    {"pick": 0, "cite": "Someone 2020"},       # two selectors
-])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"doi": "10.1/a", "own_work": True},  # two selectors
+        {"pick": 0, "cite": "Someone 2020"},  # two selectors
+    ],
+)
 def test_confirm_refuses_more_than_one_selector(tmp_path, monkeypatch, kwargs):
     _stage(tmp_path, monkeypatch, {"candidates": [{"doi": "10.1/a"}]})
     with pytest.raises(ValueError):
@@ -258,8 +285,7 @@ def test_zero_selectors_means_use_this_item_s_own_grounded_doi(tmp_path, monkeyp
     """Controller Ruling 1. Zero selectors is the `figcite confirm 0` case that
     cmd_pending itself prints as the instruction for a grounded capture. It is
     valid, and the grounded check -- not an arity check -- is what guards it."""
-    _stage(tmp_path, monkeypatch,
-           {"doi": "10.1/real", "grounded": True, "candidates": []})
+    _stage(tmp_path, monkeypatch, {"doi": "10.1/real", "grounded": True, "candidates": []})
     monkeypatch.setattr(service, "record_for", _fake_record_for)
     rec = service.confirm("staged:clip-1.png")
     assert rec.doi == "10.1/real"
@@ -284,11 +310,12 @@ Create `figcite/_actions.py` by moving `_slug`, `_library_dest`, `_finalize`, an
 ```python
 # figcite/service.py  (additions)
 
+
 class NotGrounded(Exception):
     """An inferred DOI was offered for confirmation without being named."""
 
 
-_skipped: list[str] = []          # deferred for this process only; never persisted
+_skipped: list[str] = []  # deferred for this process only; never persisted
 
 
 def skip(ref: str) -> None:
@@ -296,8 +323,9 @@ def skip(ref: str) -> None:
         _skipped.append(ref)
 
 
-def confirm(ref, *, doi=None, pick=None, cite=None, own_work=False,
-            adapted_from=None, note=None, out=None):
+def confirm(
+    ref, *, doi=None, pick=None, cite=None, own_work=False, adapted_from=None, note=None, out=None
+):
     # Controller Ruling 1: zero selectors is VALID and means "use this item's
     # own grounded DOI" -- the `figcite confirm 0` invocation cmd_pending prints
     # for a grounded capture. What guards a guess is the NotGrounded check
@@ -306,8 +334,7 @@ def confirm(ref, *, doi=None, pick=None, cite=None, own_work=False,
     selectors = [doi is not None, pick is not None, cite is not None, bool(own_work)]
     if sum(selectors) > 1:
         raise ValueError(
-            "confirm takes at most one of doi=, pick=, cite=, own_work=True "
-            f"(got {sum(selectors)})"
+            f"confirm takes at most one of doi=, pick=, cite=, own_work=True (got {sum(selectors)})"
         )
 
     item = _item_for(ref)
@@ -330,9 +357,7 @@ def confirm(ref, *, doi=None, pick=None, cite=None, own_work=False,
     elif doi is None and cite is None:
         doi = inf.get("doi")
         if doi and not inf.get("grounded"):
-            raise NotGrounded(
-                "that DOI was only guessed; name it explicitly to accept it"
-            )
+            raise NotGrounded("that DOI was only guessed; name it explicitly to accept it")
 
     # Controller Ruling 4. cmd_confirm has TWO guards; Ruling 1 removed only the
     # arity one. Without this second check, zero selectors on an item with no
@@ -341,17 +366,23 @@ def confirm(ref, *, doi=None, pick=None, cite=None, own_work=False,
     # uncited record while _clear_staged deletes the pending.json holding the
     # candidates, the inference kind, and the error field. Irreversible.
     if doi is None and cite is None:
-        raise ValueError(
-            "nothing to confirm with: pass doi=, pick=, cite=, or own_work=True"
-        )
+        raise ValueError("nothing to confirm with: pass doi=, pick=, cite=, or own_work=True")
 
     detail = {
         "clipboard_capture": raw.get("capture", {}),
         "inference_kind": inf.get("kind", ""),
         "doi_evidence": inf.get("doi_evidence", ""),
     }
-    rec = record_for(doi, cite, None, confirmed=True, kind="clipboard",
-                     detail=detail, adapted_from=adapted_from, note=note or "")
+    rec = record_for(
+        doi,
+        cite,
+        None,
+        confirmed=True,
+        kind="clipboard",
+        detail=detail,
+        adapted_from=adapted_from,
+        note=note or "",
+    )
     png = Path(raw["png"])
     dest = finalize(png, rec, out)
     _clear_staged(png, dest)
@@ -398,9 +429,16 @@ def _confirm_filed(item, *, doi, adapted_from, note):
     target = store.get(item.ref.split(":", 1)[1])
     if target is None:
         raise KeyError(f"no filed record {item.ref!r}")
-    rec = record_for(doi, None, None, confirmed=True, kind="clipboard",
-                     detail=target.source_detail, adapted_from=adapted_from,
-                     note=note or "")
+    rec = record_for(
+        doi,
+        None,
+        None,
+        confirmed=True,
+        kind="clipboard",
+        detail=target.source_detail,
+        adapted_from=adapted_from,
+        note=note or "",
+    )
     rec.sha256, rec.dhash = target.sha256, target.dhash
     rec.captured_utc, rec.captured_local = target.captured_utc, target.captured_local
     store.put(rec)
@@ -468,11 +506,15 @@ def _stage(tmp_path, monkeypatch, inference):
     staging.mkdir()
     png = staging / "clip-1.png"
     Image.new("RGB", (40, 40), "white").save(png)
-    (staging / "clip-1.pending.json").write_text(json.dumps({
-        "png": str(png),
-        "capture": {"process": "firefox", "title": "A paper", "width": 40, "height": 40},
-        "inference": inference,
-    }))
+    (staging / "clip-1.pending.json").write_text(
+        json.dumps(
+            {
+                "png": str(png),
+                "capture": {"process": "firefox", "title": "A paper", "width": 40, "height": 40},
+                "inference": inference,
+            }
+        )
+    )
     monkeypatch.setattr(clipboard, "staging_dirs", lambda: (None, staging))
     return png
 
@@ -558,7 +600,9 @@ def cmd_pending(a) -> int:
         elif it.candidates:
             for ci, c in enumerate(it.candidates):
                 print(f"     cand {ci}: score {c['score']:>5}  {c['doi']}")
-                print(f"               {c['title'][:80]} ({c.get('container', '')} {c.get('year', '')}) [{c.get('type', '')}]")
+                print(
+                    f"               {c['title'][:80]} ({c.get('container', '')} {c.get('year', '')}) [{c.get('type', '')}]"
+                )
             print(f"     confirm: figcite confirm {i} --pick <n>   (or --doi 10.x/y)")
         else:
             print(f"     no source inferred: {it.doi_evidence}")
@@ -590,8 +634,13 @@ def cmd_confirm(a) -> int:
 
     try:
         rec = service.confirm(
-            ref, doi=a.doi, pick=a.pick, cite=a.cite,
-            adapted_from=a.adapted_from, note=a.note or "", out=a.out,
+            ref,
+            doi=a.doi,
+            pick=a.pick,
+            cite=a.cite,
+            adapted_from=a.adapted_from,
+            note=a.note or "",
+            out=a.out,
         )
     except service.NotGrounded as e:
         print(str(e), file=sys.stderr)
@@ -639,13 +688,28 @@ from figcite import service
 
 
 def test_audit_normalizes_the_pptx_and_pdf_report_shapes(monkeypatch):
-    monkeypatch.setattr(service.deck, "audit", lambda p, min_inches=1.0: {
-        "pptx": "/x/deck.pptx", "pictures": 1, "tagged": 0,
-        "unconfirmed": 0, "untagged_substantive": 1,
-        "rows": [{"slide": 3, "shape": "Picture 4", "size_in": [2.0, 2.0],
-                  "decorative": False, "matched_by": "none", "record": None,
-                  "alt_text": ""}],
-    })
+    monkeypatch.setattr(
+        service.deck,
+        "audit",
+        lambda p, min_inches=1.0: {
+            "pptx": "/x/deck.pptx",
+            "pictures": 1,
+            "tagged": 0,
+            "unconfirmed": 0,
+            "untagged_substantive": 1,
+            "rows": [
+                {
+                    "slide": 3,
+                    "shape": "Picture 4",
+                    "size_in": [2.0, 2.0],
+                    "decorative": False,
+                    "matched_by": "none",
+                    "record": None,
+                    "alt_text": "",
+                }
+            ],
+        },
+    )
     rep = service.audit("/x/deck.pptx")
     assert rep["path"] == "/x/deck.pptx"
     assert rep["kind"] == "pptx"
@@ -655,16 +719,38 @@ def test_audit_normalizes_the_pptx_and_pdf_report_shapes(monkeypatch):
 
 def test_audit_reports_the_licensing_verdict_for_a_matched_row(monkeypatch):
     from figcite.provenance import Record
-    rec = Record(sha256="b" * 64, doi="10.1/x", short_cite="Band et al. 2014",
-                 confirmed=True, license_url="https://creativecommons.org/licenses/by/4.0/",
-                 reuse="reuse-ok-attribution-required", retracted=False)
-    monkeypatch.setattr(service.deck, "audit", lambda p, min_inches=1.0: {
-        "pptx": "/x/deck.pptx", "pictures": 1, "tagged": 1,
-        "unconfirmed": 0, "untagged_substantive": 0,
-        "rows": [{"slide": 7, "shape": "Picture 1", "size_in": [3.0, 3.0],
-                  "decorative": False, "matched_by": "manifest-sha256",
-                  "record": rec, "alt_text": ""}],
-    })
+
+    rec = Record(
+        sha256="b" * 64,
+        doi="10.1/x",
+        short_cite="Band et al. 2014",
+        confirmed=True,
+        license_url="https://creativecommons.org/licenses/by/4.0/",
+        reuse="reuse-ok-attribution-required",
+        retracted=False,
+    )
+    monkeypatch.setattr(
+        service.deck,
+        "audit",
+        lambda p, min_inches=1.0: {
+            "pptx": "/x/deck.pptx",
+            "pictures": 1,
+            "tagged": 1,
+            "unconfirmed": 0,
+            "untagged_substantive": 0,
+            "rows": [
+                {
+                    "slide": 7,
+                    "shape": "Picture 1",
+                    "size_in": [3.0, 3.0],
+                    "decorative": False,
+                    "matched_by": "manifest-sha256",
+                    "record": rec,
+                    "alt_text": "",
+                }
+            ],
+        },
+    )
     row = service.audit("/x/deck.pptx")["rows"][0]
     assert row["status"] == "ok"
     assert row["reuse"] == "reuse-ok-attribution-required"
@@ -706,19 +792,21 @@ def audit(path, min_inches: float = 1.0) -> dict:
             status = "ok"
         else:
             status = "unconfirmed"
-        rows.append({
-            "ref": f"sha:{rec.sha256}" if rec is not None else "",
-            "location": where(r),
-            "label": label(r),
-            "status": status,
-            "matched_by": r["matched_by"],
-            "decorative": r["decorative"],
-            "citation": (rec.short_cite or rec.doi or "") if rec else "",
-            "doi": (rec.doi or "") if rec else "",
-            "license_url": (rec.license_url or "") if rec else "",
-            "reuse": (rec.reuse or "unknown") if rec else "",
-            "retracted": bool(rec.retracted) if rec else False,
-        })
+        rows.append(
+            {
+                "ref": f"sha:{rec.sha256}" if rec is not None else "",
+                "location": where(r),
+                "label": label(r),
+                "status": status,
+                "matched_by": r["matched_by"],
+                "decorative": r["decorative"],
+                "citation": (rec.short_cite or rec.doi or "") if rec else "",
+                "doi": (rec.doi or "") if rec else "",
+                "license_url": (rec.license_url or "") if rec else "",
+                "reuse": (rec.reuse or "unknown") if rec else "",
+                "retracted": bool(rec.retracted) if rec else False,
+            }
+        )
     return {
         "path": raw.get("pptx") or raw.get("file"),
         "kind": kind,
@@ -731,7 +819,7 @@ def audit(path, min_inches: float = 1.0) -> dict:
 
 
 def apply(path, out=None, **opts) -> dict:
-    opts.pop("allow_unconfirmed", None)          # no UI path to it, ever
+    opts.pop("allow_unconfirmed", None)  # no UI path to it, ever
     out = out or _default_out(path)
     if Path(out).resolve() == Path(path).resolve():
         raise ValueError("apply refuses to overwrite its input")
@@ -788,6 +876,7 @@ def test_a_real_staged_capture_renders(tmp_path, monkeypatch):
     """Positive control in the same file: the refusal above must not be
     passing because thumbnail() is simply broken for everything."""
     from PIL import Image
+
     staging = tmp_path / "staging"
     staging.mkdir()
     Image.new("RGB", (1200, 900), "white").save(staging / "clip-1.png")
@@ -815,7 +904,7 @@ from PIL import Image
 
 
 def thumbnail(ref: str, max_px: int = 480) -> tuple[bytes, str]:
-    src = _resolve_ref_to_path(ref)      # raises KeyError for anything unknown
+    src = _resolve_ref_to_path(ref)  # raises KeyError for anything unknown
     im = Image.open(src)
     im.thumbnail((max_px, max_px))
     buf = io.BytesIO()
@@ -865,7 +954,7 @@ from figcite import web
 
 @pytest.mark.live
 def test_the_server_serves_pending_over_a_real_socket():
-    srv = web.make_server(0)                       # ephemeral port
+    srv = web.make_server(0)  # ephemeral port
     port = srv.server_address[1]
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
@@ -921,6 +1010,7 @@ That is a deliberate choice for a tool that reads your figure library and
 writes citations: it is reachable only from this machine, and adding auth to a
 single-user localhost tool buys nothing it does not also cost in friction.
 """
+
 from __future__ import annotations
 
 import json
@@ -928,7 +1018,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 from . import service
-from .webui import PAGE            # stub created in this task, filled in Task 7
+from .webui import PAGE  # stub created in this task, filled in Task 7
 
 HOST = "127.0.0.1"
 
@@ -994,7 +1084,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"error": str(e), "kind": "not-grounded"}, 409)
         except (ValueError, KeyError) as e:
             self._json({"error": str(e)}, 400)
-        except Exception as e:                      # fail loud, with the real reason
+        except Exception as e:  # fail loud, with the real reason
             self._json({"error": f"{type(e).__name__}: {e}"}, 500)
 
     def log_message(self, *a):
@@ -1002,7 +1092,7 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def make_server(port: int) -> ThreadingHTTPServer:
-    ThreadingHTTPServer.allow_reuse_address = False   # a taken port must raise
+    ThreadingHTTPServer.allow_reuse_address = False  # a taken port must raise
     return ThreadingHTTPServer((HOST, port), _Handler)
 
 
@@ -1011,6 +1101,7 @@ def serve(port: int = 8765, open_browser: bool = False) -> None:
     print(f"figcite ui: http://{HOST}:{srv.server_address[1]}")
     if open_browser:
         import webbrowser
+
         webbrowser.open(f"http://{HOST}:{srv.server_address[1]}")
     srv.serve_forever()
 ```
@@ -1450,9 +1541,10 @@ from figcite import cli
 
 def test_ui_verb_passes_the_port_through(monkeypatch):
     seen = {}
-    monkeypatch.setattr("figcite.web.serve",
-                        lambda port=8765, open_browser=False: seen.update(
-                            port=port, open_browser=open_browser))
+    monkeypatch.setattr(
+        "figcite.web.serve",
+        lambda port=8765, open_browser=False: seen.update(port=port, open_browser=open_browser),
+    )
     assert cli.main(["ui", "--port", "9001", "--open"]) == 0
     assert seen == {"port": 9001, "open_browser": True}
 ```
@@ -1538,12 +1630,17 @@ def _stage(tmp_path, monkeypatch, name):
     staging.mkdir()
     png = staging / "clip-1.png"
     from PIL import Image
+
     Image.new("RGB", (40, 40), "white").save(png)
-    (staging / "clip-1.pending.json").write_text(json.dumps({
-        "png": str(png),
-        "capture": {"process": "firefox", "title": "A paper"},
-        "inference": {"kind": "browser", "candidates": [], "doi_evidence": ""},
-    }))
+    (staging / "clip-1.pending.json").write_text(
+        json.dumps(
+            {
+                "png": str(png),
+                "capture": {"process": "firefox", "title": "A paper"},
+                "inference": {"kind": "browser", "candidates": [], "doi_evidence": ""},
+            }
+        )
+    )
     monkeypatch.setattr(service.clipboard, "staging_dirs", lambda: (None, staging))
 
 
@@ -1615,8 +1712,10 @@ from figcite import clipboard
 
 def test_a_failed_browser_lookup_sets_error(monkeypatch):
     """'Could not look' must be readable as such, not as prose in doi_evidence."""
+
     def boom(capture):
         raise RuntimeError("Network is unreachable")
+
     monkeypatch.setattr(clipboard, "browser_resolve", boom)
 
     out = clipboard.infer_source({"process": "firefox", "title": "Some paper"})
@@ -1627,10 +1726,16 @@ def test_a_failed_browser_lookup_sets_error(monkeypatch):
 def test_a_successful_inference_leaves_error_none(monkeypatch):
     """Positive control. Without this, a function that set error unconditionally
     -- or one that crashed on every path -- would pass the test above."""
-    monkeypatch.setattr(clipboard, "browser_resolve", lambda capture: {
-        "doi": "10.1/real", "url": "https://example.org/10.1/real",
-        "grounded": True, "evidence": "DOI in URL",
-    })
+    monkeypatch.setattr(
+        clipboard,
+        "browser_resolve",
+        lambda capture: {
+            "doi": "10.1/real",
+            "url": "https://example.org/10.1/real",
+            "grounded": True,
+            "evidence": "DOI in URL",
+        },
+    )
     out = clipboard.infer_source({"process": "firefox", "title": "Some paper"})
     assert out["doi"] == "10.1/real"
     assert out["error"] is None
@@ -1638,8 +1743,10 @@ def test_a_successful_inference_leaves_error_none(monkeypatch):
 
 def test_error_and_doi_evidence_are_independent_signals(monkeypatch):
     """The regression this task prevents: collapsing the two back into one."""
+
     def boom(capture):
         raise RuntimeError("Network is unreachable")
+
     monkeypatch.setattr(clipboard, "browser_resolve", boom)
 
     out = clipboard.infer_source({"process": "firefox", "title": "Some paper"})
@@ -1732,8 +1839,8 @@ Task 3's refactor surfaced that `service.confirm()` returns only the `Record`, s
 @dataclass
 class ConfirmResult:
     record: Record
-    path: Optional[Path] = None      # where the image was filed; None for `filed:` refs,
-                                     # whose bytes are already in the library
+    path: Optional[Path] = None  # where the image was filed; None for `filed:` refs,
+    # whose bytes are already in the library
 ```
 
 `confirm()` returns `ConfirmResult(record=rec, path=dest)`; `_confirm_filed()` returns `ConfirmResult(record=rec, path=None)`.

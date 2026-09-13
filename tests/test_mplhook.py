@@ -149,8 +149,7 @@ def test_concurrent_saves_each_register(fig, tmp_path):
     mplhook.install()
     before = _count()
     threads = [
-        threading.Thread(target=lambda i=i: fig.savefig(tmp_path / f"t{i}.png"))
-        for i in range(4)
+        threading.Thread(target=lambda i=i: fig.savefig(tmp_path / f"t{i}.png")) for i in range(4)
     ]
     for t in threads:
         t.start()
@@ -225,9 +224,5 @@ def test_registration_does_not_rewrite_the_figure(fig, tmp_path):
     blob = out.read_bytes()
     from figcite.provenance import sha256_bytes
 
-    rec = [
-        r
-        for r in store.iter_records()
-        if r.source_detail.get("path", "").endswith("l.png")
-    ][-1]
+    rec = [r for r in store.iter_records() if r.source_detail.get("path", "").endswith("l.png")][-1]
     assert rec.sha256 == sha256_bytes(blob)

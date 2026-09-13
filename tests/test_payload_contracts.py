@@ -55,9 +55,7 @@ def _whereis(monkeypatch, tmp_path, verdict, rows=()):
     monkeypatch.setattr(corpus, "connect", lambda: None)
     monkeypatch.setattr(corpus, "all_rows", lambda conn: list(rows) or [object()])
     monkeypatch.setattr(match, "by_dhash", lambda b, r: verdict)
-    monkeypatch.setattr(
-        match, "by_orb", lambda b, r, root, descriptor_dir=None: verdict
-    )
+    monkeypatch.setattr(match, "by_orb", lambda b, r, root, descriptor_dir=None: verdict)
     monkeypatch.setattr(session_tabs, "tab_candidates", lambda path=None: [])
     q = tmp_path / "q.png"
     Image.new("RGB", (40, 30), "blue").save(q)
@@ -127,9 +125,7 @@ def test_every_whereis_verdict_carries_a_reason_field(tmp_path, monkeypatch):
         assert "matches" in out and "verdict" in out
 
 
-def test_an_empty_corpus_returns_the_same_shape_as_every_other_verdict(
-    tmp_path, monkeypatch
-):
+def test_an_empty_corpus_returns_the_same_shape_as_every_other_verdict(tmp_path, monkeypatch):
     """The empty-corpus EARLY RETURN builds its own dict literal, so its keys
     are a separate copy of the contract -- and `'matches'` there survived
     being mutated because every test that checks the shape goes through the
@@ -256,6 +252,5 @@ def test_the_card_template_reads_nothing_the_service_does_not_send(_own_store):
     missing = wanted - have
 
     assert not missing, (
-        f"the page reads {sorted(missing)} off a pending item and the service "
-        f"sends {sorted(have)}"
+        f"the page reads {sorted(missing)} off a pending item and the service sends {sorted(have)}"
     )

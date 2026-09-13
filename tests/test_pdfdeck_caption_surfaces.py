@@ -187,9 +187,7 @@ def _unsourced_pdf(tmp_path, w_in, h_in, seed, name="bare.pdf"):
     img = _figure(tmp_path / f"bare-{seed}.png", seed=seed, size=(1200, 120))
     doc = fitz.open()
     page = doc.new_page(width=612, height=792)
-    page.insert_image(
-        fitz.Rect(40, 40, 40 + w_in * 72, 40 + h_in * 72), filename=str(img)
-    )
+    page.insert_image(fitz.Rect(40, 40, 40 + w_in * 72, 40 + h_in * 72), filename=str(img))
     p = tmp_path / name
     doc.save(str(p))
     doc.close()

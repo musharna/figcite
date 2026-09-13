@@ -70,9 +70,7 @@ def _get(port, path, timeout=5):
 def _raw_get(port, path, host, timeout=5):
     """A GET with a `Host` urllib will not let us forge."""
     with socket.create_connection(("127.0.0.1", port), timeout=timeout) as s:
-        s.sendall(
-            f"GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n".encode()
-        )
+        s.sendall(f"GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n".encode())
         s.settimeout(timeout)
         chunks = []
         try:
@@ -177,8 +175,7 @@ def test_it_serves_a_thumbnail_rather_than_the_original_file(tmp_path, monkeypat
     assert max(served.size) <= 480, f"served at {served.size}, not thumbnailed"
     assert served.size != (1200, 900)
     assert len(body) < src.stat().st_size, (
-        f"the 'thumbnail' ({len(body)}B) is no smaller than the original "
-        f"({src.stat().st_size}B)"
+        f"the 'thumbnail' ({len(body)}B) is no smaller than the original ({src.stat().st_size}B)"
     )
 
 
@@ -251,9 +248,7 @@ def test_a_missing_ref_parameter_is_declined_not_crashed(tmp_path, monkeypatch):
         "sha:../../../../etc/hostname",
     ],
 )
-def test_an_opaque_ref_cannot_address_a_file_outside_the_library(
-    tmp_path, monkeypatch, ref
-):
+def test_an_opaque_ref_cannot_address_a_file_outside_the_library(tmp_path, monkeypatch, ref):
     """`_resolve_ref_to_path`'s stated property -- never build a path out of
     the ref's own characters -- asserted from the wire, where the ref actually
     comes from."""
@@ -301,9 +296,7 @@ def test_a_forged_host_is_refused_on_the_thumb_route_itself(tmp_path, monkeypatc
     with _serving() as port:
         forged = _raw_get(port, "/api/thumb?ref=staged:thumb-1.png", "evil.example")
         # Positive control: same request, honest Host, on the same server.
-        honest = _raw_get(
-            port, "/api/thumb?ref=staged:thumb-1.png", f"127.0.0.1:{port}"
-        )
+        honest = _raw_get(port, "/api/thumb?ref=staged:thumb-1.png", f"127.0.0.1:{port}")
 
     assert b" 403 " in forged.split(b"\r\n", 1)[0], forged[:120]
     assert PNG_MAGIC not in forged, "a forged Host still received figure bytes"

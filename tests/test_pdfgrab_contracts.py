@@ -34,9 +34,7 @@ def _pdf(tmp_path, name="paper.pdf", *, pages=1, meta=None, text=None):
     for i in range(pages):
         page = doc.new_page()
         page.insert_text((72, 90), text if text is not None else f"page {i + 1}")
-        page.draw_rect(
-            fitz.Rect(72, 200, 300, 400), color=(0, 0, 1), fill=(0.2, 0.4, 0.9)
-        )
+        page.draw_rect(fitz.Rect(72, 200, 300, 400), color=(0, 0, 1), fill=(0.2, 0.4, 0.9))
     if meta:
         doc.set_metadata(meta)
     path = tmp_path / name

@@ -92,9 +92,7 @@ class _Row:
         "descriptors-found-but-no-keypoints",
     ],
 )
-def test_each_operand_of_the_feature_guard_is_separately_load_bearing(
-    result, operand, tmp_path
-):
+def test_each_operand_of_the_feature_guard_is_separately_load_bearing(result, operand, tmp_path):
     """`desc is None or not kp` survived dropping EITHER operand.
 
     Under the mutant that drops `desc is None`, the first case returns
@@ -108,9 +106,7 @@ def test_each_operand_of_the_feature_guard_is_separately_load_bearing(
     """
     (tmp_path / "fig.png").write_bytes(_png())
 
-    desc, pts = match._target_features(
-        _Row("fig.png"), str(tmp_path), None, _Orb(result)
-    )
+    desc, pts = match._target_features(_Row("fig.png"), str(tmp_path), None, _Orb(result))
 
     # Element-wise, NOT `== (None, None)`. A tuple comparison against a numpy
     # array returns an array, and `assert` on it raises "truth value ... is
@@ -162,9 +158,7 @@ def test_the_caller_absorbs_both_mutants_which_is_why_the_contract_is_the_test(
         "descriptors-found-but-no-keypoints",
     ],
 )
-def test_a_refused_image_never_leaves_a_cache_behind(
-    result, operand, monkeypatch, tmp_path
-):
+def test_a_refused_image_never_leaves_a_cache_behind(result, operand, monkeypatch, tmp_path):
     """The same guard in corpus.py, where the mutant is worse than a bad return.
 
     `np.savez` accepts `None` -- it writes an object array -- so under the
@@ -216,9 +210,7 @@ def test_the_positive_control_a_real_image_still_caches(monkeypatch, tmp_path):
         x, y = rnd.randrange(280), rnd.randrange(280)
         w, h = rnd.randrange(8, 38), rnd.randrange(8, 38)
         col = (rnd.randrange(256), rnd.randrange(256), rnd.randrange(256))
-        (d.rectangle if rnd.random() < 0.5 else d.ellipse)(
-            [x, y, x + w, y + h], fill=col
-        )
+        (d.rectangle if rnd.random() < 0.5 else d.ellipse)([x, y, x + w, y + h], fill=col)
     buf = io.BytesIO()
     img.save(buf, "PNG")
 

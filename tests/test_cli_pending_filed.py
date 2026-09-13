@@ -48,9 +48,7 @@ def test_a_filed_capture_lists_its_candidates(capsys):
     cli.cmd_pending(None)
     out = capsys.readouterr().out
 
-    assert "10.1111/nph.71477" in out, (
-        "a candidate the web card shows is invisible here"
-    )
+    assert "10.1111/nph.71477" in out, "a candidate the web card shows is invisible here"
     assert "--pick" in out, "candidates listed with no way to choose one"
 
 

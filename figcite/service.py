@@ -274,8 +274,7 @@ def confirm(
     selectors = [doi is not None, pick is not None, cite is not None, bool(own_work)]
     if sum(selectors) > 1:
         raise ValueError(
-            "confirm takes at most one of doi=, pick=, cite=, own_work=True "
-            f"(got {sum(selectors)})"
+            f"confirm takes at most one of doi=, pick=, cite=, own_work=True (got {sum(selectors)})"
         )
 
     item = _item_for(ref)
@@ -306,9 +305,7 @@ def confirm(
     elif doi is None and cite is None:
         doi = inf.get("doi")
         if doi and not inf.get("grounded"):
-            raise NotGrounded(
-                "that DOI was only guessed; name it explicitly to accept it"
-            )
+            raise NotGrounded("that DOI was only guessed; name it explicitly to accept it")
 
     # Controller Ruling 4. cmd_confirm has TWO guards; Ruling 1 removed only the
     # arity one. Without this second check, zero selectors on an item with no
@@ -317,9 +314,7 @@ def confirm(
     # uncited record while _clear_staged deletes the pending.json holding the
     # candidates, the inference kind, and the error field. Irreversible.
     if doi is None and cite is None:
-        raise ValueError(
-            "nothing to confirm with: pass doi=, pick=, cite=, or own_work=True"
-        )
+        raise ValueError("nothing to confirm with: pass doi=, pick=, cite=, or own_work=True")
 
     detail = {
         "clipboard_capture": raw.get("capture", {}),
@@ -380,9 +375,7 @@ def _clear_staged(png: Path, dest: Path) -> None:
         png.unlink()
 
 
-def _confirm_filed(
-    item, *, doi, pick=None, cite=None, own_work=False, adapted_from, note
-):
+def _confirm_filed(item, *, doi, pick=None, cite=None, own_work=False, adapted_from, note):
     """A capture already in the manifest, still unconfirmed.
 
     The image bytes are already filed, so there is nothing to finalize -- the
@@ -604,9 +597,7 @@ def audit(path, min_inches: float = 1.0) -> dict:
                 # no `short_cite`, no `doi` -- so a figure carrying a
                 # genuine embedded credit used to render an empty citation
                 # cell here. Fix B's own defect class, one column over.
-                "citation": (
-                    (rec.short_cite or rec.doi or rec.citation or "") if rec else ""
-                ),
+                "citation": ((rec.short_cite or rec.doi or rec.citation or "") if rec else ""),
                 "doi": (rec.doi or "") if rec else "",
                 "license_url": (rec.license_url or "") if rec else "",
                 "reuse": (rec.reuse or "unknown") if rec else "",
@@ -621,9 +612,7 @@ def audit(path, min_inches: float = 1.0) -> dict:
                 # DOIs". Republication, a reused panel and a genuine
                 # miscredit are indistinguishable from here, and only the
                 # user knows which -- so it is surfaced as a question.
-                "duplicate_of": (
-                    _duplicate_dois(rec.dhash or "", rec.doi or "") if rec else []
-                ),
+                "duplicate_of": (_duplicate_dois(rec.dhash or "", rec.doi or "") if rec else []),
             }
         )
     return {
@@ -771,8 +760,7 @@ def whereis(ref_or_path) -> dict:
     # evidence. A failure to read them must not lose a real pixel match.
     try:
         matches.extend(
-            {**c, "evidence": False, "score_label": ""}
-            for c in session_tabs.tab_candidates()
+            {**c, "evidence": False, "score_label": ""} for c in session_tabs.tab_candidates()
         )
     except Exception:
         pass
@@ -812,8 +800,7 @@ def duplicates(ref_or_path, credited_doi: str = "") -> dict:
     rows = corpus.duplicates_of(blob, credited_doi)
     return {
         "others": [
-            {"doi": r.doi, "pmcid": r.pmcid, "label": r.label, "licence": r.licence}
-            for r in rows
+            {"doi": r.doi, "pmcid": r.pmcid, "label": r.label, "licence": r.licence} for r in rows
         ],
         "reason": "" if rows else "no other indexed paper carries this figure",
     }

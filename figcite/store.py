@@ -1,4 +1,5 @@
 """Central sha256-keyed manifest. Append-only JSONL, last write wins."""
+
 from __future__ import annotations
 
 import json
@@ -83,12 +84,15 @@ def finalize_into_library(src, rec: Record, out=None) -> Path:
     """
     import re as _re
     from pathlib import Path as _P
+
     src = _P(src)
     _ensure()
     if out:
         dest = _P(out)
     else:
-        base = _re.sub(r"[^A-Za-z0-9._-]+", "-", rec.doi or rec.short_cite or src.stem).strip("-")[:60]
+        base = _re.sub(r"[^A-Za-z0-9._-]+", "-", rec.doi or rec.short_cite or src.stem).strip("-")[
+            :60
+        ]
         stamp = (rec.captured_local or "")[:19].replace(":", "").replace("-", "")
         dest = LIBRARY / f"{base or 'image'}--{stamp or 'na'}{src.suffix.lower() or '.png'}"
     rec2 = embed(src, dest, rec)
@@ -106,6 +110,7 @@ def register_existing(path, rec: Record) -> Record:
     """
     from pathlib import Path as _P
     from .provenance import dhash_bytes, sha256_bytes
+
     blob = _P(path).read_bytes()
     rec.sha256 = sha256_bytes(blob)
     rec.dhash = dhash_bytes(blob)

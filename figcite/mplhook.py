@@ -53,9 +53,7 @@ def savefig(
     u, loc = now_stamps()
     src = {
         "generated_by": script
-        or os.path.abspath(
-            getattr(__import__("__main__"), "__file__", "") or "interactive"
-        ),
+        or os.path.abspath(getattr(__import__("__main__"), "__file__", "") or "interactive"),
         "cwd": cwd,
         "git_commit": commit,
         "dataset": dataset,
@@ -228,10 +226,7 @@ def _wrapped(self, fname, *args, **kwargs):
         with _handling():
             _register_written_file(path)
     except Exception as e:
-        msg = (
-            f"figcite: wrote {path} but could NOT record its provenance: "
-            f"{type(e).__name__}: {e}"
-        )
+        msg = f"figcite: wrote {path} but could NOT record its provenance: {type(e).__name__}: {e}"
         if _DEFAULTS.get("strict", True):
             raise RegistrationError(msg) from e
         import warnings

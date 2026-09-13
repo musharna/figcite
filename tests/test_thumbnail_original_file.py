@@ -102,6 +102,4 @@ def test_the_real_manifest_resolves_every_record_whose_file_exists():
             service.thumbnail(f"filed:{rec.sha256}")
         except service.LibraryFileMissing:
             broken.append(rec.sha256[:12])
-    assert not broken, (
-        f"{len(broken)} record(s) 410 while their file exists: {broken[:5]}"
-    )
+    assert not broken, f"{len(broken)} record(s) 410 while their file exists: {broken[:5]}"

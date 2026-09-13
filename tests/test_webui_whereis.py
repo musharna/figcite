@@ -63,9 +63,7 @@ def test_the_two_kinds_of_candidate_carry_different_labels(monkeypatch, tmp_path
             }
         ],
     )
-    labels = {
-        c["source"] for c in _candidates_with_a_pixel_match(monkeypatch, tmp_path)
-    }
+    labels = {c["source"] for c in _candidates_with_a_pixel_match(monkeypatch, tmp_path)}
     assert "open-tab" in labels
     assert labels - {"open-tab"}, "a pixel match reported the same source as a tab"
 
@@ -78,9 +76,7 @@ def _candidates_with_a_pixel_match(monkeypatch, tmp_path):
     monkeypatch.setattr(
         match,
         "by_dhash",
-        lambda b, rows: match.Match(
-            "10.1/pixel", "PMC1", "Figure 1", "dhash", 1.0, 9.0
-        ),
+        lambda b, rows: match.Match("10.1/pixel", "PMC1", "Figure 1", "dhash", 1.0, 9.0),
     )
     # `tempfile.gettempdir()/figcite_badge_probe.png` -- a FIXED name in the
     # shared temp dir -- is the same escape that made test_corpus_duplicates

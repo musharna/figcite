@@ -59,9 +59,7 @@ def deck_with_a_table(tmp_path):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide.shapes.add_picture(str(img), Inches(0.5), Inches(0.5), width=Inches(2))
     slide.shapes.add_table(2, 2, Inches(3), Inches(0.5), Inches(3), Inches(1))
-    slide.shapes.add_connector(
-        MSO_CONNECTOR.STRAIGHT, Inches(0.5), Inches(4), Inches(3), Inches(4)
-    )
+    slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, Inches(0.5), Inches(4), Inches(3), Inches(4))
     path = tmp_path / "mixed.pptx"
     prs.save(str(path))
     return path
@@ -82,12 +80,9 @@ def test_the_fixture_really_contains_the_shapes_that_sort_below(deck_with_a_tabl
     assert "pic" in tags, tags
     assert "graphicFrame" in tags, f"no table in the fixture: {tags}"
     assert any(t < "pic" for t in tags if t != "pic"), (
-        f"nothing in this deck sorts below 'pic', so it cannot exercise the "
-        f"widening: {tags}"
+        f"nothing in this deck sorts below 'pic', so it cannot exercise the widening: {tags}"
     )
-    assert any(t < "grpSp" for t in tags), (
-        f"nothing in this deck sorts below 'grpSp': {tags}"
-    )
+    assert any(t < "grpSp" for t in tags), f"nothing in this deck sorts below 'grpSp': {tags}"
 
 
 def test_a_table_is_not_a_picture(deck_with_a_table):
@@ -133,6 +128,4 @@ def test_a_picture_inside_a_group_is_still_found(tmp_path):
 
     prs2 = Presentation(str(path))
     found = list(iter_pictures(prs2.slides[0]))
-    assert len(found) == 2, (
-        f"pictures inside a group were not walked into: {len(found)}"
-    )
+    assert len(found) == 2, f"pictures inside a group were not walked into: {len(found)}"

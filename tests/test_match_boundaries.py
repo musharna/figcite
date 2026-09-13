@@ -33,9 +33,7 @@ from PIL import Image, ImageDraw
 from figcite import match
 from figcite.provenance import dhash_bytes
 
-pytestmark = pytest.mark.skipif(
-    not match.opencv_available(), reason="opencv not installed"
-)
+pytestmark = pytest.mark.skipif(not match.opencv_available(), reason="opencv not installed")
 
 
 # ------------------------------------------------------------------ helpers
@@ -67,9 +65,7 @@ def _textured(seed, size=(320, 320)):
         x, y = rnd.randrange(size[0] - 40), rnd.randrange(size[1] - 40)
         w, h = rnd.randrange(8, 38), rnd.randrange(8, 38)
         col = (rnd.randrange(256), rnd.randrange(256), rnd.randrange(256))
-        (d.rectangle if rnd.random() < 0.5 else d.ellipse)(
-            [x, y, x + w, y + h], fill=col
-        )
+        (d.rectangle if rnd.random() < 0.5 else d.ellipse)([x, y, x + w, y + h], fill=col)
     return im
 
 
@@ -413,8 +409,7 @@ def test_a_score_exactly_at_the_inlier_floor_is_a_match(tmp_path, monkeypatch):
     v = match.by_orb(crop, rows, tmp_path)
 
     assert isinstance(v, match.Match), (
-        f"a score of exactly {probe.score} was refused by a floor of the same "
-        f"value: {v}"
+        f"a score of exactly {probe.score} was refused by a floor of the same value: {v}"
     )
     assert v.doi == "10.1/truth"
 
@@ -462,8 +457,7 @@ def test_a_margin_exactly_at_the_floor_is_asserted(tmp_path, monkeypatch):
     v = match.by_orb(crop, rows, tmp_path)
 
     assert isinstance(v, match.Match), (
-        f"a margin of exactly {probe.margin} was refused by a floor of the "
-        f"same value: {v}"
+        f"a margin of exactly {probe.margin} was refused by a floor of the same value: {v}"
     )
 
 
@@ -515,10 +509,7 @@ def _stub_matcher(monkeypatch, n_pairs, m_dist, s_dist):
     """
     import cv2
 
-    pairs = [
-        [_Pair(i, i, m_dist), _Pair(i, (i + 1) % n_pairs, s_dist)]
-        for i in range(n_pairs)
-    ]
+    pairs = [[_Pair(i, i, m_dist), _Pair(i, (i + 1) % n_pairs, s_dist)] for i in range(n_pairs)]
 
     class _BF:
         def knnMatch(self, a, b, k=2):
@@ -546,9 +537,7 @@ def _low_floors(monkeypatch):
     monkeypatch.setattr(match, "MIN_MARGIN", 1.0)
 
 
-def test_exactly_eight_good_matches_are_enough_for_a_homography(
-    tmp_path, monkeypatch, _low_floors
-):
+def test_exactly_eight_good_matches_are_enough_for_a_homography(tmp_path, monkeypatch, _low_floors):
     """`if len(good) >= 8` survived both `8 -> 9` and `GtE -> Gt`.
 
     Eight is the minimum a homography can be fitted from, so at exactly eight
@@ -562,9 +551,7 @@ def test_exactly_eight_good_matches_are_enough_for_a_homography(
 
     v = match.by_orb(_png(q), rows, tmp_path, tmp_path / "desc")
 
-    assert isinstance(v, match.Match), (
-        f"exactly 8 good matches did not reach the homography: {v}"
-    )
+    assert isinstance(v, match.Match), f"exactly 8 good matches did not reach the homography: {v}"
     assert v.score == 8.0, v.score
 
 
@@ -580,9 +567,7 @@ def test_seven_good_matches_are_not_enough(tmp_path, monkeypatch, _low_floors):
     assert isinstance(v, match.NoMatch), v
 
 
-def test_a_pair_exactly_at_the_ratio_is_not_a_good_match(
-    tmp_path, monkeypatch, _low_floors
-):
+def test_a_pair_exactly_at_the_ratio_is_not_a_good_match(tmp_path, monkeypatch, _low_floors):
     """`m.distance < 0.75 * s.distance` survived `Lt -> LtE`.
 
     Lowe's ratio test keeps a match only when the best candidate is CLEARLY
@@ -602,9 +587,7 @@ def test_a_pair_exactly_at_the_ratio_is_not_a_good_match(
     )
 
 
-def test_a_pair_just_inside_the_ratio_is_a_good_match(
-    tmp_path, monkeypatch, _low_floors
-):
+def test_a_pair_just_inside_the_ratio_is_a_good_match(tmp_path, monkeypatch, _low_floors):
     """Positive control: "discard everything" passes the test above."""
     q = _textured(82)
     rows = _identity_corpus(tmp_path, q)
@@ -678,9 +661,7 @@ def test_a_corpus_of_only_unreadable_figures_is_could_not_decide(tmp_path):
     assert "no corpus figure could be read" in v.reason, v.reason
 
 
-def test_a_lone_candidate_too_close_to_call_reports_a_runner_up_of_zero(
-    tmp_path, monkeypatch
-):
+def test_a_lone_candidate_too_close_to_call_reports_a_runner_up_of_zero(tmp_path, monkeypatch):
     """The second equivalence proof I got wrong.
 
     `second = scored[1][0] if len(scored) > 1 else 0` -- mutated to `else 1`.

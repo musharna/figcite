@@ -153,15 +153,11 @@ def test_every_subcommand_resolves_to_a_handler():
     from figcite.cli import build_parser
 
     p = build_parser()
-    (sub,) = [
-        a for a in p._actions if isinstance(a, __import__("argparse")._SubParsersAction)
-    ]
+    (sub,) = [a for a in p._actions if isinstance(a, __import__("argparse")._SubParsersAction)]
     assert sub.choices, "no subcommands registered"
     for name, parser in sub.choices.items():
         nested = [
-            a
-            for a in parser._actions
-            if isinstance(a, __import__("argparse")._SubParsersAction)
+            a for a in parser._actions if isinstance(a, __import__("argparse")._SubParsersAction)
         ]
         if nested:
             for sname, sparser in nested[0].choices.items():
@@ -169,18 +165,14 @@ def test_every_subcommand_resolves_to_a_handler():
                     f"`figcite {name} {sname}` has no handler"
                 )
         else:
-            assert parser.get_default("func") is not None, (
-                f"`figcite {name}` has no handler"
-            )
+            assert parser.get_default("func") is not None, f"`figcite {name}` has no handler"
 
 
 def test_autostart_subcommands_are_registered():
     from figcite.cli import build_parser
 
     p = build_parser()
-    (sub,) = [
-        a for a in p._actions if isinstance(a, __import__("argparse")._SubParsersAction)
-    ]
+    (sub,) = [a for a in p._actions if isinstance(a, __import__("argparse")._SubParsersAction)]
     assert "autostart" in sub.choices
     inner = [
         a

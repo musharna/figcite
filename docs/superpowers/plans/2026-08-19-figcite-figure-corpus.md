@@ -55,6 +55,7 @@
 ```python
 # tests/test_corpus_store.py
 """The corpus index: one row per figure, addressed by (pmcid, label)."""
+
 import os
 from pathlib import Path
 
@@ -75,9 +76,15 @@ def db(tmp_path, monkeypatch):
 
 def _row(**over):
     base = dict(
-        pmcid="PMC1", doi="10.1/a", label="Figure 1", caption="A caption",
-        licence="CC BY", source_url="https://example.org/f1.jpg",
-        dhash="0011223344556677", width=100, height=80,
+        pmcid="PMC1",
+        doi="10.1/a",
+        label="Figure 1",
+        caption="A caption",
+        licence="CC BY",
+        source_url="https://example.org/f1.jpg",
+        dhash="0011223344556677",
+        width=100,
+        height=80,
         image_path="PMC1/f1.jpg",
     )
     base.update(over)
@@ -238,6 +245,7 @@ crop-5%-each-edge 7, crop-10% 16. So dhash MUST NOT report NoMatch on a miss
 -- a crop is invisible to it, and calling that 'no match' asserts an absence
 it cannot see.
 """
+
 import io
 
 from PIL import Image
@@ -254,10 +262,15 @@ def _png(img):
 
 def _noise(seed, size=(64, 64)):
     import random
+
     rnd = random.Random(seed)
     im = Image.new("RGB", size)
-    im.putdata([(rnd.randrange(256), rnd.randrange(256), rnd.randrange(256))
-                for _ in range(size[0] * size[1])])
+    im.putdata(
+        [
+            (rnd.randrange(256), rnd.randrange(256), rnd.randrange(256))
+            for _ in range(size[0] * size[1])
+        ]
+    )
     return im
 
 
@@ -268,8 +281,10 @@ class Row:
 
 def test_an_identical_image_is_matched():
     img = _noise(1)
-    rows = [Row(dhash_bytes(_png(img)), "10.1/right"),
-            Row(dhash_bytes(_png(_noise(2))), "10.1/wrong")]
+    rows = [
+        Row(dhash_bytes(_png(img)), "10.1/right"),
+        Row(dhash_bytes(_png(_noise(2))), "10.1/wrong"),
+    ]
     v = match.by_dhash(_png(img), rows)
     assert isinstance(v, match.Match)
     assert v.doi == "10.1/right"
@@ -367,8 +382,12 @@ def by_dhash(query_bytes: bytes, rows) -> Verdict:
         )
     runner_up = scored[1][0] if len(scored) > 1 else 64
     return Match(
-        doi=best.doi, pmcid=best.pmcid, label=best.label,
-        method="dhash", score=float(best_d), margin=float(runner_up - best_d),
+        doi=best.doi,
+        pmcid=best.pmcid,
+        label=best.label,
+        method="dhash",
+        score=float(best_d),
+        margin=float(runner_up - best_d),
     )
 ```
 
@@ -413,6 +432,7 @@ at a median 38.9x margin. Measured WITHOUT decoys the same technique scored
 283x on a two-candidate test and 1.5x on a real retrieval task -- so every
 test here carries decoys and asserts the margin.
 """
+
 import io
 import random
 
@@ -452,9 +472,7 @@ def _png(img):
     return b.getvalue()
 
 
-pytestmark = pytest.mark.skipif(
-    not match.opencv_available(), reason="opencv not installed"
-)
+pytestmark = pytest.mark.skipif(not match.opencv_available(), reason="opencv not installed")
 
 
 def test_a_panel_crop_finds_its_source_among_decoys(tmp_path):
@@ -602,8 +620,12 @@ def by_orb(query_bytes: bytes, rows, image_root) -> Verdict:
             f"the two best candidates are too close to call ({best_n} vs {second})"
         )
     return Match(
-        doi=best.doi, pmcid=best.pmcid, label=best.label,
-        method="orb", score=float(best_n), margin=float(margin),
+        doi=best.doi,
+        pmcid=best.pmcid,
+        label=best.label,
+        method="orb",
+        score=float(best_n),
+        margin=float(margin),
     )
 ```
 
@@ -654,6 +676,7 @@ Batched because a real library has hundreds of DOIs and the API takes an OR
 query. Network is blocked by conftest for non-live tests, so these drive a
 stubbed transport; one live test elsewhere covers the real boundary.
 """
+
 import json
 
 import pytest
@@ -670,10 +693,17 @@ def test_a_doi_that_is_open_access_is_reported_as_such(monkeypatch):
 
     def fake_get(url, **kw):
         calls.append(url)
-        return _fake_response([
-            {"doi": "10.1/aa", "pmcid": "PMC1", "title": "A", "pubYear": "2020",
-             "isOpenAccess": "Y"},
-        ])
+        return _fake_response(
+            [
+                {
+                    "doi": "10.1/aa",
+                    "pmcid": "PMC1",
+                    "title": "A",
+                    "pubYear": "2020",
+                    "isOpenAccess": "Y",
+                },
+            ]
+        )
 
     monkeypatch.setattr(pmc, "_get", fake_get)
     out = pmc.lookup_dois(["10.1/aa"])
@@ -685,18 +715,28 @@ def test_a_doi_that_is_open_access_is_reported_as_such(monkeypatch):
 
 def test_a_closed_access_hit_is_kept_but_flagged(monkeypatch):
     """We still want to know the paper exists; it just cannot be indexed."""
-    monkeypatch.setattr(pmc, "_get", lambda url, **kw: _fake_response([
-        {"doi": "10.1/bb", "pmcid": "PMC2", "title": "B", "pubYear": "2021",
-         "isOpenAccess": "N"},
-    ]))
+    monkeypatch.setattr(
+        pmc,
+        "_get",
+        lambda url, **kw: _fake_response(
+            [
+                {
+                    "doi": "10.1/bb",
+                    "pmcid": "PMC2",
+                    "title": "B",
+                    "pubYear": "2021",
+                    "isOpenAccess": "N",
+                },
+            ]
+        ),
+    )
     out = pmc.lookup_dois(["10.1/bb"])
     assert out[0].is_open_access is False
 
 
 def test_dois_are_batched_not_queried_one_at_a_time(monkeypatch):
     calls = []
-    monkeypatch.setattr(pmc, "_get",
-                        lambda url, **kw: calls.append(url) or _fake_response([]))
+    monkeypatch.setattr(pmc, "_get", lambda url, **kw: calls.append(url) or _fake_response([]))
     pmc.lookup_dois([f"10.1/{i}" for i in range(20)], batch=8)
     assert len(calls) == 3, f"expected 3 batched calls, got {len(calls)}"
 
@@ -781,22 +821,28 @@ def _get(url: str, **kw) -> bytes:
 def lookup_dois(dois: list[str], batch: int = 8) -> list[PmcRecord]:
     out: list[PmcRecord] = []
     for i in range(0, len(dois), batch):
-        chunk = dois[i:i + batch]
+        chunk = dois[i : i + batch]
         query = " OR ".join(f'DOI:"{d}"' for d in chunk)
-        url = EUROPE_PMC + "?" + urllib.parse.urlencode(
-            {"query": query, "format": "json", "pageSize": "25", "resultType": "core"}
+        url = (
+            EUROPE_PMC
+            + "?"
+            + urllib.parse.urlencode(
+                {"query": query, "format": "json", "pageSize": "25", "resultType": "core"}
+            )
         )
         payload = json.loads(_get(url))
         for it in payload.get("resultList", {}).get("result", []) or []:
             if not it.get("pmcid"):
                 continue
-            out.append(PmcRecord(
-                doi=(it.get("doi") or "").lower(),
-                pmcid=it["pmcid"],
-                title=it.get("title", ""),
-                year=str(it.get("pubYear", "")),
-                is_open_access=it.get("isOpenAccess") == "Y",
-            ))
+            out.append(
+                PmcRecord(
+                    doi=(it.get("doi") or "").lower(),
+                    pmcid=it["pmcid"],
+                    title=it.get("title", ""),
+                    year=str(it.get("pubYear", "")),
+                    is_open_access=it.get("isOpenAccess") == "Y",
+                )
+            )
     return out
 ```
 
@@ -851,6 +897,7 @@ contains an opaque path segment that appears nowhere in the XML or the API:
 It must be scraped from the article page. That is the most fragile joint in
 SP2, so it is isolated here and tested against captured markup.
 """
+
 import pytest
 
 from figcite import pmc
@@ -961,8 +1008,9 @@ def image_urls(pmcid: str) -> dict[str, str]:
     that breaks, and `corpus status` reports the resulting per-article failure
     rather than silently indexing nothing.
     """
-    html = _get(ARTICLE_PAGE.format(pmcid=pmcid),
-                headers={"User-Agent": USER_AGENT}).decode("utf8", "replace")
+    html = _get(ARTICLE_PAGE.format(pmcid=pmcid), headers={"User-Agent": USER_AGENT}).decode(
+        "utf8", "replace"
+    )
     return {m.group(1): m.group(0) for m in BLOB_URL.finditer(html)}
 
 
@@ -1013,6 +1061,7 @@ git commit -m "feat(pmc): enumerate figures and scrape their servable URLs"
 ```python
 # tests/test_corpus_build.py
 """The build: resumable, and honest about what it could not index."""
+
 import io
 
 import pytest
@@ -1032,13 +1081,21 @@ def wired(tmp_path, monkeypatch):
         Image.new("RGB", (40, 30), color).save(b, "PNG")
         return b.getvalue()
 
-    monkeypatch.setattr(pmc, "lookup_dois", lambda dois, batch=8: [
-        pmc.PmcRecord("10.1/oa", "PMC1", "Open paper", "2020", True),
-        pmc.PmcRecord("10.1/closed", "PMC2", "Closed paper", "2021", False),
-    ])
-    monkeypatch.setattr(pmc, "figures_of", lambda p: [
-        pmc.FigureRef("Figure 1", "f1.jpg", "First caption"),
-    ])
+    monkeypatch.setattr(
+        pmc,
+        "lookup_dois",
+        lambda dois, batch=8: [
+            pmc.PmcRecord("10.1/oa", "PMC1", "Open paper", "2020", True),
+            pmc.PmcRecord("10.1/closed", "PMC2", "Closed paper", "2021", False),
+        ],
+    )
+    monkeypatch.setattr(
+        pmc,
+        "figures_of",
+        lambda p: [
+            pmc.FigureRef("Figure 1", "f1.jpg", "First caption"),
+        ],
+    )
     monkeypatch.setattr(pmc, "image_urls", lambda p: {"f1.jpg": "https://x/f1.jpg"})
     monkeypatch.setattr(pmc, "licence_of", lambda p: "CC BY")
     monkeypatch.setattr(corpus, "_download", lambda url: png("red"))
@@ -1149,12 +1206,21 @@ def build(dois: list[str], limit: int | None = None) -> list[BuildOutcome]:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(blob)
                 img = Image.open(io.BytesIO(blob))
-                upsert(conn, FigureRow(
-                    pmcid=rec.pmcid, doi=rec.doi, label=fig.label,
-                    caption=fig.caption, licence=licence, source_url=url,
-                    dhash=dhash_bytes(blob), width=img.width, height=img.height,
-                    image_path=rel,
-                ))
+                upsert(
+                    conn,
+                    FigureRow(
+                        pmcid=rec.pmcid,
+                        doi=rec.doi,
+                        label=fig.label,
+                        caption=fig.caption,
+                        licence=licence,
+                        source_url=url,
+                        dhash=dhash_bytes(blob),
+                        width=img.width,
+                        height=img.height,
+                        image_path=rel,
+                    ),
+                )
         except Exception as e:
             outcomes.append(BuildOutcome(doi, rec.pmcid, "failed", str(e)))
             continue
@@ -1220,6 +1286,7 @@ stores descriptors for this reason.
 ```python
 # tests/test_corpus_descriptors.py
 """Descriptors are computed once at build time, not per query."""
+
 import io
 
 import pytest
@@ -1230,13 +1297,16 @@ from figcite import corpus, match
 
 def _textured(seed, size=(200, 200)):
     import random
+
     rnd = random.Random(seed)
     im = Image.new("RGB", size, "white")
     d = ImageDraw.Draw(im)
     for _ in range(60):
         x, y = rnd.randrange(160), rnd.randrange(160)
-        d.rectangle([x, y, x + 20, y + 20],
-                    fill=(rnd.randrange(256), rnd.randrange(256), rnd.randrange(256)))
+        d.rectangle(
+            [x, y, x + 20, y + 20],
+            fill=(rnd.randrange(256), rnd.randrange(256), rnd.randrange(256)),
+        )
     b = io.BytesIO()
     im.save(b, "PNG")
     return b.getvalue()
@@ -1376,6 +1446,7 @@ git commit -m "perf(corpus): cache ORB descriptors so a query is not a full re-s
 ```python
 # tests/test_service_whereis.py
 """whereis: the one entry point both front ends call."""
+
 import io
 
 import pytest
@@ -1392,8 +1463,10 @@ def _png(path):
 
 def test_a_pixel_match_is_returned_as_a_candidate(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        match, "by_dhash",
-        lambda b, rows: match.Match("10.1/found", "PMC9", "Figure 3", "dhash", 0.0, 9.0))
+        match,
+        "by_dhash",
+        lambda b, rows: match.Match("10.1/found", "PMC9", "Figure 3", "dhash", 0.0, 9.0),
+    )
     monkeypatch.setattr(corpus, "all_rows", lambda conn: [object()])
     monkeypatch.setattr(corpus, "connect", lambda: None)
     monkeypatch.setattr(session_tabs, "tab_candidates", lambda path=None: [])
@@ -1407,23 +1480,39 @@ def test_a_pixel_match_is_returned_as_a_candidate(tmp_path, monkeypatch):
 def test_open_tabs_are_offered_but_rank_below_a_pixel_match(tmp_path, monkeypatch):
     """A tab is a lead about where a figure came from, not evidence."""
     monkeypatch.setattr(
-        match, "by_dhash",
-        lambda b, rows: match.Match("10.1/pixel", "PMC9", "Figure 1", "dhash", 0.0, 9.0))
+        match,
+        "by_dhash",
+        lambda b, rows: match.Match("10.1/pixel", "PMC9", "Figure 1", "dhash", 0.0, 9.0),
+    )
     monkeypatch.setattr(corpus, "all_rows", lambda conn: [object()])
     monkeypatch.setattr(corpus, "connect", lambda: None)
-    monkeypatch.setattr(session_tabs, "tab_candidates", lambda path=None: [
-        {"source": "open-tab", "score": "", "doi": "10.1/tab", "title": "T",
-         "container": "example.org", "year": "", "type": ""}])
+    monkeypatch.setattr(
+        session_tabs,
+        "tab_candidates",
+        lambda path=None: [
+            {
+                "source": "open-tab",
+                "score": "",
+                "doi": "10.1/tab",
+                "title": "T",
+                "container": "example.org",
+                "year": "",
+                "type": "",
+            }
+        ],
+    )
 
     out = service.whereis(str(_png(tmp_path / "q.png")))
     assert [m["doi"] for m in out["matches"]] == ["10.1/pixel", "10.1/tab"]
 
 
 def test_could_not_decide_is_not_reported_as_no_match(tmp_path, monkeypatch):
-    monkeypatch.setattr(match, "by_dhash",
-                        lambda b, rows: match.CouldNotDecide("too smooth"))
-    monkeypatch.setattr(match, "by_orb",
-                        lambda b, rows, root, descriptor_dir=None: match.CouldNotDecide("too smooth"))
+    monkeypatch.setattr(match, "by_dhash", lambda b, rows: match.CouldNotDecide("too smooth"))
+    monkeypatch.setattr(
+        match,
+        "by_orb",
+        lambda b, rows, root, descriptor_dir=None: match.CouldNotDecide("too smooth"),
+    )
     monkeypatch.setattr(corpus, "all_rows", lambda conn: [object()])
     monkeypatch.setattr(corpus, "connect", lambda: None)
     monkeypatch.setattr(session_tabs, "tab_candidates", lambda path=None: [])
@@ -1435,10 +1524,8 @@ def test_could_not_decide_is_not_reported_as_no_match(tmp_path, monkeypatch):
 
 def test_a_real_no_match_is_reported_as_such(tmp_path, monkeypatch):
     """Positive control for the test above: no-match must stay reachable."""
-    monkeypatch.setattr(match, "by_dhash",
-                        lambda b, rows: match.CouldNotDecide("no dhash hit"))
-    monkeypatch.setattr(match, "by_orb",
-                        lambda b, rows, root, descriptor_dir=None: match.NoMatch())
+    monkeypatch.setattr(match, "by_dhash", lambda b, rows: match.CouldNotDecide("no dhash hit"))
+    monkeypatch.setattr(match, "by_orb", lambda b, rows, root, descriptor_dir=None: match.NoMatch())
     monkeypatch.setattr(corpus, "all_rows", lambda conn: [object()])
     monkeypatch.setattr(corpus, "connect", lambda: None)
     monkeypatch.setattr(session_tabs, "tab_candidates", lambda path=None: [])
@@ -1486,17 +1573,18 @@ def whereis(ref_or_path) -> dict:
 
     matches: list[dict] = []
     if isinstance(verdict, match.Match):
-        row = next((r for r in rows
-                    if r.pmcid == verdict.pmcid and r.label == verdict.label), None)
-        matches.append({
-            "source": verdict.method,
-            "score": round(verdict.score, 1),
-            "doi": verdict.doi,
-            "title": (row.caption[:120] if row else verdict.label),
-            "container": verdict.pmcid,
-            "year": "",
-            "type": "figure",
-        })
+        row = next((r for r in rows if r.pmcid == verdict.pmcid and r.label == verdict.label), None)
+        matches.append(
+            {
+                "source": verdict.method,
+                "score": round(verdict.score, 1),
+                "doi": verdict.doi,
+                "title": (row.caption[:120] if row else verdict.label),
+                "container": verdict.pmcid,
+                "year": "",
+                "type": "figure",
+            }
+        )
 
     try:
         matches.extend(session_tabs.tab_candidates())
@@ -1547,6 +1635,7 @@ rewrites a record.
 ```python
 # tests/test_corpus_duplicates.py
 """The same figure carrying a DIFFERENT DOI than the one credited."""
+
 import io
 
 import pytest
@@ -1572,10 +1661,21 @@ def wired(tmp_path, monkeypatch):
     conn = corpus.connect()
     blob = _png("red")
     for pmcid, doi in (("PMC1", "10.1/credited"), ("PMC2", "10.1/elsewhere")):
-        corpus.upsert(conn, corpus.FigureRow(
-            pmcid=pmcid, doi=doi, label="Figure 1", caption="", licence="CC BY",
-            source_url="", dhash=dhash_bytes(blob), width=64, height=64,
-            image_path=f"{pmcid}/f1.png"))
+        corpus.upsert(
+            conn,
+            corpus.FigureRow(
+                pmcid=pmcid,
+                doi=doi,
+                label="Figure 1",
+                caption="",
+                licence="CC BY",
+                source_url="",
+                dhash=dhash_bytes(blob),
+                width=64,
+                height=64,
+                image_path=f"{pmcid}/f1.png",
+            ),
+        )
     conn.close()
     return blob
 
@@ -1639,8 +1739,7 @@ def duplicates(ref_or_path, credited_doi: str) -> dict:
     rows = corpus.duplicates_of(path.read_bytes(), credited_doi)
     return {
         "others": [
-            {"doi": r.doi, "pmcid": r.pmcid, "label": r.label, "licence": r.licence}
-            for r in rows
+            {"doi": r.doi, "pmcid": r.pmcid, "label": r.label, "licence": r.licence} for r in rows
         ],
         "reason": "" if rows else "no other indexed paper carries this figure",
     }
@@ -1677,16 +1776,21 @@ git commit -m "feat(corpus): report a figure that also appears under another DOI
 ```python
 # tests/test_cli_corpus.py
 """`figcite corpus` and `figcite whereis`."""
+
 from figcite import cli, corpus, service
 
 
 def test_build_reports_every_uncovered_doi_with_its_reason(capsys, monkeypatch):
-    monkeypatch.setattr(corpus, "build", lambda dois, limit=None: [
-        corpus.BuildOutcome("10.1/a", "PMC1", "indexed"),
-        corpus.BuildOutcome("10.1/b", "PMC2", "not-open-access"),
-        corpus.BuildOutcome("10.1/c", "", "not-in-pmc"),
-        corpus.BuildOutcome("10.1/d", "PMC4", "failed", "connection reset"),
-    ])
+    monkeypatch.setattr(
+        corpus,
+        "build",
+        lambda dois, limit=None: [
+            corpus.BuildOutcome("10.1/a", "PMC1", "indexed"),
+            corpus.BuildOutcome("10.1/b", "PMC2", "not-open-access"),
+            corpus.BuildOutcome("10.1/c", "", "not-in-pmc"),
+            corpus.BuildOutcome("10.1/d", "PMC4", "failed", "connection reset"),
+        ],
+    )
     monkeypatch.setattr(cli, "_corpus_dois", lambda: ["10.1/a", "10.1/b", "10.1/c", "10.1/d"])
 
     class A:
@@ -1701,8 +1805,11 @@ def test_build_reports_every_uncovered_doi_with_its_reason(capsys, monkeypatch):
 
 
 def test_whereis_prints_could_not_decide_with_the_reason(capsys, monkeypatch):
-    monkeypatch.setattr(service, "whereis", lambda p: {
-        "verdict": "could-not-decide", "matches": [], "reason": "too smooth"})
+    monkeypatch.setattr(
+        service,
+        "whereis",
+        lambda p: {"verdict": "could-not-decide", "matches": [], "reason": "too smooth"},
+    )
 
     class A:
         image = "x.png"
@@ -1715,8 +1822,9 @@ def test_whereis_prints_could_not_decide_with_the_reason(capsys, monkeypatch):
 
 def test_whereis_distinguishes_a_real_no_match(capsys, monkeypatch):
     """Positive control: the two outcomes must not print the same words."""
-    monkeypatch.setattr(service, "whereis", lambda p: {
-        "verdict": "no-match", "matches": [], "reason": ""})
+    monkeypatch.setattr(
+        service, "whereis", lambda p: {"verdict": "no-match", "matches": [], "reason": ""}
+    )
 
     class A:
         image = "x.png"
@@ -1836,6 +1944,7 @@ git commit -m "feat(cli): corpus build/status and whereis"
 Marked `live` so it is excluded from the push gate. This is the only test that
 would notice PMC changing its article markup -- the fragile joint of SP2.
 """
+
 import pytest
 
 from figcite import pmc
@@ -1914,6 +2023,7 @@ An open-tab lead beside a pixel match invites being read as equivalent
 evidence. The existing `.src` badge already renders `c.source`, so the
 requirement is that whereis candidates carry it and the card keeps showing it.
 """
+
 from figcite.webui import PAGE
 
 
@@ -1966,6 +2076,7 @@ credited to one paper also appears in another. It reports only.
 ```python
 # tests/test_deck_duplicate_flag.py
 """A credited figure that also appears under another DOI."""
+
 from figcite import corpus, service
 
 
@@ -1986,6 +2097,7 @@ def test_no_duplicate_yields_an_empty_list_not_none(monkeypatch):
 
 def test_a_corpus_failure_does_not_break_the_audit(monkeypatch):
     """An audit must still render if the corpus is missing or unreadable."""
+
     def boom(b, credited_doi):
         raise RuntimeError("no corpus")
 

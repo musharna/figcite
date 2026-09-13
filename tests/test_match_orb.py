@@ -24,9 +24,7 @@ def _textured(seed, size=(320, 320)):
         x, y = rnd.randrange(size[0] - 40), rnd.randrange(size[1] - 40)
         w, h = rnd.randrange(8, 38), rnd.randrange(8, 38)
         col = (rnd.randrange(256), rnd.randrange(256), rnd.randrange(256))
-        (d.rectangle if rnd.random() < 0.5 else d.ellipse)(
-            [x, y, x + w, y + h], fill=col
-        )
+        (d.rectangle if rnd.random() < 0.5 else d.ellipse)([x, y, x + w, y + h], fill=col)
     return im
 
 
@@ -47,9 +45,7 @@ class Row:
         self.pmcid, self.label = "PMC1", "Figure 1"
 
 
-pytestmark = pytest.mark.skipif(
-    not match.opencv_available(), reason="opencv not installed"
-)
+pytestmark = pytest.mark.skipif(not match.opencv_available(), reason="opencv not installed")
 
 
 def test_a_panel_crop_finds_its_source_among_decoys(tmp_path):
@@ -66,9 +62,7 @@ def test_a_panel_crop_finds_its_source_among_decoys(tmp_path):
     v = match.by_orb(_png(crop), rows, tmp_path)
     assert isinstance(v, match.Match), v
     assert v.doi == "10.1/right"
-    assert v.margin >= match.MIN_MARGIN, (
-        f"margin {v.margin} too thin to assert a source"
-    )
+    assert v.margin >= match.MIN_MARGIN, f"margin {v.margin} too thin to assert a source"
 
 
 def test_a_figure_that_is_in_no_paper_is_a_real_no_match(tmp_path):

@@ -99,9 +99,7 @@ def test_confirm_rejects_an_out_of_range_index(tmp_path, monkeypatch, capsys):
 # --------------------------------------------------------------- fix round 1
 
 
-def test_confirm_prints_where_it_filed_the_image_and_its_sha(
-    tmp_path, monkeypatch, capsys
-):
+def test_confirm_prints_where_it_filed_the_image_and_its_sha(tmp_path, monkeypatch, capsys):
     """Ruling 6. The four lines the service-layer refactor silently dropped.
 
     The sha256 hint is not decoration: it names WHICH file to put in the deck.
@@ -144,9 +142,7 @@ def test_confirm_warns_when_the_source_is_retracted(tmp_path, monkeypatch, capsy
     assert "** THIS WORK IS FLAGGED AS RETRACTED IN CROSSREF **" in out
 
 
-def test_pending_shows_why_a_filed_capture_is_unresolved(
-    tmp_path, monkeypatch, capsys
-):
+def test_pending_shows_why_a_filed_capture_is_unresolved(tmp_path, monkeypatch, capsys):
     """Ruling 7. figcite records the note; the surface must not drop it."""
     staging = tmp_path / "empty"
     staging.mkdir()
@@ -195,9 +191,7 @@ def test_confirm_refuses_a_doi_and_a_cite_together(tmp_path, monkeypatch, capsys
     assert png.exists(), "a refusal must not consume the capture"
 
 
-def test_confirming_a_filed_capture_says_the_image_is_unchanged(
-    tmp_path, monkeypatch, capsys
-):
+def test_confirming_a_filed_capture_says_the_image_is_unchanged(tmp_path, monkeypatch, capsys):
     """Fix round 2. The `m` branch's trailing line went missing in the refactor
     and nothing noticed, because no test read this command's stdout at all.
 
@@ -237,10 +231,7 @@ def test_confirming_a_filed_capture_says_the_image_is_unchanged(
     assert cli.main(["confirm", "m0", "--doi", "10.1/real"]) == 0
     out = capsys.readouterr().out
     assert "resolved m0: Resolved et al. 2020" in out, "positive control"
-    assert (
-        "  (the image file itself is unchanged; the manifest now carries the citation)"
-        in out
-    )
+    assert "  (the image file itself is unchanged; the manifest now carries the citation)" in out
     assert "tagged -> " not in out, "nothing was filed, so nothing may be claimed filed"
 
 
@@ -260,9 +251,7 @@ def test_confirm_rejects_an_out_of_range_pick(tmp_path, monkeypatch, capsys):
     assert png.exists(), "a refusal must not consume the capture"
 
 
-def test_pending_distinguishes_a_failed_lookup_from_an_empty_one(
-    tmp_path, monkeypatch, capsys
-):
+def test_pending_distinguishes_a_failed_lookup_from_an_empty_one(tmp_path, monkeypatch, capsys):
     """I2. The brief's own new branch, and the bug Task 11's `error` field
     exists to fix: a lookup that could not run used to print identically to a
     lookup that ran and found nothing. Both directions are asserted, because
@@ -328,9 +317,7 @@ def test_pending_lists_candidates_with_their_scores(tmp_path, monkeypatch, capsy
     assert "confirm: figcite confirm 0 --pick <n>   (or --doi 10.x/y)" in out
 
 
-def test_pending_heads_the_filed_section_so_m0_means_something(
-    tmp_path, monkeypatch, capsys
-):
+def test_pending_heads_the_filed_section_so_m0_means_something(tmp_path, monkeypatch, capsys):
     """M3. Without the header, `[m0]` is an unexplained index in a list whose
     other entries are numbered differently and mean something else."""
     staging = tmp_path / "empty"
@@ -368,9 +355,7 @@ def _assert_speaks_cli(err: str) -> None:
     assert not _KWARGISH.search(err), f"service kwargs leaked to the CLI: {err!r}"
 
 
-def test_a_bare_confirm_with_nothing_inferable_names_real_flags(
-    tmp_path, monkeypatch, capsys
-):
+def test_a_bare_confirm_with_nothing_inferable_names_real_flags(tmp_path, monkeypatch, capsys):
     """I3. Delta 13. The old CLI said `need --doi, --pick N, or --cite`; the
     refactor started telling the user to pass `own_work=True`, which
     `figcite confirm` has no flag for at all."""

@@ -255,9 +255,7 @@ def test_use_cache_false_actually_bypasses_the_cache(tmp_path, monkeypatch):
 
     got = crossref.fetch_work("10.1/x", use_cache=False)
 
-    assert got["title"] == ["FRESH"], (
-        f"use_cache=False read the cache anyway: {got['title']}"
-    )
+    assert got["title"] == ["FRESH"], f"use_cache=False read the cache anyway: {got['title']}"
 
 
 def test_the_cache_is_used_when_it_is_allowed(tmp_path, monkeypatch):
@@ -300,9 +298,7 @@ def test_a_404_is_a_miss_and_anything_else_is_an_error(tmp_path, monkeypatch):
             return {"message": {}}
 
     monkeypatch.setattr(crossref, "throttled_get", lambda url, **kw: _R(404))
-    assert crossref.fetch_work("10.1/missing") is None, (
-        "a 404 was not reported as a miss"
-    )
+    assert crossref.fetch_work("10.1/missing") is None, "a 404 was not reported as a miss"
 
     import requests as rq
 
@@ -505,9 +501,7 @@ def test_a_site_suffix_of_exactly_the_word_limit_is_still_stripped():
     eight = "one two three four five six seven eight"
     got = zotero.title_variants(f"Real Title | {eight}")
 
-    assert "Real Title" in got, (
-        f"a {len(eight.split())}-word suffix was not stripped: {got}"
-    )
+    assert "Real Title" in got, f"a {len(eight.split())}-word suffix was not stripped: {got}"
 
 
 def test_a_suffix_one_word_over_the_limit_is_left_attached():

@@ -1,4 +1,3 @@
-
 from figcite import clipboard
 
 

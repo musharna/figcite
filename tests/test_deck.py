@@ -17,9 +17,7 @@ from figcite.deck import apply, audit, get_alt_text, iter_pictures
 from figcite.provenance import Record, embed, read_embedded
 
 
-CITE = (
-    "Shiragaki et al. (2020). Phylogenetic Analysis of Capsicum. Horticulturae 6: 87."
-)
+CITE = "Shiragaki et al. (2020). Phylogenetic Analysis of Capsicum. Horticulturae 6: 87."
 DOI = "10.3390/horticulturae6040087"
 
 
@@ -179,16 +177,9 @@ def test_apply_is_idempotent(tmp_path):
     twice = tmp_path / "twice.pptx"
     rep = apply(once, twice, captions=True, credits=True)
 
-    assert rep["removed_prior_figcite_shapes"] >= 2, (
-        "prior figcite shapes were not cleaned up"
-    )
+    assert rep["removed_prior_figcite_shapes"] >= 2, "prior figcite shapes were not cleaned up"
     prs = Presentation(str(twice))
-    caps = [
-        sh.name
-        for s in prs.slides
-        for sh in s.shapes
-        if sh.name.startswith("figcite-caption")
-    ]
+    caps = [sh.name for s in prs.slides for sh in s.shapes if sh.name.startswith("figcite-caption")]
     credits = [
         sh.name
         for s in prs.slides
@@ -223,8 +214,11 @@ def test_pictures_in_layout_placeholders_are_found(tmp_path):
     """
     prs = Presentation()
     # layout 8 in the default template is "Picture with Caption"
-    lay = next(lay for lay in prs.slide_layouts
-               if any(ph.placeholder_format.type == 18 for ph in lay.placeholders))
+    lay = next(
+        lay
+        for lay in prs.slide_layouts
+        if any(ph.placeholder_format.type == 18 for ph in lay.placeholders)
+    )
     slide = prs.slides.add_slide(lay)
     ph = next(p for p in slide.placeholders if p.placeholder_format.type == 18)
     img = _make_image(tmp_path / "in-placeholder.png", 77)
@@ -235,7 +229,8 @@ def test_pictures_in_layout_placeholders_are_found(tmp_path):
     found = [p for s in Presentation(str(deck)).slides for p, _ in iter_pictures(s)]
     assert len(found) == 1, (
         f"picture in a layout placeholder was not found ({len(found)} found); "
-        "shape_type reports PLACEHOLDER, not PICTURE")
+        "shape_type reports PLACEHOLDER, not PICTURE"
+    )
     assert found[0].image.blob, "placeholder picture exposed no image bytes"
 
 
@@ -255,7 +250,7 @@ def test_identical_citations_collapse_to_one_credit(tmp_path):
     key on what the credit will SAY.
     """
     imgs = [_own_work(tmp_path, f"ow{i}.png", 40 + i) for i in range(4)]
-    deck = _deck_with(tmp_path, imgs[:2])          # 2 per slide keeps layout sane
+    deck = _deck_with(tmp_path, imgs[:2])  # 2 per slide keeps layout sane
     out = tmp_path / "own.pptx"
     rep = apply(deck, out, captions=True, credits=True)
     assert rep["cited"] == 1, f"expected one collapsed credit, got {rep['entries']}"
@@ -277,8 +272,9 @@ def test_own_work_is_not_captioned_by_default(tmp_path):
     quiet = tmp_path / "quiet.pptx"
     apply(deck, quiet, captions=True, credits=True)
     names = [sh.name for s in Presentation(str(quiet)).slides for sh in s.shapes]
-    assert not any(n.startswith("figcite-caption") for n in names), \
+    assert not any(n.startswith("figcite-caption") for n in names), (
         "own-work figure was captioned by default"
+    )
     pics = [p for s in Presentation(str(quiet)).slides for p, _ in iter_pictures(s)]
     assert "This work" in get_alt_text(pics[0]), "alt text should still carry provenance"
 
@@ -286,8 +282,7 @@ def test_own_work_is_not_captioned_by_default(tmp_path):
     loud = tmp_path / "loud.pptx"
     apply(deck, loud, captions=True, credits=True, caption_own_work=True)
     names = [sh.name for s in Presentation(str(loud)).slides for sh in s.shapes]
-    assert any(n.startswith("figcite-caption") for n in names), \
-        "--caption-own-work did nothing"
+    assert any(n.startswith("figcite-caption") for n in names), "--caption-own-work did nothing"
 
     # positive control 2: someone else's figure IS captioned by default
     ext, _ = _tagged(tmp_path, "theirs.png", color=201)
@@ -295,5 +290,6 @@ def test_own_work_is_not_captioned_by_default(tmp_path):
     out2 = tmp_path / "theirs.cited.pptx"
     apply(deck2, out2, captions=True, credits=True)
     names2 = [sh.name for s in Presentation(str(out2)).slides for sh in s.shapes]
-    assert any(n.startswith("figcite-caption") for n in names2), \
+    assert any(n.startswith("figcite-caption") for n in names2), (
         "an external figure lost its caption"
+    )

@@ -108,9 +108,7 @@ def test_the_git_commit_is_recorded_only_when_git_answered(monkeypatch):
     assert mplhook._git_head(".") == "deadbeef"
 
     monkeypatch.setattr(subprocess, "run", lambda *a, **kw: _R(128, "not a repo\n"))
-    assert mplhook._git_head(".") is None, (
-        "a failed git call was recorded as the producing commit"
-    )
+    assert mplhook._git_head(".") is None, "a failed git call was recorded as the producing commit"
 
 
 def _savefig_that_cannot_register(monkeypatch, tmp_path, defaults):
@@ -266,9 +264,7 @@ def test_the_build_limit_stops_at_the_requested_number(monkeypatch):
             unreachable={},
         ),
     )
-    monkeypatch.setattr(
-        corpus.pmc, "figures_of", lambda pmcid: calls.append(pmcid) or []
-    )
+    monkeypatch.setattr(corpus.pmc, "figures_of", lambda pmcid: calls.append(pmcid) or [])
     monkeypatch.setattr(corpus.pmc, "image_urls", lambda p: {})
     monkeypatch.setattr(corpus.pmc, "licence_of", lambda p: "cc-by")
 
@@ -309,8 +305,7 @@ def test_a_duplicate_exactly_at_the_dhash_threshold_counts(monkeypatch):
     got = corpus.duplicates_of_dhash(base)
 
     assert len(got) == 1, (
-        f"a figure exactly at hamming {corpus.DHASH_THRESHOLD} was not "
-        f"reported as a duplicate"
+        f"a figure exactly at hamming {corpus.DHASH_THRESHOLD} was not reported as a duplicate"
     )
 
 
@@ -339,9 +334,7 @@ def test_the_nearest_record_wins_ties_by_first_seen(monkeypatch):
     got = store.find_similar(tied)
 
     assert got is not None
-    assert got[0].citation == "FIRST", (
-        f"a tie was won by the later record: {got[0].citation}"
-    )
+    assert got[0].citation == "FIRST", f"a tie was won by the later record: {got[0].citation}"
 
 
 def test_a_match_exactly_at_max_distance_is_returned(monkeypatch):

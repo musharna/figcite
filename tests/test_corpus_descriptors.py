@@ -27,9 +27,7 @@ def _textured(seed, size=(320, 320)):
         x, y = rnd.randrange(size[0] - 40), rnd.randrange(size[1] - 40)
         w, h = rnd.randrange(8, 38), rnd.randrange(8, 38)
         col = (rnd.randrange(256), rnd.randrange(256), rnd.randrange(256))
-        (d.rectangle if rnd.random() < 0.5 else d.ellipse)(
-            [x, y, x + w, y + h], fill=col
-        )
+        (d.rectangle if rnd.random() < 0.5 else d.ellipse)([x, y, x + w, y + h], fill=col)
     return im
 
 
@@ -54,9 +52,7 @@ def wired(tmp_path, monkeypatch):
     return tmp_path
 
 
-needs_cv2 = pytest.mark.skipif(
-    not match.opencv_available(), reason="opencv not installed"
-)
+needs_cv2 = pytest.mark.skipif(not match.opencv_available(), reason="opencv not installed")
 
 
 @needs_cv2
@@ -128,9 +124,7 @@ def test_the_cache_is_actually_used(wired, tmp_path):
         img.save(images / name)
         rows.append(Row(name, f"10.1/{name}"))
     for row in rows:
-        assert corpus.write_descriptors(
-            row.image_path, (images / row.image_path).read_bytes()
-        )
+        assert corpus.write_descriptors(row.image_path, (images / row.image_path).read_bytes())
 
     for row in rows:  # the images are gone; only the cache remains
         (images / row.image_path).unlink()

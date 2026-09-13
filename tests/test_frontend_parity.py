@@ -120,8 +120,7 @@ def _confirm_via_cli(argv):
     assert cli.main(argv) == 0
     new_keys = set(store.all_records().keys()) - before
     assert len(new_keys) == 1, (
-        f"expected exactly one new manifest record from {argv!r}, "
-        f"got {new_keys!r}"
+        f"expected exactly one new manifest record from {argv!r}, got {new_keys!r}"
     )
     return store.all_records()[new_keys.pop()]
 

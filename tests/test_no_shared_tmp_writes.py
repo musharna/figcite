@@ -196,15 +196,11 @@ def test_the_guard_can_actually_see_an_escape(tmp_path):
     assert _offending_lines(bad), "the guard cannot see the escape it exists to catch"
 
     good = tmp_path / "test_fine.py"
-    good.write_text(
-        "def test_x(tmp_path):\n    (tmp_path / 'f.png').write_bytes(b'x')\n"
-    )
+    good.write_text("def test_x(tmp_path):\n    (tmp_path / 'f.png').write_bytes(b'x')\n")
     assert not _offending_lines(good), "the guard flags correct tmp_path use"
 
     commented = tmp_path / "test_comment.py"
-    commented.write_text(
-        "# p = Path(tempfile.gettempdir()) / 'x.png'\ndef test_x():\n    pass\n"
-    )
+    commented.write_text("# p = Path(tempfile.gettempdir()) / 'x.png'\ndef test_x():\n    pass\n")
     assert not _offending_lines(commented), "a comment is not a write"
 
     # The false positive this guard actually produced on its first run. A
@@ -280,6 +276,5 @@ def test_the_predicate_can_still_tell_the_escape_from_pytests_own_api(tmp_path):
         probe.write_text(source, encoding="utf-8")
         hits = _offending_lines(probe)
         assert bool(hits) is flagged, (
-            f"case {i} ({why}): expected "
-            f"{'a hit' if flagged else 'no hit'}, got {hits}\n{source}"
+            f"case {i} ({why}): expected {'a hit' if flagged else 'no hit'}, got {hits}\n{source}"
         )

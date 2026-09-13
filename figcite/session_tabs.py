@@ -88,9 +88,7 @@ def read_mozlz4(path) -> bytes:
     """Decompressed bytes of a mozlz4 file."""
     raw = Path(path).read_bytes()
     if raw[:8] != MAGIC:
-        raise ValueError(
-            f"{path} is not a mozLz4 file (magic was {raw[:8]!r}, expected {MAGIC!r})"
-        )
+        raise ValueError(f"{path} is not a mozLz4 file (magic was {raw[:8]!r}, expected {MAGIC!r})")
     (size,) = struct.unpack("<I", raw[8:12])
     return lz4_block_decompress(raw[12:], size)
 

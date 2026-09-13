@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Run the pre-commit hooks (.pre-commit-config.yaml) on the staged files.
+#
+# This repo sets `core.hooksPath .githooks` (see pre-push), which stops
+# `pre-commit install` from writing its own hook, so the shim lives here.
+# Same rules as pre-push: bypass deliberately with `git commit --no-verify`;
+# no automatic bypass.
+#
+# Install once: `uv tool install pre-commit` (or pipx).
+set -euo pipefail
+
+if ! command -v pre-commit >/dev/null 2>&1; then
+  echo "pre-commit is not installed: uv tool install pre-commit" >&2
+  exit 1
+fi
+
+exec pre-commit run --hook-stage pre-commit

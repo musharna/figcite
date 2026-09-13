@@ -79,9 +79,7 @@ def test_normalize_title_folds_typography():
 
 
 def test_normalize_title_strips_accents():
-    assert zotero.normalize_title("Café Genomique") == zotero.normalize_title(
-        "Cafe Genomique"
-    )
+    assert zotero.normalize_title("Café Genomique") == zotero.normalize_title("Cafe Genomique")
 
 
 # ------------------------------------------- browser tab titles carry a site name
@@ -115,9 +113,7 @@ def test_a_site_name_suffix_does_not_hide_an_exact_match(lib, suffix):
     separator is offered as a candidate. Grounding still requires an exact,
     unique match, so more candidates does not mean a lower bar.
     """
-    r = zotero.resolve_page_title(
-        "A conserved ARF-DNA interface underlies auxin response" + suffix
-    )
+    r = zotero.resolve_page_title("A conserved ARF-DNA interface underlies auxin response" + suffix)
     assert r["grounded"] is True, f"{suffix!r} hid an exact match"
     assert r["doi"] == "10.1073/pnas.2501915122"
 
@@ -175,9 +171,7 @@ def test_title_from_zotero_filename():
     """Zotero names attachments '<creators> - <year> - <title>.pdf'. Searching
     the whole filename matches nothing: no title contains its own author list."""
     assert (
-        zotero.title_from_pdf_name(
-            "Shiragaki et al. - 2020 - Phylogenetic Analysis.pdf"
-        )
+        zotero.title_from_pdf_name("Shiragaki et al. - 2020 - Phylogenetic Analysis.pdf")
         == "Phylogenetic Analysis"
     )
     assert zotero.title_from_pdf_name("Harris - 2020 - Array programming.pdf") == (
@@ -294,9 +288,7 @@ def test_partial_match_is_a_candidate_not_an_answer(lib):
 def test_a_miss_is_reported_as_a_miss(lib):
     r = zotero.resolve("Quantum badger husbandry in zero gravity")
     assert r["grounded"] is False and r["doi"] is None
-    assert r["available"] is True, (
-        "a reachable library that has no such paper IS available"
-    )
+    assert r["available"] is True, "a reachable library that has no such paper IS available"
 
 
 def test_short_query_is_refused_rather_than_matched(lib):
@@ -352,17 +344,13 @@ def test_doi_is_harvested_from_a_doi_org_url():
     4,824 items are `webpage` -- an item type that has no DOI field at all.
     Reading only the DOI field discards most of the coverage that exists.
     """
-    doi, how = zotero._doi_of(
-        {"DOI": "", "url": "https://doi.org/10.1038/s41586-020-2649-2"}
-    )
+    doi, how = zotero._doi_of({"DOI": "", "url": "https://doi.org/10.1038/s41586-020-2649-2"})
     assert doi == "10.1038/s41586-020-2649-2"
     assert how == "url"
 
 
 def test_doi_field_wins_over_the_url():
-    doi, how = zotero._doi_of(
-        {"DOI": "10.1111/aaa", "url": "https://doi.org/10.2222/bbb"}
-    )
+    doi, how = zotero._doi_of({"DOI": "10.1111/aaa", "url": "https://doi.org/10.2222/bbb"})
     assert doi == "10.1111/aaa" and how == "doi-field"
 
 
@@ -372,9 +360,7 @@ def test_non_doi_url_yields_nothing():
 
 
 def test_dx_doi_org_is_also_harvested():
-    doi, _ = zotero._doi_of(
-        {"DOI": "", "url": "http://dx.doi.org/10.5194/gmd-18-9633-2025"}
-    )
+    doi, _ = zotero._doi_of({"DOI": "", "url": "http://dx.doi.org/10.5194/gmd-18-9633-2025"})
     assert doi == "10.5194/gmd-18-9633-2025"
 
 

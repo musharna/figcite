@@ -93,9 +93,7 @@ def _deck_with_a_grouped_figure(tmp_path, loose_img, grouped_img):
 
     slide.shapes.add_picture(str(loose_img), Inches(0.5), Inches(0.5), width=Inches(3))
 
-    inner = slide.shapes.add_picture(
-        str(grouped_img), Inches(0.5), Inches(3.6), width=Inches(3)
-    )
+    inner = slide.shapes.add_picture(str(grouped_img), Inches(0.5), Inches(3.6), width=Inches(3))
     group = slide.shapes.add_group_shape()
     group._element.append(inner._element)
 
@@ -116,9 +114,7 @@ def test_a_picture_inside_a_group_is_still_audited(tmp_path):
         f"a figure inside a group was not seen at all: {rep['pictures']} picture(s)"
     )
     dois = {r["record"].doi for r in rep["rows"] if r["record"] is not None}
-    assert DOI_B in dois, (
-        f"the grouped figure is missing from the audit; only found {dois}"
-    )
+    assert DOI_B in dois, f"the grouped figure is missing from the audit; only found {dois}"
 
 
 def test_an_uncredited_figure_inside_a_group_still_counts_as_unsourced(tmp_path):

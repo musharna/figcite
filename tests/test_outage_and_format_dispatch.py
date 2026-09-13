@@ -140,9 +140,7 @@ def test_a_server_error_is_not_treated_as_a_rate_limit(monkeypatch, no_sleeping,
 
     r = crossref.throttled_get("https://api.crossref.org/works/10.1/x")
 
-    assert len(calls) == 1, (
-        f"a {code} was retried as though throttled: {len(calls)} request(s)"
-    )
+    assert len(calls) == 1, f"a {code} was retried as though throttled: {len(calls)} request(s)"
     assert r.status_code == code
     assert not no_sleeping, f"the tool backed off on a {code}: {no_sleeping}"
 
@@ -164,9 +162,7 @@ def test_a_persistent_429_is_still_a_429_and_not_a_miss(monkeypatch, no_sleeping
 
     r = crossref.throttled_get("https://api.crossref.org/works/10.1/x")
 
-    assert r.status_code == 429, (
-        f"a still-throttled response came back as {r.status_code}"
-    )
+    assert r.status_code == 429, f"a still-throttled response came back as {r.status_code}"
     with pytest.raises(requests.exceptions.HTTPError):
         r.raise_for_status()
 
@@ -279,9 +275,7 @@ def test_a_png_source_stays_png_whatever_the_destination_is_called(tmp_path):
         f"the PNG arm stopped short-circuiting: got {_format_on_disk(dst)}"
     )
     got = read_embedded(dst.read_bytes())
-    assert got and got.doi == REC.doi, (
-        "the record did not survive into a PNG-in-a-.jpg file"
-    )
+    assert got and got.doi == REC.doi, "the record did not survive into a PNG-in-a-.jpg file"
 
 
 def test_a_jpeg_written_under_any_other_name_is_still_a_jpeg(tmp_path):
@@ -334,9 +328,7 @@ def test_a_format_that_carries_no_metadata_is_converted_to_png(tmp_path):
     out = embed(src, dst, REC)
 
     converted = tmp_path / "out.png"
-    assert converted.exists(), (
-        "a BMP was not converted, so its provenance had nowhere to live"
-    )
+    assert converted.exists(), "a BMP was not converted, so its provenance had nowhere to live"
     assert _format_on_disk(converted) == "PNG"
     assert out.sha256, "the returned record has no hash of what was written"
 

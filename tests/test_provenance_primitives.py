@@ -172,8 +172,8 @@ def test_a_record_with_only_a_page_url_still_writes_a_Source_chunk(tmp_path):
 
     only_url = tmp_path / "url.png"
     embed(src, only_url, _rec(doi=None, url="https://example.org/article"))
-    assert _text_chunks(only_url).get("Source") == "https://example.org/article", (
-        _text_chunks(only_url)
+    assert _text_chunks(only_url).get("Source") == "https://example.org/article", _text_chunks(
+        only_url
     )
 
     only_doi = tmp_path / "doi.png"
@@ -215,4 +215,3 @@ def test_a_dot_jpeg_destination_takes_the_jpeg_arm(tmp_path):
     assert dst.exists(), "the .jpeg the caller asked for was not written"
     with Image.open(dst) as im:
         assert im.format == "JPEG", im.format
-

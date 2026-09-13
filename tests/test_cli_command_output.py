@@ -82,9 +82,7 @@ def test_status_reports_whether_a_watcher_is_actually_running(monkeypatch, capsy
     assert rc == 1, "a stopped watcher reported success to the caller"
 
 
-def test_status_distinguishes_a_dead_supervisor_from_a_missing_install(
-    monkeypatch, capsys
-):
+def test_status_distinguishes_a_dead_supervisor_from_a_missing_install(monkeypatch, capsys):
     """`if st["supervisors"] ... elif st["installed"]` -- three states, not
     two. Installed-but-not-running is actionable ("starts at next logon");
     not-installed is a different instruction entirely."""
@@ -135,9 +133,7 @@ def test_uninstall_says_which_of_the_two_things_it_did(monkeypatch, capsys):
     needs to know which happened."""
     from figcite import autostart
 
-    monkeypatch.setattr(
-        autostart, "uninstall", lambda: {"removed_launcher": True, "ok": True}
-    )
+    monkeypatch.setattr(autostart, "uninstall", lambda: {"removed_launcher": True, "ok": True})
     rc = cli.main(["autostart", "uninstall"])
     out = capsys.readouterr().out
     assert "launcher removed" in out, out
@@ -228,8 +224,7 @@ def test_register_records_the_commit_only_when_git_answers(tmp_path, monkeypatch
     cli.main(["register", str(img2), "--this-work"])
     recs = list(store.all_records().values())
     assert recs[-1].source_detail["git_commit"] is None, (
-        f"a failed git call was recorded as the producing commit: "
-        f"{recs[-1].source_detail}"
+        f"a failed git call was recorded as the producing commit: {recs[-1].source_detail}"
     )
 
 
@@ -299,9 +294,7 @@ def _manifest_json(tmp_path, name="applied.json"):
     return p
 
 
-def test_bib_writes_next_to_a_deck_but_not_next_to_a_manifest(
-    tmp_path, capsys, monkeypatch
-):
+def test_bib_writes_next_to_a_deck_but_not_next_to_a_manifest(tmp_path, capsys, monkeypatch):
     """`Path(a.source).suffix.lower() != ".json"` survived `NotEq -> Eq`,
     dropping the `not`, and mutating the literal.
 
@@ -355,9 +348,7 @@ class _Rec:
         return "ctx"
 
 
-def test_audit_prints_NO_SOURCE_for_a_picture_with_no_record(
-    tmp_path, monkeypatch, capsys
-):
+def test_audit_prints_NO_SOURCE_for_a_picture_with_no_record(tmp_path, monkeypatch, capsys):
     """`if rec is None` survived `Is -> IsNot` in BOTH audit branches (pptx at
     one site, pdf at another).
 
@@ -385,9 +376,7 @@ def test_audit_prints_NO_SOURCE_for_a_picture_with_no_record(
             "record": None,
         },
     ]
-    monkeypatch.setattr(
-        deck, "audit", lambda p, min_inches=1.0: _deck_with(tmp_path, rows)
-    )
+    monkeypatch.setattr(deck, "audit", lambda p, min_inches=1.0: _deck_with(tmp_path, rows))
 
     cli.main(["audit", str(tmp_path / "t.pptx")])
     out = capsys.readouterr().out
@@ -423,9 +412,7 @@ def test_audit_marks_decorative_pictures_as_such(tmp_path, monkeypatch, capsys):
             "record": None,
         },
     ]
-    monkeypatch.setattr(
-        deck, "audit", lambda p, min_inches=1.0: _deck_with(tmp_path, rows)
-    )
+    monkeypatch.setattr(deck, "audit", lambda p, min_inches=1.0: _deck_with(tmp_path, rows))
 
     cli.main(["audit", str(tmp_path / "t.pptx")])
     out = capsys.readouterr().out
@@ -433,9 +420,7 @@ def test_audit_marks_decorative_pictures_as_such(tmp_path, monkeypatch, capsys):
     icon = [ln for ln in out.splitlines() if "Icon" in ln][0]
     figure = [ln for ln in out.splitlines() if "Figure" in ln][0]
     assert "decorative" in icon, icon
-    assert "decorative" not in figure, (
-        f"a substantive figure was marked decorative: {figure!r}"
-    )
+    assert "decorative" not in figure, f"a substantive figure was marked decorative: {figure!r}"
 
 
 def test_a_pdf_audit_goes_through_the_pdf_reporter(tmp_path, monkeypatch, capsys):
@@ -447,9 +432,7 @@ def test_a_pdf_audit_goes_through_the_pdf_reporter(tmp_path, monkeypatch, capsys
         {"page": 3, "matched_by": "none", "record": None},
         {"page": 4, "matched_by": "sha256", "record": _Rec("Other 2021")},
     ]
-    monkeypatch.setattr(
-        pdfdeck, "audit", lambda p, min_inches=1.0: _deck_with(tmp_path, rows)
-    )
+    monkeypatch.setattr(pdfdeck, "audit", lambda p, min_inches=1.0: _deck_with(tmp_path, rows))
 
     cli.main(["audit", str(tmp_path / "t.pdf")])
     out = capsys.readouterr().out
@@ -461,9 +444,7 @@ def test_a_pdf_audit_goes_through_the_pdf_reporter(tmp_path, monkeypatch, capsys
 # ------------------------------------------------- bib --check exit code
 
 
-def test_bib_check_exits_nonzero_only_when_ghostcite_finds_something(
-    tmp_path, monkeypatch, capsys
-):
+def test_bib_check_exits_nonzero_only_when_ghostcite_finds_something(tmp_path, monkeypatch, capsys):
     """`return 1 if res.get("findings") else 0` survived mutating the key.
 
     `--check` exists to be wired into CI. Under the mutant `.get` always
@@ -513,9 +494,7 @@ def test_bib_check_exits_nonzero_only_when_ghostcite_finds_something(
 # ------------------------------------------------- the europe-pmc caveat
 
 
-def test_the_not_in_europe_pmc_caveat_is_printed_only_when_it_applies(
-    monkeypatch, capsys
-):
+def test_the_not_in_europe_pmc_caveat_is_printed_only_when_it_applies(monkeypatch, capsys):
     """`if tally.get("not-in-europe-pmc")` survived mutating the key.
 
     The caveat distinguishes two very different outcomes -- a DOI that may be

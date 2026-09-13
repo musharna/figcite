@@ -41,9 +41,7 @@ def _filed(monkeypatch, **kw):
         **kw,
     )
     written = {}
-    monkeypatch.setattr(
-        store, "all_records", lambda: dict(written) or {rec.sha256: rec}
-    )
+    monkeypatch.setattr(store, "all_records", lambda: dict(written) or {rec.sha256: rec})
     monkeypatch.setattr(
         store, "get", lambda sha: written.get(sha, rec if sha == rec.sha256 else None)
     )

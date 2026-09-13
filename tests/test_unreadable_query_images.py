@@ -163,9 +163,7 @@ def one_figure_corpus(tmp_path, monkeypatch):
     return tmp_path
 
 
-def test_whereis_on_an_unreadable_file_answers_could_not_decide(
-    one_figure_corpus, tmp_path
-):
+def test_whereis_on_an_unreadable_file_answers_could_not_decide(one_figure_corpus, tmp_path):
     """The user-visible end of it: `figcite whereis corrupt.png`.
 
     Before the fix this raised `OSError: Truncated File Read` straight through

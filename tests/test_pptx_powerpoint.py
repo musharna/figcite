@@ -95,8 +95,7 @@ def _powerpoint_already_running() -> bool:
     asking cannot itself cause the thing it is asking about.
     """
     ok, out = _pwsh(
-        "if (Get-Process POWERPNT -ErrorAction SilentlyContinue) "
-        "{'RUNNING'} else {'NOT-RUNNING'}"
+        "if (Get-Process POWERPNT -ErrorAction SilentlyContinue) {'RUNNING'} else {'NOT-RUNNING'}"
     )
     # EXACT match, not substring. `"NOT-RUNNING" not in out` AUTHORISES COM on
     # the output "RUNNING\nNOT-RUNNING", because the busy sentinel contains the
@@ -277,8 +276,7 @@ def test_powerpoint_opens_figcite_output_without_repairing_it(workdir, figures):
     for a in alts:
         assert "10.9999/ppt." in a, f"alt-text carries no DOI: {a!r}"
         assert not a.endswith(".png"), (
-            f"alt-text is still python-pptx's filename default, so figcite "
-            f"never wrote it: {a!r}"
+            f"alt-text is still python-pptx's filename default, so figcite never wrote it: {a!r}"
         )
     assert "figcite-caption" in r.stdout, "captions did not survive"
     assert "figcite-credits-marker" in r.stdout, "credits slide body did not survive"
@@ -313,9 +311,7 @@ def test_powerpoint_opens_a_deck_applied_through_the_web_path(workdir, figures):
 
     _make_plain_deck(win, wsl, "src.pptx")
     out = wsl / "web-applied.pptx"
-    rep = service.apply(
-        str(wsl / "src.pptx"), str(out), caption_own_work=True, manifest_path=None
-    )
+    rep = service.apply(str(wsl / "src.pptx"), str(out), caption_own_work=True, manifest_path=None)
     assert rep["cited"] >= 1
 
     r = _ps(
@@ -325,8 +321,7 @@ def test_powerpoint_opens_a_deck_applied_through_the_web_path(workdir, figures):
         f"$pres.Close(); Write-Output OPENED_CLEAN"
     )
     assert "OPENED_CLEAN" in r.stdout, (
-        f"PowerPoint could not open a deck applied through service.apply(): "
-        f"{r.stderr[:400]}"
+        f"PowerPoint could not open a deck applied through service.apply(): {r.stderr[:400]}"
     )
     assert "SLIDES=4" in r.stdout, "the credits slide did not survive"
     assert "repair" not in (r.stdout + r.stderr).lower()

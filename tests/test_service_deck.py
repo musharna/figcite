@@ -94,9 +94,7 @@ def test_apply_refuses_to_overwrite_its_input(tmp_path, monkeypatch):
     pptx.write_bytes(b"not a real pptx")
 
     called = []
-    monkeypatch.setattr(
-        service.deck, "apply", lambda *a, **kw: called.append((a, kw)) or {}
-    )
+    monkeypatch.setattr(service.deck, "apply", lambda *a, **kw: called.append((a, kw)) or {})
 
     # Same file, spelled differently: a "sub/.." detour a raw string
     # compare cannot see through, but Path.resolve() collapses.

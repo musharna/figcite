@@ -81,13 +81,10 @@ def test_bad_magic_is_refused_and_a_good_one_is_not(tmp_path):
     # far-fetched -- any header beginning with a byte above 'm' qualifies.
     for label, magic in (("below", b"NOTMOZLZ"), ("above", b"zzzzzzzz")):
         assert (magic < MAGIC_BYTES) == (label == "below"), (
-            f"{magic!r} no longer sorts {label} the real magic; this test has "
-            f"stopped bracketing it"
+            f"{magic!r} no longer sorts {label} the real magic; this test has stopped bracketing it"
         )
         bad = tmp_path / f"bad-{label}.jsonlz4"
-        bad.write_bytes(
-            magic + struct.pack("<I", len(payload)) + _lz4_literals(payload)
-        )
+        bad.write_bytes(magic + struct.pack("<I", len(payload)) + _lz4_literals(payload))
         with pytest.raises(ValueError, match="mozLz4"):
             st.read_mozlz4(bad)
 
@@ -143,9 +140,7 @@ def test_open_tabs_survives_a_tab_with_no_entries(tmp_path):
                         {"index": 0, "entries": []},
                         {
                             "index": 1,
-                            "entries": [
-                                {"url": "https://example.org/real", "title": "Real"}
-                            ],
+                            "entries": [{"url": "https://example.org/real", "title": "Real"}],
                         },
                     ]
                 }

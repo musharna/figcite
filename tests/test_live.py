@@ -60,9 +60,9 @@ def test_crossref_title_search_is_untrustworthy_by_design():
     hits = search_bibliographic("Array programming with NumPy", rows=5)
     assert hits, "CrossRef search returned nothing at all"
     top = hits[0]
-    assert (
-        top["doi"] != "10.1038/s41586-020-2649-2" or top["type"] != "journal-article"
-    ), "top hit is now the real paper; re-examine the auto-confirm policy"
+    assert top["doi"] != "10.1038/s41586-020-2649-2" or top["type"] != "journal-article", (
+        "top hit is now the real paper; re-examine the auto-confirm policy"
+    )
 
 
 def test_real_pdf_crop_end_to_end(tmp_path):
@@ -229,9 +229,7 @@ def test_windows_clipboard_watcher_captures_a_real_snip(tmp_path, monkeypatch):
         # inference must run and must NOT invent a DOI for a random bitmap
         pending = enrich(png)
         assert pending["inference"]["doi"] is None
-        assert pending["inference"]["doi_evidence"], (
-            "inference gave no reason for the gap"
-        )
+        assert pending["inference"]["doi_evidence"], "inference gave no reason for the gap"
     finally:
         proc.terminate()
         for name in created:
@@ -337,8 +335,7 @@ def test_an_idle_watcher_costs_nothing(tmp_path, monkeypatch):
         # and would sail through the assertion below. "Asleep" and "dead" are
         # two states and this test has to tell them apart.
         assert after is not None, (
-            "the watcher exited during the idle window; 0ms of CPU would then "
-            "mean nothing at all"
+            "the watcher exited during the idle window; 0ms of CPU would then mean nothing at all"
         )
         assert before > 0, (
             "the watcher reports zero CPU even for its own startup, so this "

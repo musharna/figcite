@@ -30,8 +30,7 @@ def _ok(results):
 
 
 def _rec(doi, pmcid="PMC1"):
-    return {"doi": doi, "pmcid": pmcid, "title": "T", "pubYear": "2020",
-            "isOpenAccess": "Y"}
+    return {"doi": doi, "pmcid": pmcid, "title": "T", "pubYear": "2020", "isOpenAccess": "Y"}
 
 
 def _http(code):
@@ -84,6 +83,7 @@ def test_a_successful_sweep_reports_nothing_unreachable(monkeypatch):
 def test_a_dns_failure_still_aborts_the_whole_sweep(monkeypatch):
     """DNS is total, not per-request. Retrying 67 batches against a name that
     does not resolve wastes minutes to reach the same answer."""
+
     def fake_get(url, **kw):
         raise pmc.DnsUnreachable("nothing resolves")
 
@@ -104,9 +104,9 @@ def test_an_unreachable_doi_is_failed_not_absent(monkeypatch, tmp_path):
     monkeypatch.setattr(corpus, "IMAGE_DIR", tmp_path / "c" / "i")
     monkeypatch.setattr(corpus, "DESCRIPTOR_DIR", tmp_path / "c" / "d")
     monkeypatch.setattr(
-        pmc, "lookup_dois",
-        lambda dois, batch=8: pmc.Lookup(
-            records=[], unreachable={"10.1/down": "HTTP 504"}),
+        pmc,
+        "lookup_dois",
+        lambda dois, batch=8: pmc.Lookup(records=[], unreachable={"10.1/down": "HTTP 504"}),
     )
     out = {o.doi: o for o in corpus.build(["10.1/down"])}
     assert out["10.1/down"].status == "failed", (
@@ -122,7 +122,8 @@ def test_a_genuinely_absent_doi_is_still_reported_absent(monkeypatch, tmp_path):
     monkeypatch.setattr(corpus, "IMAGE_DIR", tmp_path / "c" / "i")
     monkeypatch.setattr(corpus, "DESCRIPTOR_DIR", tmp_path / "c" / "d")
     monkeypatch.setattr(
-        pmc, "lookup_dois",
+        pmc,
+        "lookup_dois",
         lambda dois, batch=8: pmc.Lookup(records=[], unreachable={}),
     )
     out = {o.doi: o for o in corpus.build(["10.1/ghost"])}

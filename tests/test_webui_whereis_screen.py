@@ -125,9 +125,7 @@ def test_the_route_answers_a_pixel_match(tmp_path, monkeypatch):
     monkeypatch.setattr(
         match,
         "by_dhash",
-        lambda b, rows: match.Match(
-            "10.1/found", "PMC9", "Figure 3", "dhash", 0.0, 9.0
-        ),
+        lambda b, rows: match.Match("10.1/found", "PMC9", "Figure 3", "dhash", 0.0, 9.0),
     )
     monkeypatch.setattr(session_tabs, "tab_candidates", lambda path=None: [])
 
@@ -144,9 +142,7 @@ def test_the_route_refuses_a_field_it_does_not_know(tmp_path, monkeypatch):
     _no_corpus(monkeypatch)
     monkeypatch.setattr(session_tabs, "tab_candidates", lambda path=None: [])
 
-    status, body = _whereis_over_http(
-        {"ref": str(_png(tmp_path / "q.png")), "out": "/etc/passwd"}
-    )
+    status, body = _whereis_over_http({"ref": str(_png(tmp_path / "q.png")), "out": "/etc/passwd"})
 
     assert status == 400, body
     assert "out" in body["error"], body
@@ -166,9 +162,7 @@ def test_a_missing_file_is_an_error_not_an_empty_answer(tmp_path, monkeypatch):
     monkeypatch.setattr(
         match,
         "by_dhash",
-        lambda b, rows: match.Match(
-            "10.1/found", "PMC9", "Figure 3", "dhash", 0.0, 9.0
-        ),
+        lambda b, rows: match.Match("10.1/found", "PMC9", "Figure 3", "dhash", 0.0, 9.0),
     )
     monkeypatch.setattr(session_tabs, "tab_candidates", lambda path=None: [])
 
@@ -194,9 +188,7 @@ def test_a_pixel_match_renders_as_evidence(tmp_path, monkeypatch):
     monkeypatch.setattr(
         match,
         "by_dhash",
-        lambda b, rows: match.Match(
-            "10.1/pixel", "PMC9", "Figure 1", "dhash", 0.0, 9.0
-        ),
+        lambda b, rows: match.Match("10.1/pixel", "PMC9", "Figure 1", "dhash", 0.0, 9.0),
     )
     monkeypatch.setattr(session_tabs, "tab_candidates", lambda path=None: [])
     status, body = _whereis_over_http({"ref": str(_png(tmp_path / "q.png"))})
@@ -254,9 +246,7 @@ def test_could_not_decide_renders_differently_from_no_match(tmp_path, monkeypatc
     """ "I looked and it is not there" and "I could not look" license
     different next actions, so they must not render the same."""
     _no_corpus(monkeypatch)
-    monkeypatch.setattr(
-        match, "by_dhash", lambda b, rows: match.CouldNotDecide("too smooth")
-    )
+    monkeypatch.setattr(match, "by_dhash", lambda b, rows: match.CouldNotDecide("too smooth"))
     monkeypatch.setattr(
         match,
         "by_orb",
@@ -312,9 +302,7 @@ def test_an_empty_corpus_says_so_rather_than_reporting_no_match(tmp_path, monkey
 # --- the wire contract ----------------------------------------------------
 
 
-def test_every_key_the_whereis_renderer_reads_is_supplied_by_the_service(
-    tmp_path, monkeypatch
-):
+def test_every_key_the_whereis_renderer_reads_is_supplied_by_the_service(tmp_path, monkeypatch):
     """`tests/test_candidate_contract.py`, for the other producer.
 
     That test pins the keys the PENDING card reads off a candidate. This
@@ -328,9 +316,7 @@ def test_every_key_the_whereis_renderer_reads_is_supplied_by_the_service(
     monkeypatch.setattr(
         match,
         "by_dhash",
-        lambda b, rows: match.Match(
-            "10.1/pixel", "PMC9", "Figure 1", "dhash", 0.0, 9.0
-        ),
+        lambda b, rows: match.Match("10.1/pixel", "PMC9", "Figure 1", "dhash", 0.0, 9.0),
     )
     monkeypatch.setattr(session_tabs, "tab_candidates", lambda path=None: [dict(TAB)])
 
@@ -352,9 +338,7 @@ def test_the_service_marks_which_candidates_are_evidence(tmp_path, monkeypatch):
     monkeypatch.setattr(
         match,
         "by_dhash",
-        lambda b, rows: match.Match(
-            "10.1/pixel", "PMC9", "Figure 1", "dhash", 0.0, 9.0
-        ),
+        lambda b, rows: match.Match("10.1/pixel", "PMC9", "Figure 1", "dhash", 0.0, 9.0),
     )
     monkeypatch.setattr(session_tabs, "tab_candidates", lambda path=None: [dict(TAB)])
 
@@ -380,9 +364,7 @@ def test_a_score_of_zero_is_shown_rather_than_swallowed(tmp_path, monkeypatch):
     monkeypatch.setattr(
         match,
         "by_dhash",
-        lambda b, rows: match.Match(
-            "10.1/exact", "PMC9", "Figure 1", "dhash", 0.0, 9.0
-        ),
+        lambda b, rows: match.Match("10.1/exact", "PMC9", "Figure 1", "dhash", 0.0, 9.0),
     )
     monkeypatch.setattr(session_tabs, "tab_candidates", lambda path=None: [])
 

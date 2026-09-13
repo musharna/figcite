@@ -103,13 +103,9 @@ def test_ambiguity_is_what_stops_a_match_being_grounded(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(browser, "firefox_profiles", lambda: [tmp_path])
     monkeypatch.setattr(browser, "snapshot_history", lambda p: db)
-    monkeypatch.setattr(
-        browser, "url_to_doi", lambda url, allow_fetch=True: ("10.1/x", "a stub")
-    )
+    monkeypatch.setattr(browser, "url_to_doi", lambda url, allow_fetch=True: ("10.1/x", "a stub"))
 
-    out = browser.resolve_from_capture(
-        {"title": TITLE, "process": "firefox"}, allow_fetch=False
-    )
+    out = browser.resolve_from_capture({"title": TITLE, "process": "firefox"}, allow_fetch=False)
 
     assert out["doi"] == "10.1/x", out
     assert out["grounded"] is False, (
@@ -125,13 +121,9 @@ def test_a_single_match_is_grounded(tmp_path, monkeypatch):
     db = _places(tmp_path, [("https://example.org/a", TITLE, 1_000_000)])
     monkeypatch.setattr(browser, "firefox_profiles", lambda: [tmp_path])
     monkeypatch.setattr(browser, "snapshot_history", lambda p: db)
-    monkeypatch.setattr(
-        browser, "url_to_doi", lambda url, allow_fetch=True: ("10.1/x", "a stub")
-    )
+    monkeypatch.setattr(browser, "url_to_doi", lambda url, allow_fetch=True: ("10.1/x", "a stub"))
 
-    out = browser.resolve_from_capture(
-        {"title": TITLE, "process": "firefox"}, allow_fetch=False
-    )
+    out = browser.resolve_from_capture({"title": TITLE, "process": "firefox"}, allow_fetch=False)
 
     assert out["grounded"] is True, out
 
@@ -150,9 +142,7 @@ def test_a_nearest_visit_match_is_always_ambiguous(tmp_path):
 
     assert hit is not None, "premise: a visit falls inside the window"
     assert hit["match"] == "nearest-visit"
-    assert hit["ambiguous"] is True, (
-        f"a time-window guess was reported unambiguous: {hit}"
-    )
+    assert hit["ambiguous"] is True, f"a time-window guess was reported unambiguous: {hit}"
 
 
 def test_the_newest_firefox_profile_is_searched_first(tmp_path, monkeypatch):

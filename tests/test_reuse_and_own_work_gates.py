@@ -244,9 +244,7 @@ def test_a_generated_figure_is_not_captioned_by_default_in_a_pdf(tmp_path):
 def test_a_sourced_figure_is_still_captioned_in_a_pdf(tmp_path):
     """Positive control. "Caption nothing" passes the test above and makes
     the entire feature a no-op."""
-    pdf = _staged_pdf(
-        tmp_path, _rec(source_kind="pdf-crop"), name="theirs.pdf", seed=43
-    )
+    pdf = _staged_pdf(tmp_path, _rec(source_kind="pdf-crop"), name="theirs.pdf", seed=43)
     out = tmp_path / "theirs.cited.pdf"
 
     pdf_apply(pdf, out, captions=True, credits=True)
@@ -255,9 +253,7 @@ def test_a_sourced_figure_is_still_captioned_in_a_pdf(tmp_path):
     figure_page = doc[0].get_text()
     doc.close()
 
-    assert "Shiragaki" in figure_page, (
-        f"a sourced figure lost its caption: {figure_page!r}"
-    )
+    assert "Shiragaki" in figure_page, f"a sourced figure lost its caption: {figure_page!r}"
 
 
 # --- own_work, from the side of the comparison nothing stood on -------------
@@ -317,9 +313,7 @@ def test_a_captured_figure_is_still_captioned_in_a_pdf(tmp_path):
     """One representative rather than all three: the PDF and pptx writers are
     slow, and `clipboard` is both the primary path and the lexicographic floor
     of the widened range, so it is the strongest single case."""
-    pdf = _staged_pdf(
-        tmp_path, _rec(source_kind="clipboard"), name="captured.pdf", seed=44
-    )
+    pdf = _staged_pdf(tmp_path, _rec(source_kind="clipboard"), name="captured.pdf", seed=44)
     out = tmp_path / "captured.cited.pdf"
 
     pdf_apply(pdf, out, captions=True, credits=True)
@@ -328,8 +322,7 @@ def test_a_captured_figure_is_still_captioned_in_a_pdf(tmp_path):
     figure_page = doc[0].get_text()
     doc.close()
     assert "Shiragaki" in figure_page, (
-        f"a captured figure was treated as own work and lost its caption: "
-        f"{figure_page!r}"
+        f"a captured figure was treated as own work and lost its caption: {figure_page!r}"
     )
 
 
@@ -345,23 +338,18 @@ def _first_slide_text(path):
     """
     prs = Presentation(str(path))
     slide = prs.slides[0]
-    return "\n".join(
-        sh.text_frame.text for sh in slide.shapes if sh.has_text_frame
-    )
+    return "\n".join(sh.text_frame.text for sh in slide.shapes if sh.has_text_frame)
 
 
 def test_a_captured_figure_is_still_captioned_in_a_pptx(tmp_path):
-    deck = _staged_pptx(
-        tmp_path, _rec(source_kind="clipboard"), name="captured.pptx", seed=52
-    )
+    deck = _staged_pptx(tmp_path, _rec(source_kind="clipboard"), name="captured.pptx", seed=52)
     out = tmp_path / "captured.cited.pptx"
 
     pptx_apply(deck, out, captions=True, credits=True)
 
     figure_slide = _first_slide_text(out)
     assert "Shiragaki" in figure_slide, (
-        f"a captured figure was treated as own work and lost its caption: "
-        f"{figure_slide!r}"
+        f"a captured figure was treated as own work and lost its caption: {figure_slide!r}"
     )
 
 
@@ -372,16 +360,13 @@ def test_the_pptx_probe_reads_the_figure_slide_not_the_credits(tmp_path):
     suppressed caption, because the credits page names the work anyway. This
     pins that the figure slide and the credits page are different text.
     """
-    deck = _staged_pptx(
-        tmp_path, _rec(source_kind="generated"), name="own.pptx", seed=53
-    )
+    deck = _staged_pptx(tmp_path, _rec(source_kind="generated"), name="own.pptx", seed=53)
     out = tmp_path / "own.cited.pptx"
 
     pptx_apply(deck, out, captions=True, credits=True)
 
     assert "Shiragaki" not in _first_slide_text(out), (
-        "own work was captioned on the figure slide, or the probe is reading "
-        "the whole deck"
+        "own work was captioned on the figure slide, or the probe is reading the whole deck"
     )
     assert "Shiragaki" in _pptx_text(out), (
         "the credits page stopped naming the work, so the contrast this "
@@ -416,9 +401,7 @@ def test_no_source_kind_sorts_below_clipboard():
             if not isinstance(node, ast.Call):
                 continue
             for kw in node.keywords:
-                if kw.arg in ("source_kind", "kind") and isinstance(
-                    kw.value, ast.Constant
-                ):
+                if kw.arg in ("source_kind", "kind") and isinstance(kw.value, ast.Constant):
                     if isinstance(kw.value.value, str):
                         literals[kw.value.value] = f"{path.name}:{node.lineno}"
 
@@ -477,9 +460,7 @@ def test_ask_publisher_is_written_into_the_bib():
 
 
 def test_ask_publisher_is_printed_on_the_credits_page(tmp_path):
-    deck = _staged_pptx(
-        tmp_path, _rec(reuse=ASK_PUBLISHER), name="askpub.pptx", seed=61
-    )
+    deck = _staged_pptx(tmp_path, _rec(reuse=ASK_PUBLISHER), name="askpub.pptx", seed=61)
     out = tmp_path / "askpub.cited.pptx"
 
     pptx_apply(deck, out, captions=True, credits=True)

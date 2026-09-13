@@ -140,16 +140,7 @@ def _session(tmp_path, urls):
     import json
 
     payload = json.dumps(
-        {
-            "windows": [
-                {
-                    "tabs": [
-                        {"index": 1, "entries": [{"url": u, "title": "t"}]}
-                        for u in urls
-                    ]
-                }
-            ]
-        }
+        {"windows": [{"tabs": [{"index": 1, "entries": [{"url": u, "title": "t"}]} for u in urls]}]}
     ).encode()
     lit = bytearray()
     n = len(payload)

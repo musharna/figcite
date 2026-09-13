@@ -166,9 +166,7 @@ def test_install_does_not_start_a_second_supervisor(monkeypatch, tmp_path):
     monkeypatch.setattr(autostart, "_win_figcite_dir", lambda: str(tmp_path))
     monkeypatch.setattr(autostart, "_startup_dir_win", lambda: str(tmp_path))
     # win_to_wsl must yield a FILE path -- `install` writes the launcher to it.
-    monkeypatch.setattr(
-        autostart, "win_to_wsl", lambda p: str(tmp_path / "figcite.vbs")
-    )
+    monkeypatch.setattr(autostart, "win_to_wsl", lambda p: str(tmp_path / "figcite.vbs"))
     monkeypatch.setattr(autostart, "_log_path", lambda: tmp_path / "watch.log")
     monkeypatch.setattr(autostart, "supervisor_processes", lambda: [{"pid": "1"}])
     # the launcher is a real-machine artifact (~/.local/bin/figcite); fake it like
@@ -195,9 +193,7 @@ def test_install_starts_one_when_none_is_running(monkeypatch, tmp_path):
     monkeypatch.setattr(autostart, "_ps", fake_ps)
     monkeypatch.setattr(autostart, "_win_figcite_dir", lambda: str(tmp_path))
     monkeypatch.setattr(autostart, "_startup_dir_win", lambda: str(tmp_path))
-    monkeypatch.setattr(
-        autostart, "win_to_wsl", lambda p: str(tmp_path / "figcite.vbs")
-    )
+    monkeypatch.setattr(autostart, "win_to_wsl", lambda p: str(tmp_path / "figcite.vbs"))
     monkeypatch.setattr(autostart, "_log_path", lambda: tmp_path / "watch.log")
     monkeypatch.setattr(autostart, "supervisor_processes", lambda: [])
     monkeypatch.setattr(autostart, "_launcher", lambda: str(tmp_path / "figcite"))
@@ -208,9 +204,7 @@ def test_install_starts_one_when_none_is_running(monkeypatch, tmp_path):
     assert res["started"] is True, res
 
 
-def test_start_refuses_when_a_watcher_is_running_even_with_no_supervisor(
-    monkeypatch, tmp_path
-):
+def test_start_refuses_when_a_watcher_is_running_even_with_no_supervisor(monkeypatch, tmp_path):
     """`if supervisor_processes() or watcher_processes()` survived `Or -> And`.
 
     A watcher can OUTLIVE the supervisor that spawned it -- the comment above
@@ -288,9 +282,7 @@ def test_the_session_count_counts_session_banners(monkeypatch, tmp_path):
     # patch has to land on the clipboard module, not on autostart.
     from figcite import clipboard
 
-    monkeypatch.setattr(
-        clipboard, "staging_dirs", lambda: ("C:\\st", tmp_path / "staging")
-    )
+    monkeypatch.setattr(clipboard, "staging_dirs", lambda: ("C:\\st", tmp_path / "staging"))
 
     st = autostart.status()
 
@@ -311,9 +303,7 @@ def test_the_filed_count_counts_clipboard_captures_only(monkeypatch, tmp_path):
     can produce the same number by accident.
     """
     recs = {}
-    for i, kind in enumerate(
-        ["clipboard", "clipboard", "pdf-crop", "generated", "download"]
-    ):
+    for i, kind in enumerate(["clipboard", "clipboard", "pdf-crop", "generated", "download"]):
         r = Record(sha256=str(i) * 64, dhash="0" * 16, source_kind=kind, confirmed=True)
         recs[r.sha256] = r
     monkeypatch.setattr(store, "all_records", lambda: recs)
@@ -325,9 +315,7 @@ def test_the_filed_count_counts_clipboard_captures_only(monkeypatch, tmp_path):
     # patch has to land on the clipboard module, not on autostart.
     from figcite import clipboard
 
-    monkeypatch.setattr(
-        clipboard, "staging_dirs", lambda: ("C:\\st", tmp_path / "staging")
-    )
+    monkeypatch.setattr(clipboard, "staging_dirs", lambda: ("C:\\st", tmp_path / "staging"))
 
     st = autostart.status()
 
@@ -358,9 +346,7 @@ def test_status_reports_watching_when_a_watcher_process_exists(monkeypatch, tmp_
     monkeypatch.setattr(autostart, "supervisor_processes", lambda: [])
     from figcite import clipboard
 
-    monkeypatch.setattr(
-        clipboard, "staging_dirs", lambda: ("C:\\st", tmp_path / "staging")
-    )
+    monkeypatch.setattr(clipboard, "staging_dirs", lambda: ("C:\\st", tmp_path / "staging"))
 
     st = autostart.status()
 
@@ -375,9 +361,7 @@ def test_status_is_not_watching_with_no_processes(monkeypatch, tmp_path):
     monkeypatch.setattr(autostart, "supervisor_processes", lambda: [])
     from figcite import clipboard
 
-    monkeypatch.setattr(
-        clipboard, "staging_dirs", lambda: ("C:\\st", tmp_path / "staging")
-    )
+    monkeypatch.setattr(clipboard, "staging_dirs", lambda: ("C:\\st", tmp_path / "staging"))
 
     assert autostart.status()["watching"] is False
 

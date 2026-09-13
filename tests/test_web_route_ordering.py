@@ -199,8 +199,7 @@ def test_asterisk_form_does_not_reach_the_root_page():
     assert status == 404, f"GET * answered {status}: {body[:200]!r}"
     assert PAGE_MARKER not in body.lower(), "the HTML page was served to `GET *`"
     assert _error_of(body) == NOT_FOUND, (
-        f"`GET *` was answered by a handler rather than the route table: "
-        f"{body[:200]!r}"
+        f"`GET *` was answered by a handler rather than the route table: {body[:200]!r}"
     )
 
 

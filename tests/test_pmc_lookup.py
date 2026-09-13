@@ -62,9 +62,7 @@ def test_a_closed_access_hit_is_kept_but_flagged(monkeypatch):
 
 def test_dois_are_batched_not_queried_one_at_a_time(monkeypatch):
     calls = []
-    monkeypatch.setattr(
-        pmc, "_get", lambda url, **kw: calls.append(url) or _fake_response([])
-    )
+    monkeypatch.setattr(pmc, "_get", lambda url, **kw: calls.append(url) or _fake_response([]))
     pmc.lookup_dois([f"10.1/{i}" for i in range(20)], batch=8)
     assert len(calls) == 3, f"expected 3 batched calls, got {len(calls)}"
 
@@ -88,8 +86,7 @@ def test_a_result_with_no_pmcid_is_kept_not_crashed_on(monkeypatch):
         pmc,
         "_get",
         lambda url, **kw: _fake_response(
-            [{"doi": "10.1/paywalled", "title": "P", "pubYear": "2024",
-              "isOpenAccess": "N"}]
+            [{"doi": "10.1/paywalled", "title": "P", "pubYear": "2024", "isOpenAccess": "N"}]
         ),
     )
     out = pmc.lookup_dois(["10.1/paywalled"]).records
@@ -104,8 +101,15 @@ def test_a_result_with_a_pmcid_still_carries_it(monkeypatch):
         pmc,
         "_get",
         lambda url, **kw: _fake_response(
-            [{"doi": "10.1/oa", "pmcid": "PMC7", "title": "O", "pubYear": "2024",
-              "isOpenAccess": "Y"}]
+            [
+                {
+                    "doi": "10.1/oa",
+                    "pmcid": "PMC7",
+                    "title": "O",
+                    "pubYear": "2024",
+                    "isOpenAccess": "Y",
+                }
+            ]
         ),
     )
     assert pmc.lookup_dois(["10.1/oa"]).records[0].pmcid == "PMC7"
@@ -124,6 +128,7 @@ def test_a_record_with_no_open_access_field_is_not_open_access(monkeypatch):
     absent field raises TypeError in the middle of a lookup, turning a record
     figcite should simply mark closed-access into a crashed batch.
     """
+
     def fake_get(url, **kw):
         return _fake_response(
             [

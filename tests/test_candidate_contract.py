@@ -43,9 +43,7 @@ def test_template_keys_were_actually_derived_from_the_live_page():
     assert TEMPLATE_KEYS == {"container", "score", "source", "title", "year"}
 
 
-def test_every_candidate_pending_items_surfaces_carries_every_template_key(
-    tmp_path, monkeypatch
-):
+def test_every_candidate_pending_items_surfaces_carries_every_template_key(tmp_path, monkeypatch):
     """Stage one candidate from each real producer, run them both through
     `service.pending_items()` -- the seam -- and check every key the page
     template reads survives the trip. A third producer added later needs no

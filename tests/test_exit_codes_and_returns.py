@@ -87,9 +87,7 @@ def test_an_unexpected_error_exits_one_rather_than_a_traceback(monkeypatch, caps
     status code. Under the mutant it becomes 2, which claims the USER
     mis-invoked the command when in fact figcite broke.
     """
-    monkeypatch.setattr(
-        corpus, "status", lambda: (_ for _ in ()).throw(RuntimeError("boom"))
-    )
+    monkeypatch.setattr(corpus, "status", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
 
     rc = cli.main(["corpus", "status"])
 
@@ -204,9 +202,7 @@ def test_opencv_availability_is_reported_the_right_way_round(monkeypatch):
 
 
 @pytest.mark.parametrize("mod", ["deck", "pdfdeck"])
-def test_the_matched_by_labels_are_the_ones_both_front_ends_print(
-    mod, tmp_path, monkeypatch
-):
+def test_the_matched_by_labels_are_the_ones_both_front_ends_print(mod, tmp_path, monkeypatch):
     """`"embedded-metadata"`, `"manifest-sha256"` and `"no match"` survived in
     BOTH backends.
 

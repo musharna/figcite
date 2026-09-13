@@ -92,9 +92,7 @@ def test_a_pmc_url_alone_resolves(monkeypatch):
     got = B.doi_from_ncbi_id("https://pmc.ncbi.nlm.nih.gov/articles/PMC7140940/")
 
     assert got == "10.1104/pp.19.01474", got
-    assert "idconv" in seen["url"], (
-        f"a PMCID was not sent to the id converter: {seen['url']}"
-    )
+    assert "idconv" in seen["url"], f"a PMCID was not sent to the id converter: {seen['url']}"
 
 
 def test_a_pmid_url_alone_resolves(monkeypatch):
@@ -106,21 +104,13 @@ def test_a_pmid_url_alone_resolves(monkeypatch):
     """
     seen = _ncbi(
         monkeypatch,
-        {
-            "result": {
-                "16107481": {
-                    "articleids": [{"idtype": "doi", "value": "10.1242/dev.01955"}]
-                }
-            }
-        },
+        {"result": {"16107481": {"articleids": [{"idtype": "doi", "value": "10.1242/dev.01955"}]}}},
     )
 
     got = B.doi_from_ncbi_id("https://pubmed.ncbi.nlm.nih.gov/16107481/")
 
     assert got == "10.1242/dev.01955", got
-    assert "esummary" in seen["url"], (
-        f"a PMID was sent to the wrong endpoint: {seen['url']}"
-    )
+    assert "esummary" in seen["url"], f"a PMID was sent to the wrong endpoint: {seen['url']}"
 
 
 def test_a_url_with_neither_identifier_asks_ncbi_nothing(monkeypatch):
@@ -160,20 +150,14 @@ def test_the_doi_is_taken_from_the_articleid_of_type_doi(monkeypatch):
 
     got = B.doi_from_ncbi_id("https://pubmed.ncbi.nlm.nih.gov/16107481/")
 
-    assert got == "10.1242/dev.01955", (
-        f"the wrong identifier was returned as the DOI: {got!r}"
-    )
+    assert got == "10.1242/dev.01955", f"the wrong identifier was returned as the DOI: {got!r}"
 
 
 def test_a_record_with_no_doi_articleid_yields_nothing(monkeypatch):
     """Positive control: "return the first id you see" passes the test above."""
     _ncbi(
         monkeypatch,
-        {
-            "result": {
-                "16107481": {"articleids": [{"idtype": "pubmed", "value": "16107481"}]}
-            }
-        },
+        {"result": {"16107481": {"articleids": [{"idtype": "pubmed", "value": "16107481"}]}}},
     )
 
     assert B.doi_from_ncbi_id("https://pubmed.ncbi.nlm.nih.gov/16107481/") is None
@@ -185,14 +169,10 @@ def test_a_record_with_no_doi_articleid_yields_nothing(monkeypatch):
 @pytest.fixture
 def _no_network(monkeypatch):
     """Nothing in these tests may reach out; each supplies its own answers."""
-    monkeypatch.setattr(
-        B.requests, "get", lambda *a, **kw: pytest.fail("unexpected network call")
-    )
+    monkeypatch.setattr(B.requests, "get", lambda *a, **kw: pytest.fail("unexpected network call"))
 
 
-def test_a_doi_read_out_of_the_url_is_returned_once_crossref_confirms_it(
-    monkeypatch, _no_network
-):
+def test_a_doi_read_out_of_the_url_is_returned_once_crossref_confirms_it(monkeypatch, _no_network):
     """`if fetch_work(cand) is not None` survived `IsNot -> Is` at four sites.
 
     Inverted, the rule becomes "use the DOI only if CrossRef does NOT have
@@ -229,25 +209,19 @@ def test_an_identifier_resolved_doi_is_also_verified(monkeypatch, _no_network):
     monkeypatch.setattr(B, "doi_from_alternative_id", lambda url: None)
     monkeypatch.setattr(B, "fetch_work", lambda doi: {"DOI": doi})
 
-    doi, evidence = B.url_to_doi(
-        "https://pubmed.ncbi.nlm.nih.gov/16107481/", allow_fetch=False
-    )
+    doi, evidence = B.url_to_doi("https://pubmed.ncbi.nlm.nih.gov/16107481/", allow_fetch=False)
 
     assert doi == "10.1242/dev.01955", (doi, evidence)
     assert "verified in CrossRef" in evidence, evidence
 
 
-def test_an_identifier_resolved_doi_crossref_rejects_is_dropped(
-    monkeypatch, _no_network
-):
+def test_an_identifier_resolved_doi_crossref_rejects_is_dropped(monkeypatch, _no_network):
     """Positive control for that second site."""
     monkeypatch.setattr(B, "doi_from_ncbi_id", lambda url: "10.1242/dev.01955")
     monkeypatch.setattr(B, "doi_from_alternative_id", lambda url: None)
     monkeypatch.setattr(B, "fetch_work", lambda doi: None)
 
-    doi, _ = B.url_to_doi(
-        "https://pubmed.ncbi.nlm.nih.gov/16107481/", allow_fetch=False
-    )
+    doi, _ = B.url_to_doi("https://pubmed.ncbi.nlm.nih.gov/16107481/", allow_fetch=False)
 
     assert doi is None, doi
 
@@ -326,9 +300,7 @@ def test_a_title_match_is_not_second_guessed_by_the_clock(monkeypatch, tmp_path)
     )
 
     assert out["url"] == "https://example.org/right", out
-    assert not calls, (
-        "the nearest-visit fallback ran even though the title matched exactly"
-    )
+    assert not calls, "the nearest-visit fallback ran even though the title matched exactly"
     assert out["grounded"] is True, out
 
 

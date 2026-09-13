@@ -80,20 +80,11 @@ def firefox_profiles() -> list[Path]:
         return []
     from .clipboard import win_to_wsl
 
-    root = (
-        Path(win_to_wsl(up))
-        / "AppData"
-        / "Roaming"
-        / "Mozilla"
-        / "Firefox"
-        / "Profiles"
-    )
+    root = Path(win_to_wsl(up)) / "AppData" / "Roaming" / "Mozilla" / "Firefox" / "Profiles"
     if not root.exists():
         return []
     profs = [p for p in root.iterdir() if (p / "places.sqlite").exists()]
-    return sorted(
-        profs, key=lambda p: (p / "places.sqlite").stat().st_mtime, reverse=True
-    )
+    return sorted(profs, key=lambda p: (p / "places.sqlite").stat().st_mtime, reverse=True)
 
 
 def snapshot_history(profile: Path) -> Optional[Path]:
@@ -157,9 +148,7 @@ def lookup_by_title(db: Path, page_title: str) -> Optional[dict[str, Any]]:
     }
 
 
-def lookup_by_time(
-    db: Path, when_epoch: float, window_s: int = 180
-) -> Optional[dict[str, Any]]:
+def lookup_by_time(db: Path, when_epoch: float, window_s: int = 180) -> Optional[dict[str, Any]]:
     """Nearest visit to the capture time. A GUESS about which tab was showing."""
     lo = int((when_epoch - window_s) * 1e6)
     hi = int((when_epoch + window_s) * 1e6)
@@ -220,9 +209,7 @@ def doi_from_publisher_pattern(url: str) -> Optional[str]:
 
 PII_IN_URL = re.compile(r"/(?:pii|fulltext)/(S[0-9A-Z()\-]{10,30})", re.I)
 NCBI_PMID = re.compile(r"pubmed\.ncbi\.nlm\.nih\.gov/(\d{4,10})")
-NCBI_PMC = re.compile(
-    r"(?:pmc\.ncbi\.nlm\.nih\.gov/articles|/pmc/articles)/(PMC\d+)", re.I
-)
+NCBI_PMC = re.compile(r"(?:pmc\.ncbi\.nlm\.nih\.gov/articles|/pmc/articles)/(PMC\d+)", re.I)
 
 
 def _normalize_pii(raw: str) -> str:
@@ -314,9 +301,7 @@ def doi_from_alternative_id(url: str, timeout: int = FETCH_TIMEOUT) -> Optional[
         items = r.json()["message"]["items"]
     except Exception as e:
         # A throttled or failed lookup is NOT the same as "this URL has no DOI".
-        raise LookupUnavailable(
-            f"CrossRef alternative-id lookup failed for {pii}: {e}"
-        ) from e
+        raise LookupUnavailable(f"CrossRef alternative-id lookup failed for {pii}: {e}") from e
     if len(items) != 1:
         return None
     return normalize_doi(items[0].get("DOI", ""))
@@ -390,13 +375,10 @@ def url_to_doi(url: str, *, allow_fetch: bool = True) -> tuple[Optional[str], st
                 pass
     if unavailable:
         return None, (
-            "LOOKUP FAILED (not an absence of provenance -- retry): "
-            + "; ".join(unavailable)
+            "LOOKUP FAILED (not an absence of provenance -- retry): " + "; ".join(unavailable)
         )
     if tried:
-        return None, "candidate DOIs found but none resolved in CrossRef: " + "; ".join(
-            tried
-        )
+        return None, "candidate DOIs found but none resolved in CrossRef: " + "; ".join(tried)
     return None, (
         "no DOI in the URL, no publisher pattern matched, no PubMed/PMC id, "
         "no citation_doi meta tag"
@@ -475,11 +457,7 @@ def resolve_from_capture(capture: dict, *, allow_fetch: bool = True) -> dict[str
 
     # Only an exact, unambiguous title match is evidence of WHICH page was shown.
     out["grounded"] = hit["match"] == "exact-title" and not hit["ambiguous"]
-    out["evidence"] = (
-        f"{hit['match']} in Firefox history -> {hit['url'][:80]} -> DOI from {why}"
-    )
+    out["evidence"] = f"{hit['match']} in Firefox history -> {hit['url'][:80]} -> DOI from {why}"
     if not out["grounded"]:
-        out["evidence"] += (
-            "  [which tab was showing is a guess -- confirm before citing]"
-        )
+        out["evidence"] += "  [which tab was showing is a guess -- confirm before citing]"
     return out

@@ -118,9 +118,7 @@ def by_dhash(query_bytes: bytes, rows) -> Verdict:
         )
     comparable = [r for r in rows if can_compare_dhash(r.dhash)]
     if not comparable:
-        return CouldNotDecide(
-            "no corpus figure has a comparable perceptual hash"
-        )
+        return CouldNotDecide("no corpus figure has a comparable perceptual hash")
     scored = sorted(((hamming(dh, r.dhash), r) for r in comparable), key=lambda t: t[0])
     best_d, best = scored[0]
     if best_d > DHASH_THRESHOLD:
