@@ -116,7 +116,7 @@ fc.savefig(fig, "out.png", cite="This work", dataset="rnaseq_v3")
 
 # ...or, once, at the top of the script:
 fc.install(dataset="rnaseq_v3")
-fig.savefig("panel_a.png")      # now filed, no call-site change
+fig.savefig("panel_a.png")  # now filed, no call-site change
 ```
 
 ### 4. A file you downloaded

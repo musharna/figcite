@@ -86,12 +86,8 @@ def apply_spy(monkeypatch):
 
 
 @pytest.mark.parametrize("deck", ["deck.pptx", "deck.pdf"])
-@pytest.mark.parametrize(
-    "flag,kwarg", [("--no-captions", "captions"), ("--no-credits", "credits")]
-)
-def test_a_no_flag_turns_its_feature_off_and_absence_turns_it_on(
-    apply_spy, deck, flag, kwarg
-):
+@pytest.mark.parametrize("flag,kwarg", [("--no-captions", "captions"), ("--no-credits", "credits")])
+def test_a_no_flag_turns_its_feature_off_and_absence_turns_it_on(apply_spy, deck, flag, kwarg):
     """Both polarities, because either alone is satisfied by a constant.
 
     Both formats, because the pdf and pptx branches of `cmd_apply` each spell

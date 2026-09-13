@@ -45,9 +45,7 @@ def record_for(
     note: str = "",
 ) -> Record:
     if doi:
-        rec = record_from_doi(
-            doi, confirmed=confirmed, source_kind=kind, source_detail=detail
-        )
+        rec = record_from_doi(doi, confirmed=confirmed, source_kind=kind, source_detail=detail)
     else:
         u, loc = now_stamps()
         rec = Record(

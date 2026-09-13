@@ -37,9 +37,7 @@ def _image(path, seed, size=(400, 300)):
         x0, y0 = rng.randrange(size[0] - 60), rng.randrange(size[1] - 60)
         w, h = rng.randrange(20, 80), rng.randrange(15, 60)
         col = (rng.randrange(256), rng.randrange(256), rng.randrange(256))
-        (d.rectangle if rng.random() < 0.5 else d.ellipse)(
-            [x0, y0, x0 + w, y0 + h], fill=col
-        )
+        (d.rectangle if rng.random() < 0.5 else d.ellipse)([x0, y0, x0 + w, y0 + h], fill=col)
     im.save(path)
     return path
 
@@ -301,9 +299,7 @@ def test_a_layout_actually_named_blank_beats_one_that_merely_has_no_placeholders
 
     got = deck._blank_layout(_Prs())
 
-    assert got.name == "Blank", (
-        f"the layout named Blank was passed over for {got.name!r}"
-    )
+    assert got.name == "Blank", f"the layout named Blank was passed over for {got.name!r}"
 
 
 def test_a_shape_whose_element_has_no_cNvPr_is_skipped_not_dereferenced():

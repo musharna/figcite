@@ -205,9 +205,7 @@ def _block_windows_interop(request):
 
     def _blocked_run(*args, **kwargs):
         argv = args[0] if args else kwargs.get("args")
-        parts = (
-            [argv] if isinstance(argv, (str, bytes, os.PathLike)) else list(argv or [])
-        )
+        parts = [argv] if isinstance(argv, (str, bytes, os.PathLike)) else list(argv or [])
         if any("powershell" in str(p).lower() for p in parts):
             raise _InteropBlocked(
                 f"a non-live test tried to launch PowerShell ({parts[:1]!r}). "

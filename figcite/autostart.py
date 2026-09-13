@@ -86,9 +86,7 @@ def _launcher() -> str:
     p = Path.home() / ".local" / "bin" / "figcite"
     if p.exists():
         return str(p)
-    raise RuntimeError(
-        f"figcite launcher not found at {p}; autostart needs a stable entry point"
-    )
+    raise RuntimeError(f"figcite launcher not found at {p}; autostart needs a stable entry point")
 
 
 def _ps(script: str, timeout: int = 120) -> subprocess.CompletedProcess:
@@ -311,9 +309,7 @@ def status() -> dict:
     if log.exists():
         lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
         tail = lines[-12:]
-        sessions = sum(
-            1 for line in lines if line.startswith("=== figcite watch session")
-        )
+        sessions = sum(1 for line in lines if line.startswith("=== figcite watch session"))
         mtime = log.stat().st_mtime
     try:
         _, staging = staging_dirs()

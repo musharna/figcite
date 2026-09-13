@@ -113,20 +113,14 @@ def test_a_staged_capture_is_not_also_counted_as_filed(both_kinds, capsys):
     counts the staged capture too."""
     assert cli.main(["pending"]) == 0
     out = capsys.readouterr().out
-    assert "1 filed capture(s)" in out, (
-        f"exactly one capture is filed; the count disagrees:\n{out}"
-    )
+    assert "1 filed capture(s)" in out, f"exactly one capture is filed; the count disagrees:\n{out}"
 
 
-def test_confirm_m0_reaches_the_filed_capture_and_0_reaches_the_staged_one(
-    both_kinds, monkeypatch
-):
+def test_confirm_m0_reaches_the_filed_capture_and_0_reaches_the_staged_one(both_kinds, monkeypatch):
     """The teeth. `m0` indexes the filed pool and `0` the staged pool; if
     either predicate widens, a human's DOI lands on the wrong image."""
     seen: list[str] = []
-    monkeypatch.setattr(
-        service, "confirm", lambda ref, **kw: (seen.append(ref), None)[1]
-    )
+    monkeypatch.setattr(service, "confirm", lambda ref, **kw: (seen.append(ref), None)[1])
 
     cli.main(["confirm", "m0", "--doi", "10.1/filed"])
     cli.main(["confirm", "0", "--doi", "10.1/staged"])
@@ -161,9 +155,7 @@ def test_confirm_m1_fails_when_only_one_capture_is_filed(both_kinds, monkeypatch
     writes the human's DOI into the wrong image.
     """
     seen: list[str] = []
-    monkeypatch.setattr(
-        service, "confirm", lambda ref, **kw: (seen.append(ref), None)[1]
-    )
+    monkeypatch.setattr(service, "confirm", lambda ref, **kw: (seen.append(ref), None)[1])
 
     rc = cli.main(["confirm", "m1", "--doi", "10.1/nope"])
 

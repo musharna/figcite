@@ -222,9 +222,7 @@ def _own_store(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "LIBRARY", tmp_path / "library")
 
 
-def test_only_a_grounded_capture_with_a_doi_gets_a_citation(
-    tmp_path, monkeypatch, _own_store
-):
+def test_only_a_grounded_capture_with_a_doi_gets_a_citation(tmp_path, monkeypatch, _own_store):
     """`if inf.get("grounded") and inf.get("doi")` survived `And -> Or`.
 
     Under `or` EITHER half is enough: a capture that is grounded but whose DOI
@@ -243,11 +241,7 @@ def test_only_a_grounded_capture_with_a_doi_gets_a_citation(
             doi=doi,
             citation="C",
             short_cite="S",
-            **{
-                k: v
-                for k, v in kw.items()
-                if k in ("confirmed", "source_kind", "source_detail")
-            },
+            **{k: v for k, v in kw.items() if k in ("confirmed", "source_kind", "source_detail")},
         ),
     )
 
@@ -258,9 +252,7 @@ def test_only_a_grounded_capture_with_a_doi_gets_a_citation(
     from figcite import store
 
     rec = list(store.all_records().values())[-1]
-    assert rec.confirmed is False, (
-        "an ungrounded capture was filed as a confirmed citation"
-    )
+    assert rec.confirmed is False, "an ungrounded capture was filed as a confirmed citation"
     assert dest is not None
 
 
@@ -306,14 +298,10 @@ def test_filing_in_place_keeps_the_file(tmp_path, monkeypatch, _own_store):
     dest = clipboard.auto_finalize(png, _pending(png, grounded=False, doi=""))
 
     assert dest == png
-    assert png.exists(), (
-        "the capture was deleted by the cleanup that runs after filing it in place"
-    )
+    assert png.exists(), "the capture was deleted by the cleanup that runs after filing it in place"
 
 
-def test_a_staged_copy_separate_from_its_destination_is_removed(
-    tmp_path, monkeypatch, _own_store
-):
+def test_a_staged_copy_separate_from_its_destination_is_removed(tmp_path, monkeypatch, _own_store):
     """Positive control: "never unlink" passes the test above and leaves every
     snip in staging forever, which is what the cleanup exists to prevent."""
     from figcite import store
@@ -331,9 +319,7 @@ def test_a_staged_copy_separate_from_its_destination_is_removed(
     assert not png.exists(), "the staged copy was left behind"
 
 
-def test_the_capture_sidecar_is_found_for_a_name_containing_a_dot(
-    tmp_path, monkeypatch
-):
+def test_the_capture_sidecar_is_found_for_a_name_containing_a_dot(tmp_path, monkeypatch):
     """`if not cap_file.exists()` survived dropping its `not`.
 
     There are two spellings of the sidecar name and this picks between them.
@@ -362,9 +348,7 @@ def test_the_capture_sidecar_is_found_for_a_name_containing_a_dot(
     )
 
 
-def test_the_watcher_reports_a_second_watcher_rather_than_racing_it(
-    tmp_path, monkeypatch, capsys
-):
+def test_the_watcher_reports_a_second_watcher_rather_than_racing_it(tmp_path, monkeypatch, capsys):
     """`if line.startswith("WATCH_ALREADY_RUNNING")` survived mutating the
     literal.
 

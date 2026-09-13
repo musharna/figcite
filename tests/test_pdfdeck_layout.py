@@ -37,9 +37,7 @@ def _figure(path, seed, size=(520, 360)):
         x0, y0 = rng.randrange(size[0] - 60), rng.randrange(size[1] - 60)
         w, h = rng.randrange(20, 90), rng.randrange(15, 70)
         col = (rng.randrange(256), rng.randrange(256), rng.randrange(256))
-        (d.rectangle if rng.random() < 0.5 else d.ellipse)(
-            [x0, y0, x0 + w, y0 + h], fill=col
-        )
+        (d.rectangle if rng.random() < 0.5 else d.ellipse)([x0, y0, x0 + w, y0 + h], fill=col)
     im.save(path)
     return path
 
@@ -142,9 +140,7 @@ def test_text_that_fits_exactly_is_accepted():
         )
 
         assert used == 40.0, used
-        assert calls == [10.0], (
-            f"an exact fit was rejected and the font stepped down: {calls}"
-        )
+        assert calls == [10.0], f"an exact fit was rejected and the font stepped down: {calls}"
     finally:
         doc.close()
 
@@ -161,9 +157,7 @@ def test_a_negative_return_steps_the_font_down_rather_than_vanishing():
             return 1.0 if len(calls) > 2 else -1.0
 
         page.insert_textbox = fake_insert
-        pdfdeck._fit_textbox(
-            page, fitz.Rect(40, 40, 300, 80), "text", 10.0, "helv", (0, 0, 0)
-        )
+        pdfdeck._fit_textbox(page, fitz.Rect(40, 40, 300, 80), "text", 10.0, "helv", (0, 0, 0))
 
         assert calls == [10.0, 9.5, 9.0], calls
     finally:
@@ -190,12 +184,8 @@ def test_a_word_that_exactly_fills_the_line_does_not_wrap():
     font = fitz.Font(fontname="helv")
     one_word = font.text_length("word ", fontsize=8.0)
 
-    assert lines("word", one_word) == 1, (
-        "a word occupying exactly the available width was wrapped"
-    )
-    assert lines("word", one_word - 0.01) == 2, (
-        "a word wider than the line did not wrap"
-    )
+    assert lines("word", one_word) == 1, "a word occupying exactly the available width was wrapped"
+    assert lines("word", one_word - 0.01) == 2, "a word wider than the line did not wrap"
 
 
 def test_the_first_credits_page_is_not_labelled_a_continuation(tmp_path):
@@ -232,9 +222,7 @@ def test_the_first_credits_page_is_not_labelled_a_continuation(tmp_path):
         text = "\n".join(p.get_text() for p in done)
 
     assert "Image credits" in text, text[:400]
-    assert "cont." not in text, (
-        f"a single credits page was labelled a continuation: {text[:400]!r}"
-    )
+    assert "cont." not in text, f"a single credits page was labelled a continuation: {text[:400]!r}"
 
 
 # ------------------------------------------------- the shared audit rules

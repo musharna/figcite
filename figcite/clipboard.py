@@ -72,9 +72,7 @@ def _win_userprofile() -> Optional[str]:
 
 def win_to_wsl(p: str) -> str:
     try:
-        r = subprocess.run(
-            ["wslpath", "-u", p], capture_output=True, text=True, timeout=15
-        )
+        r = subprocess.run(["wslpath", "-u", p], capture_output=True, text=True, timeout=15)
         if r.returncode == 0:
             return r.stdout.strip()
     except Exception:
@@ -84,9 +82,7 @@ def win_to_wsl(p: str) -> str:
 
 def wsl_to_win(p: str | os.PathLike) -> str:
     try:
-        r = subprocess.run(
-            ["wslpath", "-w", str(p)], capture_output=True, text=True, timeout=15
-        )
+        r = subprocess.run(["wslpath", "-w", str(p)], capture_output=True, text=True, timeout=15)
         if r.returncode == 0:
             return r.stdout.strip()
     except Exception:
@@ -415,9 +411,7 @@ def watch(
         f"watching clipboard -> {wsl_dir}  (deadline {max_hours}h; Ctrl-C to stop)",
         flush=True,
     )
-    proc = subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-    )
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     failed = False
     try:
         for line in proc.stdout:  # type: ignore[union-attr]
@@ -482,11 +476,7 @@ def enrich(png: str | os.PathLike) -> dict:
     cap_file = png.with_suffix("").with_suffix(".capture.json")
     if not cap_file.exists():
         cap_file = Path(str(png)[:-4] + ".capture.json")
-    cap = (
-        json.loads(cap_file.read_text(encoding="utf-8-sig"))
-        if cap_file.exists()
-        else {}
-    )
+    cap = json.loads(cap_file.read_text(encoding="utf-8-sig")) if cap_file.exists() else {}
     inf = infer_source(cap)
     pending = {"png": str(png), "capture": cap, "inference": inf}
     Path(str(png)[:-4] + ".pending.json").write_text(
@@ -518,9 +508,7 @@ def list_pending() -> list[dict]:
     known = {Path(d["png"]).name for d in out}
     for p in sorted(wsl_dir.glob("clip-*.png")):
         if p.name not in known:
-            out.append(
-                {"png": str(p), "capture": {}, "inference": {"kind": "unenriched"}}
-            )
+            out.append({"png": str(p), "capture": {}, "inference": {"kind": "unenriched"}})
     return out
 
 

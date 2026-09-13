@@ -21,9 +21,7 @@ def test_a_pixel_match_is_returned_as_a_candidate(tmp_path, monkeypatch):
     monkeypatch.setattr(
         match,
         "by_dhash",
-        lambda b, rows: match.Match(
-            "10.1/found", "PMC9", "Figure 3", "dhash", 0.0, 9.0
-        ),
+        lambda b, rows: match.Match("10.1/found", "PMC9", "Figure 3", "dhash", 0.0, 9.0),
     )
     monkeypatch.setattr(session_tabs, "tab_candidates", lambda path=None: [])
 
@@ -39,9 +37,7 @@ def test_open_tabs_are_offered_but_rank_below_a_pixel_match(tmp_path, monkeypatc
     monkeypatch.setattr(
         match,
         "by_dhash",
-        lambda b, rows: match.Match(
-            "10.1/pixel", "PMC9", "Figure 1", "dhash", 0.0, 9.0
-        ),
+        lambda b, rows: match.Match("10.1/pixel", "PMC9", "Figure 1", "dhash", 0.0, 9.0),
     )
     monkeypatch.setattr(
         session_tabs,
@@ -65,9 +61,7 @@ def test_open_tabs_are_offered_but_rank_below_a_pixel_match(tmp_path, monkeypatc
 
 def test_could_not_decide_is_not_reported_as_no_match(tmp_path, monkeypatch):
     _no_corpus(monkeypatch)
-    monkeypatch.setattr(
-        match, "by_dhash", lambda b, rows: match.CouldNotDecide("too smooth")
-    )
+    monkeypatch.setattr(match, "by_dhash", lambda b, rows: match.CouldNotDecide("too smooth"))
     monkeypatch.setattr(
         match,
         "by_orb",
@@ -87,12 +81,8 @@ def test_a_real_no_match_is_reported_as_such(tmp_path, monkeypatch):
     could-not-decide, which only ever meant "a crop is invisible to me".
     """
     _no_corpus(monkeypatch)
-    monkeypatch.setattr(
-        match, "by_dhash", lambda b, rows: match.CouldNotDecide("no dhash hit")
-    )
-    monkeypatch.setattr(
-        match, "by_orb", lambda b, rows, root, descriptor_dir=None: match.NoMatch()
-    )
+    monkeypatch.setattr(match, "by_dhash", lambda b, rows: match.CouldNotDecide("no dhash hit"))
+    monkeypatch.setattr(match, "by_orb", lambda b, rows, root, descriptor_dir=None: match.NoMatch())
     monkeypatch.setattr(session_tabs, "tab_candidates", lambda path=None: [])
 
     out = service.whereis(str(_png(tmp_path / "q.png")))
@@ -105,9 +95,7 @@ def test_a_broken_tab_scan_does_not_sink_a_good_pixel_match(tmp_path, monkeypatc
     monkeypatch.setattr(
         match,
         "by_dhash",
-        lambda b, rows: match.Match(
-            "10.1/pixel", "PMC9", "Figure 1", "dhash", 0.0, 9.0
-        ),
+        lambda b, rows: match.Match("10.1/pixel", "PMC9", "Figure 1", "dhash", 0.0, 9.0),
     )
 
     def boom(path=None):

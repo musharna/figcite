@@ -85,9 +85,7 @@ def test_an_ordinary_error_is_not_dressed_up_as_a_retry(monkeypatch, code):
     with pytest.raises(zotero.LookupUnavailable) as e:
         zotero._get("/items", key="k")
     msg = str(e.value)
-    assert "try again later" not in msg, (
-        f"a {code} was reported as a transient fault: {msg}"
-    )
+    assert "try again later" not in msg, f"a {code} was reported as a transient fault: {msg}"
     assert str(code) in msg and "/items" in msg, msg
 
 

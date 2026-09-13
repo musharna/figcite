@@ -43,9 +43,7 @@ def _fake_creds(monkeypatch, configured: bool):
         monkeypatch.setattr(zotero, "configured", lambda: False)
 
 
-def test_an_unconfigured_zotero_says_so_and_does_not_pretend_to_look(
-    monkeypatch, capsys
-):
+def test_an_unconfigured_zotero_says_so_and_does_not_pretend_to_look(monkeypatch, capsys):
     """THE finding. Inverted, a configured install reports NOT CONFIGURED and
     an unconfigured one falls through to `credentials()`, which raises."""
     _fake_creds(monkeypatch, configured=False)
@@ -55,14 +53,10 @@ def test_an_unconfigured_zotero_says_so_and_does_not_pretend_to_look(
 
     assert "NOT CONFIGURED" in out, out
     assert rc == 1, f"an unconfigured library should not report success: {rc}"
-    assert "unavailable" not in out, (
-        f"absent credentials were reported as an outage: {out!r}"
-    )
+    assert "unavailable" not in out, f"absent credentials were reported as an outage: {out!r}"
 
 
-def test_a_configured_but_unreachable_zotero_is_an_outage_not_an_absence(
-    monkeypatch, capsys
-):
+def test_a_configured_but_unreachable_zotero_is_an_outage_not_an_absence(monkeypatch, capsys):
     """The middle state, and the one the whole project exists to keep apart
     from the other two. Credentials are present; the library cannot be
     reached. That is NOT 'not configured' and NOT 'no items'."""
@@ -75,9 +69,7 @@ def test_a_configured_but_unreachable_zotero_is_an_outage_not_an_absence(
     out = capsys.readouterr().out
 
     assert "configured" in out, out
-    assert "NOT CONFIGURED" not in out, (
-        f"a configured library reported as unconfigured: {out!r}"
-    )
+    assert "NOT CONFIGURED" not in out, f"a configured library reported as unconfigured: {out!r}"
     assert "unavailable" in out, f"an outage was not named as one: {out!r}"
     assert rc == 1, rc
 

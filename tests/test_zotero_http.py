@@ -202,15 +202,11 @@ def test_an_outage_mid_sync_is_not_reported_as_a_missing_paper(wired, monkeypatc
 
     out = zotero.resolve("A Paper With A Sufficiently Long Title")
 
-    assert out["available"] is False, (
-        f"an outage was reported as an available library: {out}"
-    )
+    assert out["available"] is False, f"an outage was reported as an available library: {out}"
     assert out["grounded"] is False
     assert out["doi"] is None
     assert "NOT a miss" in out["evidence"], out["evidence"]
-    assert "429" in out["evidence"], (
-        f"the outage did not say what happened: {out['evidence']}"
-    )
+    assert "429" in out["evidence"], f"the outage did not say what happened: {out['evidence']}"
 
 
 def test_a_genuine_miss_still_reads_as_available(wired, monkeypatch):
@@ -221,9 +217,7 @@ def test_a_genuine_miss_still_reads_as_available(wired, monkeypatch):
     Same call, same library, reachable server, title genuinely absent."""
     _transport(
         monkeypatch,
-        FakeResponse(
-            200, [{"data": {"key": "AAA", "title": "Something Else Entirely"}}]
-        ),
+        FakeResponse(200, [{"data": {"key": "AAA", "title": "Something Else Entirely"}}]),
     )
 
     out = zotero.resolve("A Paper With A Sufficiently Long Title")
@@ -250,9 +244,7 @@ def test_paging_continues_until_a_short_page(wired, monkeypatch):
             {"data": {"key": "B", "title": "Second Paper", "DOI": "10.1/b"}},
         ],
     )
-    page2 = FakeResponse(
-        200, [{"data": {"key": "C", "title": "Third Paper", "DOI": "10.1/c"}}]
-    )
+    page2 = FakeResponse(200, [{"data": {"key": "C", "title": "Third Paper", "DOI": "10.1/c"}}])
     calls = _transport(monkeypatch, page1, page2)
 
     items = zotero.fetch_library()
@@ -408,8 +400,6 @@ def test_sync_reports_what_it_wrote(wired, monkeypatch):
     assert summary["items"] == 2
     assert summary["with_doi"] == 1, f"the DOI tally does not discriminate: {summary}"
     assert (
-        json.loads((wired / f"{TYP}-{LIB}.json").read_text(encoding="utf-8"))["items"][
-            0
-        ]["key"]
+        json.loads((wired / f"{TYP}-{LIB}.json").read_text(encoding="utf-8"))["items"][0]["key"]
         == "A"
     )

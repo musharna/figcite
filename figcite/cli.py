@@ -111,9 +111,7 @@ def cmd_grab(a) -> int:
         rect = (parts[0], parts[1], parts[2], parts[3])
     tmp = Path(a.out) if a.out else Path(store.DATA_DIR) / "tmp-crop.png"
     tmp.parent.mkdir(parents=True, exist_ok=True)
-    detail = crop(
-        pdf, a.page, tmp, rect=rect, frac=a.frac, dpi=a.dpi, image_index=a.image_index
-    )
+    detail = crop(pdf, a.page, tmp, rect=rect, frac=a.frac, dpi=a.dpi, image_index=a.image_index)
 
     doi, where = (a.doi, "given on the command line") if a.doi else discover_doi(pdf)
     if not doi:
@@ -304,8 +302,7 @@ def cmd_autostart_status(a) -> int:
     if st["log_mtime"]:
         age = (datetime.now().timestamp() - st["log_mtime"]) / 60.0
         print(
-            f"log        {st['log']}  (last write {age:.0f} min ago, "
-            f"{st['sessions']} session(s))"
+            f"log        {st['log']}  (last write {age:.0f} min ago, {st['sessions']} session(s))"
         )
     print(f"staged     {st['staged_pngs']} un-processed png(s)")
     print(f"filed      {st['clipboard_records']} clipboard capture(s) in the manifest")
@@ -320,9 +317,7 @@ def cmd_autostart_uninstall(a) -> int:
     from . import autostart
 
     res = autostart.uninstall()
-    print(
-        "launcher removed" if res["removed_launcher"] else "no launcher was installed"
-    )
+    print("launcher removed" if res["removed_launcher"] else "no launcher was installed")
     print("watcher stopped" if res["ok"] else f"warning: {res['stderr']}")
     print("captures and the manifest were left untouched")
     return 0 if res["ok"] else 1
@@ -370,8 +365,7 @@ def cmd_pending(a) -> int:
         for ci, c in enumerate(it.candidates):
             print(f"      cand {ci}: {c['doi']}  [{c.get('source', '')}]")
             print(
-                f"               {c['title'][:80]} "
-                f"({c.get('container', '')} {c.get('year', '')})"
+                f"               {c['title'][:80]} ({c.get('container', '')} {c.get('year', '')})"
             )
         if it.candidates:
             print(f"      resolve: figcite confirm {i} --pick N")
@@ -493,9 +487,7 @@ def cmd_confirm(a) -> int:
         # A `filed:` ref: the bytes were already in the library, so there is no
         # destination to name -- exactly what the pre-refactor `m` branch said.
         print(f"resolved {a.index}: {rec.display()}")
-        print(
-            "  (the image file itself is unchanged; the manifest now carries the citation)"
-        )
+        print("  (the image file itself is unchanged; the manifest now carries the citation)")
         return 0
 
     # Ruling 6. Restored verbatim from the pre-refactor `_finalize` printer
@@ -570,9 +562,7 @@ def cmd_search(a) -> int:
     for i, c in enumerate(search_bibliographic(a.query, rows=a.rows)):
         print(f"[{i}] score {c['score']:>6}  {c['doi']}")
         print(f"     {c['title'][:90]}")
-        print(
-            f"     {c.get('container', '')} {c.get('year', '')} [{c.get('type', '')}]"
-        )
+        print(f"     {c.get('container', '')} {c.get('year', '')} [{c.get('type', '')}]")
     print(
         "\nnote: CrossRef title search ranks reviews/commentaries above the paper "
         "itself surprisingly often -- read the type field before picking."
@@ -758,12 +748,7 @@ def cmd_audit(a) -> int:
                 print(f"  page {r['page']:>3}  NO SOURCE   [{r['matched_by']}]")
             else:
                 mark = "ok " if rec.confirmed else "UNC"
-                label = (
-                    rec.short_cite
-                    or rec.doi
-                    or rec.context_line()[:60]
-                    or "(context only)"
-                )
+                label = rec.short_cite or rec.doi or rec.context_line()[:60] or "(context only)"
                 print(f"  page {r['page']:>3}  {mark} {label}  [{r['matched_by']}]")
         return 0
     from .deck import audit
@@ -810,8 +795,7 @@ def cmd_apply(a) -> int:
         )
         print(f"wrote {rep['out']}")
         print(
-            f"  {rep['pictures']} image(s), {rep['cited']} credited, "
-            f"{rep['unsourced']} unsourced"
+            f"  {rep['pictures']} image(s), {rep['cited']} credited, {rep['unsourced']} unsourced"
         )
         if rep["manifest"]:
             print(f"  manifest: {rep['manifest']['csv']}")
@@ -835,9 +819,7 @@ def cmd_apply(a) -> int:
         min_inches=a.min_inches,
     )
     print(f"wrote {rep['out']}")
-    print(
-        f"  {rep['pictures']} picture(s), {rep['cited']} credited, {rep['unsourced']} unsourced"
-    )
+    print(f"  {rep['pictures']} picture(s), {rep['cited']} credited, {rep['unsourced']} unsourced")
     if rep["manifest"]:
         print(f"  manifest: {rep['manifest']['csv']}")
         print(f"            {rep['manifest']['json']}")
@@ -878,15 +860,9 @@ def build_parser() -> argparse.ArgumentParser:
     g = sub.add_parser("grab", help="crop a figure out of a PDF, DOI attached")
     g.add_argument("pdf")
     g.add_argument("--page", type=int, required=True, help="1-based")
-    g.add_argument(
-        "--rect", help="x0,y0,x1,y1 in PDF points (or fractions with --frac)"
-    )
-    g.add_argument(
-        "--frac", action="store_true", help="treat --rect as 0-1 fractions of the page"
-    )
-    g.add_argument(
-        "--image-index", type=int, help="crop embedded image N (see `figcite images`)"
-    )
+    g.add_argument("--rect", help="x0,y0,x1,y1 in PDF points (or fractions with --frac)")
+    g.add_argument("--frac", action="store_true", help="treat --rect as 0-1 fractions of the page")
+    g.add_argument("--image-index", type=int, help="crop embedded image N (see `figcite images`)")
     g.add_argument("--dpi", type=int, default=300)
     g.add_argument("--doi", help="override the DOI discovered in the PDF")
     g.add_argument("--adapted-from")
@@ -929,27 +905,19 @@ def build_parser() -> argparse.ArgumentParser:
     ui.add_argument("--open", action="store_true", help="open a browser window too")
     ui.set_defaults(func=cmd_ui)
 
-    pe = sub.add_parser(
-        "pending", help="list captured-but-unconfirmed clipboard images"
-    )
+    pe = sub.add_parser("pending", help="list captured-but-unconfirmed clipboard images")
     pe.set_defaults(func=cmd_pending)
 
-    au = sub.add_parser(
-        "autostart", help="keep the clipboard watcher running across logons"
-    )
+    au = sub.add_parser("autostart", help="keep the clipboard watcher running across logons")
     ausub = au.add_subparsers(dest="action", required=True)
-    ai = ausub.add_parser(
-        "install", help="install the startup launcher (no admin needed)"
-    )
+    ai = ausub.add_parser("install", help="install the startup launcher (no admin needed)")
     ai.add_argument(
         "--hours",
         type=float,
         default=24.0,
         help="watcher deadline; the launcher restarts it when this lapses",
     )
-    ai.add_argument(
-        "--no-start", action="store_true", help="install only; do not start it now"
-    )
+    ai.add_argument("--no-start", action="store_true", help="install only; do not start it now")
     ai.set_defaults(func=cmd_autostart_install)
     ast_ = ausub.add_parser("status", help="is the clipboard actually being watched?")
     ast_.set_defaults(func=cmd_autostart_status)
@@ -971,18 +939,14 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("-o", "--out")
     c.set_defaults(func=cmd_confirm)
 
-    dm = sub.add_parser(
-        "dismiss", help="resolve a capture as NOT attributable, with a reason"
-    )
+    dm = sub.add_parser("dismiss", help="resolve a capture as NOT attributable, with a reason")
     dm.add_argument("index")
     dm.add_argument(
         "--reason",
         default="",
         help="why this is not attributable (required unless --undo)",
     )
-    dm.add_argument(
-        "--undo", action="store_true", help="return a dismissed capture to the queue"
-    )
+    dm.add_argument("--undo", action="store_true", help="return a dismissed capture to the queue")
     dm.set_defaults(func=cmd_dismiss)
 
     rg = sub.add_parser(
@@ -1011,13 +975,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--rows", type=int, default=5)
     s.set_defaults(func=cmd_search)
 
-    z = sub.add_parser(
-        "zotero", help="resolve captures against your Zotero library first"
-    )
+    z = sub.add_parser("zotero", help="resolve captures against your Zotero library first")
     zsub = z.add_subparsers(dest="zotero_cmd", required=True)
-    zc = zsub.add_parser(
-        "configure", help="store credentials 0600 so the watcher can read them"
-    )
+    zc = zsub.add_parser("configure", help="store credentials 0600 so the watcher can read them")
     zc.add_argument("--api-key", required=True)
     zc.add_argument("--library-id", required=True)
     zc.add_argument("--type", default="user", choices=["user", "group"])
@@ -1025,9 +985,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     zs = zsub.add_parser("sync", help="refresh the local snapshot of the library")
     zs.set_defaults(func=cmd_zotero_sync)
-    zt = zsub.add_parser(
-        "status", help="is the library configured, and how much of it resolves?"
-    )
+    zt = zsub.add_parser("status", help="is the library configured, and how much of it resolves?")
     zt.set_defaults(func=cmd_zotero_status)
     zr = zsub.add_parser("resolve", help="look one title up in the library")
     zr.add_argument("title")
@@ -1061,9 +1019,7 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--min-inches", type=float, default=1.0)
     a.set_defaults(func=cmd_audit)
 
-    ap = sub.add_parser(
-        "apply", help="write alt-text, captions, credits slide, manifest"
-    )
+    ap = sub.add_parser("apply", help="write alt-text, captions, credits slide, manifest")
     ap.add_argument("pptx")
     ap.add_argument("-o", "--out")
     ap.add_argument("--no-captions", action="store_true")
@@ -1071,8 +1027,7 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument(
         "--caption-own-work",
         action="store_true",
-        help="also caption figures you generated (off: captions are for "
-        "other people's figures)",
+        help="also caption figures you generated (off: captions are for other people's figures)",
     )
     ap.add_argument("--manifest", help="path stem for the .csv/.json manifest")
     ap.add_argument("--no-manifest", action="store_true")

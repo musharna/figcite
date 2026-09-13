@@ -110,7 +110,5 @@ def test_an_unrecognised_licence_asks_rather_than_assumes():
 def test_case_is_not_load_bearing():
     """CrossRef returns whatever the publisher deposited; a capitalised URL
     must not read as an unknown licence."""
-    _lic, verdict = classify_reuse(
-        ["HTTPS://CREATIVECOMMONS.ORG/LICENSES/BY-NC-ND/4.0/"]
-    )
+    _lic, verdict = classify_reuse(["HTTPS://CREATIVECOMMONS.ORG/LICENSES/BY-NC-ND/4.0/"])
     assert verdict == "restricted-no-derivatives", verdict

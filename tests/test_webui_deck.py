@@ -30,9 +30,7 @@ def _reuse_badge_map_keys(page: str) -> set[str]:
     start = page.index("const REUSE = {")
     end = page.index("\n};", start)
     block = page[start:end]
-    pairs = re.findall(
-        r'(?:"([a-z0-9-]+)"|^\s*([a-zA-Z_]\w*))\s*:', block, re.MULTILINE
-    )
+    pairs = re.findall(r'(?:"([a-z0-9-]+)"|^\s*([a-zA-Z_]\w*))\s*:', block, re.MULTILINE)
     return {a or b for a, b in pairs}
 
 

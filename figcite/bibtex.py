@@ -115,9 +115,7 @@ def entry(rec: Record, key: str) -> str:
     return f"@article{{{key},\n{body}\n}}"
 
 
-def records_to_bibtex(
-    records: Iterable[Record], *, include_unconfirmed: bool = False
-) -> dict:
+def records_to_bibtex(records: Iterable[Record], *, include_unconfirmed: bool = False) -> dict:
     """Render records as BibTeX. Returns {bibtex, included, skipped_*}.
 
     Skips are counted and returned rather than dropped quietly -- a bibliography

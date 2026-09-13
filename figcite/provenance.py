@@ -35,9 +35,7 @@ EXIF_COPYRIGHT = 0x8298
 
 def now_stamps() -> tuple[str, str]:
     u = datetime.now(timezone.utc)
-    return u.isoformat(timespec="seconds"), u.astimezone(LOCAL_TZ).isoformat(
-        timespec="seconds"
-    )
+    return u.isoformat(timespec="seconds"), u.astimezone(LOCAL_TZ).isoformat(timespec="seconds")
 
 
 @dataclass
@@ -144,11 +142,7 @@ def dhash_bytes(b: bytes, size: int = 8) -> str:
 
     Pure-PIL so there is no imagehash dependency. Returns hex.
     """
-    im = (
-        Image.open(io.BytesIO(b))
-        .convert("L")
-        .resize((size + 1, size), Image.Resampling.LANCZOS)
-    )
+    im = Image.open(io.BytesIO(b)).convert("L").resize((size + 1, size), Image.Resampling.LANCZOS)
     px = im.tobytes()  # mode "L" => one byte per pixel, row-major
     bits = []
     for row in range(size):

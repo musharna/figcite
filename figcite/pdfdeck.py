@@ -167,9 +167,7 @@ def apply(
             if rec is None:
                 if not decorative:
                     missing.append(im["page"])
-                rows.append(
-                    {"page": im["page"], "matched_by": how, "n": None, "record": None}
-                )
+                rows.append({"page": im["page"], "matched_by": how, "n": None, "record": None})
                 continue
 
             # Dedupe by what the credit will SAY. Keying on the per-image hash
@@ -267,9 +265,7 @@ def _fit_textbox(
     """
     fs = fontsize
     while fs >= min_fontsize:
-        rc = page.insert_textbox(
-            rect, text, fontsize=fs, fontname=fontname, color=color
-        )
+        rc = page.insert_textbox(rect, text, fontsize=fs, fontname=fontname, color=color)
         if rc >= 0:
             return rect.height - rc
         fs -= 0.5
@@ -289,9 +285,7 @@ def _caption(page, rect, text: str) -> None:
         _fit_textbox(page, box, text, CAPTION_PT, "helv", GRAY)
     except ValueError:
         # Never let a caption failure be invisible; shorten rather than drop it.
-        _fit_textbox(
-            page, box, text[:60] + "...", CAPTION_PT, "helv", GRAY, min_fontsize=4.0
-        )
+        _fit_textbox(page, box, text[:60] + "...", CAPTION_PT, "helv", GRAY, min_fontsize=4.0)
 
 
 def _credits_pages(doc, entries: list[str], missing_note: str) -> int:

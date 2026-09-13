@@ -74,9 +74,7 @@ def test_exactly_one_input_authorises_com(ppt_module, monkeypatch):
     through, so the assertions are discriminating rather than uniformly
     paranoid.
     """
-    monkeypatch.setattr(
-        ppt_module, "_pwsh", lambda cmd, timeout=90: (True, "NOT-RUNNING\n")
-    )
+    monkeypatch.setattr(ppt_module, "_pwsh", lambda cmd, timeout=90: (True, "NOT-RUNNING\n"))
     assert ppt_module._powerpoint_already_running() is False
 
 
@@ -86,12 +84,8 @@ def test_installed_is_also_matched_exactly(ppt_module, monkeypatch):
     `"INSTALLED" in out` would accept "NOT-INSTALLED", which is the identical
     substring trap one word over.
     """
-    monkeypatch.setattr(
-        ppt_module, "_pwsh", lambda cmd, timeout=90: (True, "NOT-INSTALLED\n")
-    )
+    monkeypatch.setattr(ppt_module, "_pwsh", lambda cmd, timeout=90: (True, "NOT-INSTALLED\n"))
     assert ppt_module._powerpoint_available() is False
 
-    monkeypatch.setattr(
-        ppt_module, "_pwsh", lambda cmd, timeout=90: (True, "INSTALLED\n")
-    )
+    monkeypatch.setattr(ppt_module, "_pwsh", lambda cmd, timeout=90: (True, "INSTALLED\n"))
     assert ppt_module._powerpoint_available() is True

@@ -34,9 +34,7 @@ def test_a_manifest_line_without_the_field_is_not_confirmed():
     """THE reachable case. `from_dict` drops unknown keys and relies on the
     dataclass defaults for absent ones, so an older or partial manifest row
     lands here."""
-    rec = Record.from_dict(
-        {"sha256": "a" * 64, "doi": "10.1/x", "citation": "Someone et al. 2020"}
-    )
+    rec = Record.from_dict({"sha256": "a" * 64, "doi": "10.1/x", "citation": "Someone et al. 2020"})
 
     assert rec.confirmed is False, (
         "a manifest row with no `confirmed` field deserialised as confirmed, "
@@ -83,9 +81,7 @@ def test_an_unconfirmed_record_does_not_reach_a_slide(tmp_path, monkeypatch):
 
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    slide.shapes.add_picture(
-        str(tmp_path / "fig.png"), Inches(1), Inches(1), width=Inches(3)
-    )
+    slide.shapes.add_picture(str(tmp_path / "fig.png"), Inches(1), Inches(1), width=Inches(3))
     deck_path = tmp_path / "deck.pptx"
     prs.save(str(deck_path))
 

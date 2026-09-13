@@ -138,9 +138,7 @@ def test_both_real_outages_are_still_reported_as_outages(exc, expected, monkeypa
     [(b"\xff\xfe not utf-8 or json", "ValueError"), (None, "OSError")],
     ids=["unparseable-json", "unreadable-file"],
 )
-def test_one_bad_sidecar_does_not_derail_the_library_scan(
-    payload, arm, tmp_path, monkeypatch
-):
+def test_one_bad_sidecar_does_not_derail_the_library_scan(payload, arm, tmp_path, monkeypatch):
     """`except (OSError, ValueError): continue` -- BOTH arms survived deletion.
 
     `_library_path_for` globs every sidecar in the library looking for one
@@ -165,9 +163,7 @@ def test_one_bad_sidecar_does_not_derail_the_library_scan(
 
     found = service._library_path_for("abc123")
 
-    assert found == good_img, (
-        f"the {arm} arm let one bad sidecar hide the file sorted after it"
-    )
+    assert found == good_img, f"the {arm} arm let one bad sidecar hide the file sorted after it"
 
 
 def test_a_scan_that_finds_nothing_still_raises(tmp_path, monkeypatch):
@@ -306,9 +302,7 @@ def test_an_unlisted_fault_in_confirm_is_not_swallowed(monkeypatch, capsys):
     ],
     ids=["ValueError", "KeyError"],
 )
-def test_the_real_misuses_are_still_reported_as_misuse(
-    exc, fragment, monkeypatch, capsys
-):
+def test_the_real_misuses_are_still_reported_as_misuse(exc, fragment, monkeypatch, capsys):
     """Positive control for the pair above, and it is required.
 
     A `cmd_confirm` with no handlers at all satisfies the previous test
@@ -330,9 +324,7 @@ def test_the_real_misuses_are_still_reported_as_misuse(
 # ------------------------- the library fallback must not mask a real fault
 
 
-def test_a_broken_library_scan_does_not_silently_return_the_original(
-    tmp_path, monkeypatch
-):
+def test_a_broken_library_scan_does_not_silently_return_the_original(tmp_path, monkeypatch):
     """`except LibraryFileMissing` survived broadening to `except Exception`.
 
     The handler exists for records that never had a library file -- `figcite
@@ -366,9 +358,7 @@ def test_a_broken_library_scan_does_not_silently_return_the_original(
         service._resolve_ref_to_path(f"filed:{rec.sha256}")
 
 
-def test_a_record_that_never_had_a_library_file_still_gets_its_original(
-    tmp_path, monkeypatch
-):
+def test_a_record_that_never_had_a_library_file_still_gets_its_original(tmp_path, monkeypatch):
     """Positive control: the documented fallback must still work.
 
     This is the whole reason the handler exists -- a registered figure has no

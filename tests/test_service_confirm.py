@@ -60,9 +60,7 @@ def test_the_same_guess_is_accepted_when_named_explicitly(tmp_path, monkeypatch)
     assert rec.doi == "10.1/guess"
 
 
-def _fake_record_for(
-    doi, cite, url, *, confirmed, kind, detail, adapted_from=None, note=""
-):
+def _fake_record_for(doi, cite, url, *, confirmed, kind, detail, adapted_from=None, note=""):
     u, loc = now_stamps()
     return Record(
         doi=doi,
@@ -91,9 +89,7 @@ def test_zero_selectors_means_use_this_item_s_own_grounded_doi(tmp_path, monkeyp
     """Controller Ruling 1. Zero selectors is the `figcite confirm 0` case that
     cmd_pending itself prints as the instruction for a grounded capture. It is
     valid, and the grounded check -- not an arity check -- is what guards it."""
-    _stage(
-        tmp_path, monkeypatch, {"doi": "10.1/real", "grounded": True, "candidates": []}
-    )
+    _stage(tmp_path, monkeypatch, {"doi": "10.1/real", "grounded": True, "candidates": []})
     monkeypatch.setattr(service, "record_for", _fake_record_for)
     rec = service.confirm("staged:clip-1.png").record
     assert rec.doi == "10.1/real"

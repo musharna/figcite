@@ -97,15 +97,11 @@ def test_image_urls_are_constructed_and_keyed_by_filename(monkeypatch):
         "fpls-08-00491-g0002.jpg",
     }, "non-image objects (xml, pdf, spreadsheets) must not be collected"
     assert urls["fpls-08-00491-g0001.jpg"].startswith("https://")
-    assert urls["fpls-08-00491-g0001.jpg"].endswith(
-        "PMC5383700.1/fpls-08-00491-g0001.jpg"
-    )
+    assert urls["fpls-08-00491-g0001.jpg"].endswith("PMC5383700.1/fpls-08-00491-g0001.jpg")
 
 
 def test_an_article_not_in_the_open_access_bucket_returns_empty(monkeypatch):
     """Positive control: absence is data. A closed article must not raise."""
-    monkeypatch.setattr(
-        pmc, "_get", lambda url, **kw: b"<ListBucketResult></ListBucketResult>"
-    )
+    monkeypatch.setattr(pmc, "_get", lambda url, **kw: b"<ListBucketResult></ListBucketResult>")
     assert pmc.s3_prefix("PMC0") is None
     assert pmc.image_urls("PMC0") == {}

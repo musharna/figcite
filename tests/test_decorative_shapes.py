@@ -175,9 +175,7 @@ def _pdf_with(tmp_path, w_in, h_in, name="shape.pdf"):
 
 
 @pytest.mark.parametrize("label,w_in,h_in,expected", SHAPES)
-def test_pdf_decorative_needs_both_dimensions_small(
-    tmp_path, label, w_in, h_in, expected
-):
+def test_pdf_decorative_needs_both_dimensions_small(tmp_path, label, w_in, h_in, expected):
     from figcite import pdfdeck
 
     path = _pdf_with(tmp_path, w_in, h_in, name=f"pdf-{label}.pdf")
@@ -287,18 +285,13 @@ def test_the_pdf_json_manifest_keeps_every_column(tmp_path):
     path = _pdf_with(tmp_path, 3.0, 2.5, name="pdfmanifest.pdf")
     out = tmp_path / "pdfmanifest.cited.pdf"
 
-    pdfdeck.apply(
-        path, out, captions=True, credits=True, manifest_path=tmp_path / "pdfman"
-    )
+    pdfdeck.apply(path, out, captions=True, credits=True, manifest_path=tmp_path / "pdfman")
 
     rows = json.loads((tmp_path / "pdfman.json").read_text(encoding="utf-8"))
     assert rows, "the manifest is empty"
     for row in rows:
         missing = PDF_MANIFEST_KEYS - set(row)
-        assert not missing, (
-            f"the PDF JSON manifest row lost {sorted(missing)}. "
-            f"Row: {sorted(row)}"
-        )
+        assert not missing, f"the PDF JSON manifest row lost {sorted(missing)}. Row: {sorted(row)}"
 
 
 def test_the_deck_manifest_keys_straddle_the_filtered_one():

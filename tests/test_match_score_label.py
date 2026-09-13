@@ -38,9 +38,7 @@ def test_every_matcher_labels_its_own_score():
     calls = _match_constructions()
     # Without this the test passes vacuously on a file that builds no Match at
     # all -- e.g. after a rename this test did not follow.
-    assert len(calls) >= 2, (
-        f"expected both matchers to build a Match, found {len(calls)}"
-    )
+    assert len(calls) >= 2, f"expected both matchers to build a Match, found {len(calls)}"
 
     for call in calls:
         kwargs = {k.arg for k in call.keywords}

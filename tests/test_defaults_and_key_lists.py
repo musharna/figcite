@@ -63,8 +63,7 @@ def test_the_dhash_grid_is_eight_by_eight():
     b = io.BytesIO()
     flat.save(b, "PNG")
     assert len(provenance.dhash_bytes(b.getvalue())) == 16, (
-        "the hash width changed; every hash in every existing manifest becomes "
-        "uncomparable"
+        "the hash width changed; every hash in every existing manifest becomes uncomparable"
     )
 
 
@@ -291,9 +290,7 @@ def test_a_doi_is_looked_for_in_every_pdf_metadata_field(monkeypatch):
     assert got is None, (got, how)
 
 
-@pytest.mark.parametrize(
-    "mod,fn", [(clipboard, "auto_finalize"), (service, "_clear_staged")]
-)
+@pytest.mark.parametrize("mod,fn", [(clipboard, "auto_finalize"), (service, "_clear_staged")])
 def test_both_capture_sidecars_are_cleaned_up(mod, fn, tmp_path, monkeypatch):
     """`for suffix in (".pending.json", ".capture.json")` -- both entries
     survived, in BOTH of the two places this loop appears.
@@ -314,9 +311,7 @@ def test_both_capture_sidecars_are_cleaned_up(mod, fn, tmp_path, monkeypatch):
     else:
         monkeypatch.setattr(store, "MANIFEST", tmp_path / "m.jsonl")
         monkeypatch.setattr(store, "DATA_DIR", tmp_path)
-        monkeypatch.setattr(
-            store, "finalize_into_library", lambda src, rec: tmp_path / "filed.png"
-        )
+        monkeypatch.setattr(store, "finalize_into_library", lambda src, rec: tmp_path / "filed.png")
         Image.new("RGB", (8, 8), "white").save(tmp_path / "filed.png")
         clipboard.auto_finalize(
             png,
@@ -398,9 +393,7 @@ def test_the_context_line_names_the_process_the_title_and_the_time():
         ("when", "2026-08-23T10:00:00"),
     ):
         line = service._context_of({key: value})
-        assert value in line, (
-            f"the capture's {key!r} is missing from the context line: {line!r}"
-        )
+        assert value in line, f"the capture's {key!r} is missing from the context line: {line!r}"
 
 
 def test_a_hand_entered_doi_is_recorded_as_manual(monkeypatch):
@@ -427,6 +420,4 @@ def test_a_hand_entered_doi_is_recorded_as_manual(monkeypatch):
 
     rec = crossref.record_from_doi("10.1/x", confirmed=True)
 
-    assert rec.source_kind == "manual", (
-        f"a hand-entered DOI was filed as {rec.source_kind!r}"
-    )
+    assert rec.source_kind == "manual", f"a hand-entered DOI was filed as {rec.source_kind!r}"

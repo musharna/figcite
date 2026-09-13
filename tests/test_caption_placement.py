@@ -59,9 +59,7 @@ def _filed(tmp_path, name="fig.png"):
     """A figure whose provenance is already known, so a caption gets written."""
     raw = _figure(tmp_path / f"raw-{name}")
     img = tmp_path / name
-    rec = embed(
-        raw, img, Record(citation=CITE, short_cite=CITE, confirmed=True, doi="10.1/x")
-    )
+    rec = embed(raw, img, Record(citation=CITE, short_cite=CITE, confirmed=True, doi="10.1/x"))
     store.put(rec)
     return img
 
@@ -167,8 +165,7 @@ def test_a_caption_sits_on_a_picture_with_no_room_below(tmp_path):
     cap, pic, prs2 = _caption_and_picture(out)
     assert cap is not None, "no caption was written"
     assert cap.top + cap.height <= prs2.slide_height, (
-        f"the caption ran off the bottom of the slide: {cap.top + cap.height} "
-        f"> {prs2.slide_height}"
+        f"the caption ran off the bottom of the slide: {cap.top + cap.height} > {prs2.slide_height}"
     )
     assert cap.top < pic.top + pic.height, (
         "there was no room below, so the caption should sit on the image"
@@ -213,8 +210,7 @@ def test_a_pdf_caption_goes_below_an_image_that_has_room(tmp_path):
     y, page_bottom = _caption_y(out, "Shiragaki")
     assert y is not None, "no caption text was written into the PDF"
     assert y >= 60 + 140, (
-        f"the caption was placed at y={y}, which is not below an image ending "
-        f"at y={60 + 140}"
+        f"the caption was placed at y={y}, which is not below an image ending at y={60 + 140}"
     )
     assert y < page_bottom, (y, page_bottom)
 

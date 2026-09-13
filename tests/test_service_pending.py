@@ -14,9 +14,7 @@ def test_a_filed_unconfirmed_capture_becomes_a_pending_item():
             confirmed=False,
             captured_utc=u,
             captured_local=loc,
-            source_detail={
-                "clipboard_capture": {"process": "firefox", "title": "A paper"}
-            },
+            source_detail={"clipboard_capture": {"process": "firefox", "title": "A paper"}},
         )
     )
     items = service.pending_items()

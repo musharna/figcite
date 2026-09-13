@@ -70,14 +70,12 @@ def test_other_oserrors_are_not_disguised_as_a_busy_port(monkeypatch, capsys):
 @pytest.mark.parametrize(
     "code,name",
     [
-        (errno.EACCES, "EACCES"),          # 13, below EADDRINUSE
-        (errno.ETIMEDOUT, "ETIMEDOUT"),    # 110, above it
+        (errno.EACCES, "EACCES"),  # 13, below EADDRINUSE
+        (errno.ETIMEDOUT, "ETIMEDOUT"),  # 110, above it
         (errno.ECONNREFUSED, "ECONNREFUSED"),  # 111, above it
     ],
 )
-def test_no_oserror_on_either_side_is_disguised_as_a_busy_port(
-    monkeypatch, code, name
-):
+def test_no_oserror_on_either_side_is_disguised_as_a_busy_port(monkeypatch, code, name):
     """The test above is right and cannot see half the failure it guards.
 
     `if e.errno != errno.EADDRINUSE: raise` compares for INEQUALITY, and
@@ -90,6 +88,7 @@ def test_no_oserror_on_either_side_is_disguised_as_a_busy_port(
     and get reported as "port already in use" -- the code's own comment says
     that disguise is the fail-quiet this project refuses.
     """
+
     def boom(port):
         raise OSError(code, f"{name} for the test")
 

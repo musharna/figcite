@@ -28,7 +28,8 @@ class _Row:
 
 def test_a_row_carries_the_other_dois_that_hold_this_figure(monkeypatch):
     monkeypatch.setattr(
-        corpus, "duplicates_of_dhash",
+        corpus,
+        "duplicates_of_dhash",
         lambda dh, credited_doi: [_Row("10.1/elsewhere")],
     )
     assert service._duplicate_dois("a" * 16, "10.1/credited") == ["10.1/elsewhere"]
@@ -46,6 +47,7 @@ def test_a_corpus_failure_does_not_break_the_audit(monkeypatch):
     This is the one place a swallowed exception is right: the duplicate flag is
     an extra, and losing it costs a hint, whereas raising costs the report.
     """
+
     def boom(dh, credited_doi):
         raise RuntimeError("no corpus")
 
@@ -57,7 +59,8 @@ def test_a_row_with_no_dhash_is_not_looked_up_at_all(monkeypatch):
     """An untagged picture has no hash, and hashing "" would match everything."""
     called = []
     monkeypatch.setattr(
-        corpus, "duplicates_of_dhash",
+        corpus,
+        "duplicates_of_dhash",
         lambda dh, credited_doi: called.append(dh) or [_Row("10.1/wrong")],
     )
     assert service._duplicate_dois("", "10.1/credited") == []
@@ -99,10 +102,21 @@ def test_a_blank_query_is_not_matched_to_a_nearly_blank_figure(wired_corpus):
     one, so only the entry guard can refuse it.
     """
     conn = corpus.connect()
-    corpus.upsert(conn, corpus.FigureRow(
-        pmcid="PMC4", doi="10.1/nearly-blank", label="Figure 1", caption="",
-        licence="", source_url="", dhash="0000000000000007", width=96, height=96,
-        image_path="PMC4/f1.png"))
+    corpus.upsert(
+        conn,
+        corpus.FigureRow(
+            pmcid="PMC4",
+            doi="10.1/nearly-blank",
+            label="Figure 1",
+            caption="",
+            licence="",
+            source_url="",
+            dhash="0000000000000007",
+            width=96,
+            height=96,
+            image_path="PMC4/f1.png",
+        ),
+    )
     conn.close()
     assert corpus.duplicates_of_dhash(FLAT, "10.1/x") == []
 
@@ -125,7 +139,8 @@ def test_the_audit_row_gains_the_duplicate_dois(monkeypatch):
     rec = Record(sha256="b" * 64, dhash="a" * 16, doi="10.1/credited", confirmed=True)
     _stub_deck(monkeypatch, rec)
     monkeypatch.setattr(
-        corpus, "duplicates_of_dhash",
+        corpus,
+        "duplicates_of_dhash",
         lambda dh, credited_doi: [_Row("10.1/elsewhere")],
     )
     row = service.audit("/x/deck.pptx")["rows"][0]
@@ -148,13 +163,25 @@ def test_an_untagged_row_still_has_the_field(monkeypatch):
 
 def _stub_deck(monkeypatch, rec):
     monkeypatch.setattr(
-        service.deck, "audit",
+        service.deck,
+        "audit",
         lambda p, min_inches=1.0: {
-            "pptx": "/x/deck.pptx", "pictures": 1, "tagged": 1,
-            "unconfirmed": 0, "untagged_substantive": 0,
-            "rows": [{"slide": 1, "shape": "Picture 1", "size_in": [3.0, 3.0],
-                      "decorative": False, "matched_by": "manifest-sha256",
-                      "record": rec, "alt_text": ""}],
+            "pptx": "/x/deck.pptx",
+            "pictures": 1,
+            "tagged": 1,
+            "unconfirmed": 0,
+            "untagged_substantive": 0,
+            "rows": [
+                {
+                    "slide": 1,
+                    "shape": "Picture 1",
+                    "size_in": [3.0, 3.0],
+                    "decorative": False,
+                    "matched_by": "manifest-sha256",
+                    "record": rec,
+                    "alt_text": "",
+                }
+            ],
         },
     )
 
@@ -174,15 +201,27 @@ def wired_corpus(tmp_path, monkeypatch):
         ("PMC2", "10.1/elsewhere", dh),
         ("PMC3", "10.1/flat", FLAT),
     ):
-        corpus.upsert(conn, corpus.FigureRow(
-            pmcid=pmcid, doi=doi, label="Figure 1", caption="", licence="CC BY",
-            source_url="", dhash=h, width=96, height=96,
-            image_path=f"{pmcid}/f1.png"))
+        corpus.upsert(
+            conn,
+            corpus.FigureRow(
+                pmcid=pmcid,
+                doi=doi,
+                label="Figure 1",
+                caption="",
+                licence="CC BY",
+                source_url="",
+                dhash=h,
+                width=96,
+                height=96,
+                image_path=f"{pmcid}/f1.png",
+            ),
+        )
     conn.close()
     return dh
 
 
 # ------------------------------------------------------------- the template
+
 
 def _deck_row_source():
     import re

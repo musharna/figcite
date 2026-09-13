@@ -61,8 +61,16 @@ def _textured(size=(64, 64), seed=0):
 
 def _row(dhash, doi):
     return corpus.FigureRow(
-        pmcid="PMC1", doi=doi, label="Figure 1", caption="", licence="cc-by",
-        source_url="", dhash=dhash, width=64, height=64, image_path="f.png",
+        pmcid="PMC1",
+        doi=doi,
+        label="Figure 1",
+        caption="",
+        licence="cc-by",
+        source_url="",
+        dhash=dhash,
+        width=64,
+        height=64,
+        image_path="f.png",
     )
 
 
@@ -113,7 +121,9 @@ def test_find_similar_refuses_a_featureless_query(monkeypatch):
     real = _textured(seed=3)
     recs = {
         "sha_real": Record(sha256="sha_real", dhash=dhash_bytes(real), doi="10.1234/real"),
-        "sha_blank": Record(sha256="sha_blank", dhash=dhash_bytes(_flat((4, 4), 0)), doi="10.1234/blank"),
+        "sha_blank": Record(
+            sha256="sha_blank", dhash=dhash_bytes(_flat((4, 4), 0)), doi="10.1234/blank"
+        ),
     }
     monkeypatch.setattr(store, "all_records", lambda: recs)
 

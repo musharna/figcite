@@ -542,9 +542,7 @@ def _worktree(dest: Path, module: str | None, source: str | None) -> Path:
             continue
         target = dest / item
         if src.is_dir():
-            shutil.copytree(
-                src, target, ignore=shutil.ignore_patterns("__pycache__", "*.pyc")
-            )
+            shutil.copytree(src, target, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         else:
             shutil.copy2(src, target)
     # The registry does not kill mutants, and running itself would not
@@ -791,9 +789,7 @@ def _kill_control_job(root: Path) -> tuple[Run, Run]:
     killer and drive it directly.
     """
     src = (REPO / "figcite" / KILL_CONTROL.mutation.module).read_text(encoding="utf-8")
-    clean = _worktree(
-        root / "control-clean", KILL_CONTROL.mutation.module, _roundtrip(src)
-    )
+    clean = _worktree(root / "control-clean", KILL_CONTROL.mutation.module, _roundtrip(src))
     mutant = _worktree(
         root / "control-mutant",
         KILL_CONTROL.mutation.module,
@@ -814,20 +810,14 @@ def verdicts(tmp_path_factory) -> dict:
     root = tmp_path_factory.mktemp("equivalence-registry")
     out: dict = {}
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = {
-            ("roundtrip", m): pool.submit(_roundtrip_job, root, m) for m in MODULES
-        }
-        futures.update(
-            {("claim", c.claim_id): pool.submit(_claim_job, root, c) for c in CLAIMS}
-        )
+        futures = {("roundtrip", m): pool.submit(_roundtrip_job, root, m) for m in MODULES}
+        futures.update({("claim", c.claim_id): pool.submit(_claim_job, root, c) for c in CLAIMS})
         futures[("control", "kill")] = pool.submit(_kill_control_job, root)
         for key, fut in futures.items():
             try:
                 out[key] = fut.result()
             except Exception as exc:  # a broken harness is not a verdict
-                out[key] = Run(
-                    Outcome.HARNESS_ERROR, None, [], f"{type(exc).__name__}: {exc}"
-                )
+                out[key] = Run(Outcome.HARNESS_ERROR, None, [], f"{type(exc).__name__}: {exc}")
     return out
 
 

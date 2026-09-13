@@ -157,9 +157,7 @@ def test_a_killed_git_is_not_recorded_as_the_commit_that_made_a_figure(
     rc = cli.main(["register", str(img), "--this-work", "--cite", "My figure"])
     assert rc == 0, capsys.readouterr()
 
-    recs = [
-        r for r in store.all_records().values() if r.source_kind == "generated"
-    ]
+    recs = [r for r in store.all_records().values() if r.source_kind == "generated"]
     assert len(recs) == 1, recs
     commit = recs[0].source_detail.get("git_commit")
     assert commit is None, (
@@ -187,9 +185,7 @@ def test_a_real_git_head_is_still_recorded(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cli.subprocess, "run", fake_run)
 
     assert cli.main(["register", str(img), "--this-work", "--cite", "Mine"]) == 0
-    recs = [
-        r for r in store.all_records().values() if r.source_kind == "generated"
-    ]
+    recs = [r for r in store.all_records().values() if r.source_kind == "generated"]
     assert len(recs) == 1, recs
     assert recs[0].source_detail.get("git_commit") == "deadbeef1234"
 
@@ -212,9 +208,7 @@ def test_no_module_in_this_package_sorts_below_dunder_main():
     import figcite
 
     pkg = pathlib.Path(figcite.__file__).parent
-    names = sorted(
-        f"figcite.{p.stem}" for p in pkg.glob("*.py") if p.stem != "__init__"
-    )
+    names = sorted(f"figcite.{p.stem}" for p in pkg.glob("*.py") if p.stem != "__init__")
     assert names, "found no modules; this probe is broken"
 
     below = [n for n in names if n <= "__main__"]

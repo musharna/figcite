@@ -79,8 +79,7 @@ def test_the_pages_javascript_behaves(tmp_path):
     r = subprocess.run([NODE, str(bundle)], capture_output=True, text=True, timeout=120)
 
     assert r.returncode == 0, (
-        f"the page's own JavaScript failed its behaviour checks:\n"
-        f"{r.stdout}\n{r.stderr}"
+        f"the page's own JavaScript failed its behaviour checks:\n{r.stdout}\n{r.stderr}"
     )
 
 

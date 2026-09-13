@@ -26,9 +26,7 @@ def _textured(seed, size=(96, 96)):
     for _ in range(40):
         x, y = rnd.randrange(size[0] - 20), rnd.randrange(size[1] - 20)
         col = (rnd.randrange(256), rnd.randrange(256), rnd.randrange(256))
-        d.rectangle(
-            [x, y, x + rnd.randrange(4, 18), y + rnd.randrange(4, 18)], fill=col
-        )
+        d.rectangle([x, y, x + rnd.randrange(4, 18), y + rnd.randrange(4, 18)], fill=col)
     b = io.BytesIO()
     im.save(b, "PNG")
     return b.getvalue()
@@ -163,9 +161,7 @@ def test_the_service_distinguishes_a_genuine_absence(wired, tmp_path):
     """Positive control: a real 'nothing found' must not borrow the other reason."""
     from figcite import service
 
-    out = service.duplicates(
-        _write_tmp(tmp_path, _textured(999)), credited_doi="10.1/x"
-    )
+    out = service.duplicates(_write_tmp(tmp_path, _textured(999)), credited_doi="10.1/x")
     assert out["others"] == []
     assert "compare" not in out["reason"].lower()
 

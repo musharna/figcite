@@ -134,15 +134,27 @@ def test_corpus_status_reports_the_size(capsys, monkeypatch):
 
 def _tab(doi="10.1/tab"):
     return {
-        "source": "open-tab", "score": "", "doi": doi, "title": "A tab",
-        "container": "example.org", "year": "", "type": "", "evidence": False,
+        "source": "open-tab",
+        "score": "",
+        "doi": doi,
+        "title": "A tab",
+        "container": "example.org",
+        "year": "",
+        "type": "",
+        "evidence": False,
     }
 
 
 def _pixel(doi="10.1/pixel"):
     return {
-        "source": "orb", "score": 91.0, "score_label": "91 inliers", "doi": doi,
-        "title": "A figure", "container": "PMC1", "year": "", "type": "figure",
+        "source": "orb",
+        "score": 91.0,
+        "score_label": "91 inliers",
+        "doi": doi,
+        "title": "A figure",
+        "container": "PMC1",
+        "year": "",
+        "type": "figure",
         "evidence": True,
     }
 

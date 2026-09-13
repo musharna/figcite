@@ -114,8 +114,7 @@ def match_picture(
         fuzzy = Record.from_dict(asdict(rec))
         fuzzy.confirmed = False
         fuzzy.note = (
-            fuzzy.note + f" [matched perceptually, hamming={dist}; "
-            "the deck's copy was re-encoded]"
+            fuzzy.note + f" [matched perceptually, hamming={dist}; the deck's copy was re-encoded]"
         ).strip()
         return fuzzy, f"manifest-dhash(d={dist})"
     return None, "no match"
@@ -178,9 +177,7 @@ def _drop_existing_figcite_shapes(prs) -> int:
     # remove old credits slides
     id_list = prs.slides._sldIdLst
     for sld_id in list(id_list):
-        rid = sld_id.get(
-            "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
-        )
+        rid = sld_id.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
         slide = prs.slides.part.related_part(rid)
         names = [(sh.name or "") for sh in slide.slide.shapes]
         if any(nm.startswith(CREDITS_MARKER) for nm in names):
@@ -214,23 +211,18 @@ def _add_caption(slide, pic, text: str, index: int, prs) -> None:
 def _add_credits_slides(prs, entries: list[str], missing_note: str) -> int:
     lay = _blank_layout(prs)
     chunks = [
-        entries[i : i + CREDITS_PER_SLIDE]
-        for i in range(0, len(entries), CREDITS_PER_SLIDE)
+        entries[i : i + CREDITS_PER_SLIDE] for i in range(0, len(entries), CREDITS_PER_SLIDE)
     ] or [[]]
     made = 0
     for ci, chunk in enumerate(chunks):
         slide = prs.slides.add_slide(lay)
         made += 1
         m = Emu(int(0.6 * 914400))
-        title = slide.shapes.add_textbox(
-            m, m, prs.slide_width - 2 * m, Emu(int(0.7 * 914400))
-        )
+        title = slide.shapes.add_textbox(m, m, prs.slide_width - 2 * m, Emu(int(0.7 * 914400)))
         title.name = f"{CREDITS_MARKER}-{ci}"
         tp = title.text_frame.paragraphs[0]
         tr = tp.add_run()
-        tr.text = "Image credits" + (
-            f" ({ci + 1}/{len(chunks)})" if len(chunks) > 1 else ""
-        )
+        tr.text = "Image credits" + (f" ({ci + 1}/{len(chunks)})" if len(chunks) > 1 else "")
         tr.font.size = Pt(CREDITS_TITLE_PT)
         tr.font.bold = True
 
@@ -296,8 +288,7 @@ def apply(
                     missing.append(si)
                     set_alt_text(
                         pic,
-                        "Source not recorded (figcite found no provenance "
-                        "for this image).",
+                        "Source not recorded (figcite found no provenance for this image).",
                         "figcite: unsourced",
                     )
                 rows.append(
@@ -364,12 +355,7 @@ def apply(
             )
 
     entries = [
-        e
-        + (
-            f"  ({entry_counts.get(i + 1, 1)} figures)"
-            if entry_counts.get(i + 1, 1) > 1
-            else ""
-        )
+        e + (f"  ({entry_counts.get(i + 1, 1)} figures)" if entry_counts.get(i + 1, 1) > 1 else "")
         for i, e in enumerate(entries)
     ]
     missing_note = ""

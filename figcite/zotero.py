@@ -42,9 +42,7 @@ from .crossref import DOI_RE, LookupUnavailable, normalize_doi
 
 # doi.org links in the URL field are the dominant DOI carrier in a
 # webpage-heavy library; see _doi_of().
-DOI_URL_RE = re.compile(
-    r"(?:dx\.)?doi\.org/(" + DOI_RE.pattern.lstrip(r"\b") + ")", re.I
-)
+DOI_URL_RE = re.compile(r"(?:dx\.)?doi\.org/(" + DOI_RE.pattern.lstrip(r"\b") + ")", re.I)
 
 API = "https://api.zotero.org"
 API_VERSION = "3"
@@ -53,9 +51,7 @@ PAGE = 100
 
 # A local library snapshot. Kept beside the CrossRef cache so `FIGCITE_CACHE`
 # relocates both together.
-CACHE_DIR = Path(
-    os.environ.get("FIGCITE_ZOTERO_CACHE", _CROSSREF_CACHE.parent / "zotero")
-)
+CACHE_DIR = Path(os.environ.get("FIGCITE_ZOTERO_CACHE", _CROSSREF_CACHE.parent / "zotero"))
 # Refresh the snapshot when it is older than this. A reference library changes
 # slowly; a stale hit is still a real hit, and `figcite zotero sync` forces it.
 DEFAULT_TTL_HOURS = float(os.environ.get("FIGCITE_ZOTERO_TTL_HOURS", "168"))
@@ -83,18 +79,14 @@ class NotConfigured(RuntimeError):
 # world-readable copy of a live credential. This file is written 0600 instead,
 # and `credentials()` complains if the mode is ever loosened.
 CONFIG_FILE = Path(
-    os.environ.get(
-        "FIGCITE_ZOTERO_CONFIG", Path.home() / ".config" / "figcite" / "zotero.json"
-    )
+    os.environ.get("FIGCITE_ZOTERO_CONFIG", Path.home() / ".config" / "figcite" / "zotero.json")
 )
 
 
 def save_credentials(api_key: str, library_id: str, library_type: str = "user") -> Path:
     """Write credentials 0600 so background processes can read them."""
     if library_type not in ("user", "group"):
-        raise ValueError(
-            f"library type must be 'user' or 'group', got {library_type!r}"
-        )
+        raise ValueError(f"library type must be 'user' or 'group', got {library_type!r}")
     CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
     # Create with the right mode from the outset; writing then chmod-ing leaves
     # a window where the key is readable.
@@ -136,15 +128,9 @@ def credentials() -> tuple[str, str, str]:
     resolve without inheriting anyone's exports.
     """
     f_key, f_lib, f_typ = _from_file()
-    key = (
-        os.environ.get("FIGCITE_ZOTERO_API_KEY")
-        or os.environ.get("ZOTERO_API_KEY")
-        or f_key
-    )
+    key = os.environ.get("FIGCITE_ZOTERO_API_KEY") or os.environ.get("ZOTERO_API_KEY") or f_key
     lib = (
-        os.environ.get("FIGCITE_ZOTERO_LIBRARY_ID")
-        or os.environ.get("ZOTERO_LIBRARY_ID")
-        or f_lib
+        os.environ.get("FIGCITE_ZOTERO_LIBRARY_ID") or os.environ.get("ZOTERO_LIBRARY_ID") or f_lib
     )
     typ = (
         os.environ.get("FIGCITE_ZOTERO_LIBRARY_TYPE")
@@ -252,9 +238,7 @@ def resolve_page_title(title: str, max_age_hours: Optional[float] = None) -> dic
         if first is None:
             first = r
         if r.get("grounded"):
-            r["evidence"] = r["evidence"] + (
-                f" (matched on {cand!r})" if cand != title else ""
-            )
+            r["evidence"] = r["evidence"] + (f" (matched on {cand!r})" if cand != title else "")
             return r
         # An unreachable library will not become reachable on the next variant.
         if r.get("available") is False:
@@ -363,8 +347,7 @@ def fetch_library(progress: bool = False) -> list[dict[str, Any]]:
                     "date": d.get("date") or "",
                     "itemType": d.get("itemType") or "",
                     "creators": [
-                        c.get("lastName") or c.get("name") or ""
-                        for c in (d.get("creators") or [])
+                        c.get("lastName") or c.get("name") or "" for c in (d.get("creators") or [])
                     ],
                 }
             )
@@ -388,9 +371,7 @@ def sync(progress: bool = False) -> dict:
         "library": f"{typ}s/{lib}",
         "items": items,
     }
-    _cache_file(lib, typ).write_text(
-        json.dumps(payload, ensure_ascii=False), encoding="utf-8"
-    )
+    _cache_file(lib, typ).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     return {
         "items": len(items),
         "with_doi": sum(1 for i in items if i["doi"]),
@@ -515,8 +496,7 @@ def resolve_title(title: str, max_age_hours: Optional[float] = None) -> dict:
     if len(exact) == 1 and not exact[0]["doi"]:
         out.update(
             evidence=(
-                f"exact title match in Zotero ({exact[0]['key']}) but that item "
-                f"has no DOI recorded"
+                f"exact title match in Zotero ({exact[0]['key']}) but that item has no DOI recorded"
             ),
             candidates=[_candidate(exact[0], "exact-title")],
         )
@@ -550,9 +530,7 @@ def resolve_title(title: str, max_age_hours: Optional[float] = None) -> dict:
         )
         return out
 
-    out["evidence"] = (
-        f"no Zotero item titled like {title[:60]!r} ({len(items)} searched)"
-    )
+    out["evidence"] = f"no Zotero item titled like {title[:60]!r} ({len(items)} searched)"
     return out
 
 

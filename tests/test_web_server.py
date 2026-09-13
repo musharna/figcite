@@ -148,9 +148,7 @@ def test_confirm_out_field_cannot_write_outside_the_library(tmp_path, monkeypatc
         srv.shutdown()
 
 
-def test_confirm_rejects_an_unknown_field_instead_of_silently_dropping_it(
-    tmp_path, monkeypatch
-):
+def test_confirm_rejects_an_unknown_field_instead_of_silently_dropping_it(tmp_path, monkeypatch):
     """Round 2, M1. A silently-dropped unknown field means the allowlist can
     never report being too narrow: if the UI later sends a field this route
     doesn't recognise yet, the server would answer 200 and quietly ignore it.
@@ -347,13 +345,10 @@ def test_apply_refuses_to_overwrite_an_existing_out_without_force(tmp_path):
     port = srv.server_address[1]
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
-        status, body = _post(
-            port, "/api/apply", {"path": str(pptx_path), "out": str(victim)}
-        )
+        status, body = _post(port, "/api/apply", {"path": str(pptx_path), "out": str(victim)})
         assert status == 400, body
         assert victim.read_bytes() == b"keep me", (
-            "the victim file's bytes changed -- `out` clobbered an existing "
-            "file without `force`"
+            "the victim file's bytes changed -- `out` clobbered an existing file without `force`"
         )
     finally:
         srv.shutdown()
@@ -437,9 +432,7 @@ def test_apply_returns_a_json_safe_result_for_a_deck_with_a_matched_figure(
     port = srv.server_address[1]
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
-        status, body = _post(
-            port, "/api/apply", {"path": str(pptx_path), "out": str(out_path)}
-        )
+        status, body = _post(port, "/api/apply", {"path": str(pptx_path), "out": str(out_path)})
         assert status == 200, body
     finally:
         srv.shutdown()
@@ -464,9 +457,7 @@ def test_apply_refuses_an_out_suffix_that_does_not_match_the_input(tmp_path):
     port = srv.server_address[1]
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
-        status, body = _post(
-            port, "/api/apply", {"path": str(pptx_path), "out": str(bad_out)}
-        )
+        status, body = _post(port, "/api/apply", {"path": str(pptx_path), "out": str(bad_out)})
         assert status == 400, body
     finally:
         srv.shutdown()
@@ -489,10 +480,7 @@ def test_it_rejects_a_forged_host_header_on_get_and_post():
     try:
         get_resp = _raw_request(
             port,
-            b"GET /api/pending HTTP/1.1\r\n"
-            b"Host: evil.example\r\n"
-            b"Connection: close\r\n"
-            b"\r\n",
+            b"GET /api/pending HTTP/1.1\r\nHost: evil.example\r\nConnection: close\r\n\r\n",
         )
         assert b" 403 " in _status_of(get_resp), get_resp
 
@@ -867,10 +855,15 @@ def test_own_work_on_a_filed_capture_succeeds_over_a_real_socket(monkeypatch):
     sha = "9a" * 32
     store.put(
         Record(
-            sha256=sha, dhash="0" * 16, source_kind="clipboard", confirmed=False,
-            captured_utc=u, captured_local=loc,
-            source_detail={"clipboard_capture": {"process": "SnippingTool",
-                                                 "title": "Snipping Tool"}},
+            sha256=sha,
+            dhash="0" * 16,
+            source_kind="clipboard",
+            confirmed=False,
+            captured_utc=u,
+            captured_local=loc,
+            source_detail={
+                "clipboard_capture": {"process": "SnippingTool", "title": "Snipping Tool"}
+            },
         )
     )
     srv = web.make_server(0)
@@ -880,8 +873,7 @@ def test_own_work_on_a_filed_capture_succeeds_over_a_real_socket(monkeypatch):
         req = urllib.request.Request(
             f"http://127.0.0.1:{port}/api/confirm",
             data=json.dumps({"ref": f"filed:{sha}", "own_work": True}).encode(),
-            headers={"Content-Type": "application/json",
-                     "Origin": f"http://127.0.0.1:{port}"},
+            headers={"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{port}"},
         )
         with urllib.request.urlopen(req) as r:
             assert r.status == 200
@@ -893,8 +885,7 @@ def test_own_work_on_a_filed_capture_succeeds_over_a_real_socket(monkeypatch):
         bad = urllib.request.Request(
             f"http://127.0.0.1:{port}/api/confirm",
             data=json.dumps({"ref": f"filed:{sha}"}).encode(),
-            headers={"Content-Type": "application/json",
-                     "Origin": f"http://127.0.0.1:{port}"},
+            headers={"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{port}"},
         )
         with pytest.raises(urllib.error.HTTPError) as e:
             urllib.request.urlopen(bad)

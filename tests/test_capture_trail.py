@@ -3,6 +3,7 @@
 "At least some track" -- a screenshot with no resolvable DOI still knows which
 app was in front, what the window said, and when.
 """
+
 import json
 
 from PIL import Image
@@ -19,13 +20,25 @@ def _staged(tmp_path, capture):
 
 
 def test_ungrounded_capture_is_filed_with_its_context(tmp_path):
-    capture = {"title": "Some Random Page - Mozilla Firefox", "process": "firefox",
-               "captured_local": "2026-08-13T23:59:00-04:00", "width": 200, "height": 140}
+    capture = {
+        "title": "Some Random Page - Mozilla Firefox",
+        "process": "firefox",
+        "captured_local": "2026-08-13T23:59:00-04:00",
+        "width": 200,
+        "height": 140,
+    }
     png = _staged(tmp_path, capture)
-    pending = {"png": str(png), "capture": capture,
-               "inference": {"kind": "clipboard-from-web", "doi": None, "grounded": False,
-                             "url": "https://example.org/some-page",
-                             "doi_evidence": "no history entry matched"}}
+    pending = {
+        "png": str(png),
+        "capture": capture,
+        "inference": {
+            "kind": "clipboard-from-web",
+            "doi": None,
+            "grounded": False,
+            "url": "https://example.org/some-page",
+            "doi_evidence": "no history entry matched",
+        },
+    }
 
     dest = C.auto_finalize(png, pending)
     assert dest is not None and dest.exists(), "an ungrounded capture was not filed at all"
@@ -47,21 +60,35 @@ def test_grounded_capture_is_still_confirmed(monkeypatch, tmp_path):
     """Positive control: filing everything must not stop grounded ones confirming."""
     from figcite.provenance import Record
 
-    capture = {"title": "A Paper - Mozilla Firefox", "process": "firefox",
-               "captured_local": "2026-08-13T23:59:00-04:00"}
+    capture = {
+        "title": "A Paper - Mozilla Firefox",
+        "process": "firefox",
+        "captured_local": "2026-08-13T23:59:00-04:00",
+    }
     png = _staged(tmp_path, capture)
-    pending = {"png": str(png), "capture": capture,
-               "inference": {"kind": "clipboard-from-web", "doi": "10.1111/nph.71477",
-                             "grounded": True, "url": "https://doi.org/10.1111/nph.71477",
-                             "doi_evidence": "exact-title in Firefox history"}}
+    pending = {
+        "png": str(png),
+        "capture": capture,
+        "inference": {
+            "kind": "clipboard-from-web",
+            "doi": "10.1111/nph.71477",
+            "grounded": True,
+            "url": "https://doi.org/10.1111/nph.71477",
+            "doi_evidence": "exact-title in Firefox history",
+        },
+    }
 
     import figcite.crossref as X
 
-    def fake_record_from_doi(doi, *, confirmed=True, source_kind="manual",
-                             source_detail=None):
-        return Record(doi=doi, citation="Someone et al. (2026).",
-                      short_cite="Someone et al. 2026", confirmed=confirmed,
-                      source_kind=source_kind, source_detail=source_detail or {})
+    def fake_record_from_doi(doi, *, confirmed=True, source_kind="manual", source_detail=None):
+        return Record(
+            doi=doi,
+            citation="Someone et al. (2026).",
+            short_cite="Someone et al. 2026",
+            confirmed=confirmed,
+            source_kind=source_kind,
+            source_detail=source_detail or {},
+        )
 
     monkeypatch.setattr(X, "record_from_doi", fake_record_from_doi)
 
@@ -69,6 +96,8 @@ def test_grounded_capture_is_still_confirmed(monkeypatch, tmp_path):
     rec = store.get(__import__("figcite").provenance.sha256_file(dest))
     assert rec.confirmed is True
     assert rec.doi == "10.1111/nph.71477"
+
+
 # IRON_LAW_OK
 
 
@@ -118,8 +147,8 @@ def test_malformed_capture_announcement_is_ignored(monkeypatch, tmp_path, capsys
     lines = [
         "WATCH_START x",
         f"CAPTURED {real}Set-Content : Stream was not readable.",  # corrupted
-        f"CAPTURED {tmp_path / 'does-not-exist.png'}",             # announced, absent
-        f"CAPTURED {real}",                                        # the good one
+        f"CAPTURED {tmp_path / 'does-not-exist.png'}",  # announced, absent
+        f"CAPTURED {real}",  # the good one
     ]
 
     class FakeProc:
@@ -142,9 +171,7 @@ def test_malformed_capture_announcement_is_ignored(monkeypatch, tmp_path, capsys
 
     C.watch(max_hours=0.001, resolve=True, auto_confirm=True)
 
-    assert seen == [str(real)], (
-        f"expected only the one real capture to be processed, got {seen}"
-    )
+    assert seen == [str(real)], f"expected only the one real capture to be processed, got {seen}"
     assert "malformed capture announcement" in capsys.readouterr().out
 
 
@@ -193,9 +220,7 @@ def test_the_watcher_subscribes_and_then_sleeps_on_the_event():
     assert "AddClipboardFormatListener(sink.Handle)" in src, (
         "nothing subscribes to clipboard changes"
     )
-    assert "$listener.Changed.WaitOne(" in src, (
-        "the main loop does not wait on the change event"
-    )
+    assert "$listener.Changed.WaitOne(" in src, "the main loop does not wait on the change event"
 
 
 def test_an_unreadable_clipboard_is_not_reported_as_an_empty_one():

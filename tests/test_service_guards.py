@@ -97,8 +97,7 @@ def test_clearing_staging_never_deletes_the_file_it_just_filed(tmp_path):
     service._clear_staged(png, png)
 
     assert png.exists(), (
-        "the destination file was deleted by the staging cleanup that ran "
-        "after it was filed"
+        "the destination file was deleted by the staging cleanup that ran after it was filed"
     )
 
 
@@ -186,9 +185,7 @@ def _whereis_with_rows(monkeypatch, tmp_path, rows, verdict):
     return service.whereis(str(q))
 
 
-def test_the_caption_comes_from_the_row_matching_BOTH_container_and_label(
-    tmp_path, monkeypatch
-):
+def test_the_caption_comes_from_the_row_matching_BOTH_container_and_label(tmp_path, monkeypatch):
     """`r.pmcid == verdict.pmcid and r.label == verdict.label` survived four
     mutants: `And -> Or`, `Eq -> NotEq` on either side, and mutating the
     "pmcid" attribute name.

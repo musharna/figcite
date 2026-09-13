@@ -5,6 +5,7 @@ about which document the figure came from -- that is why this path is allowed
 to mark records confirmed. What it CANNOT know is whether the figure was itself
 reproduced from an earlier paper; use --adapted-from for that.
 """
+
 from __future__ import annotations
 
 import os
@@ -51,22 +52,30 @@ def list_images(pdf: str | os.PathLike, page: int) -> list[dict]:
         out = []
         for i, info in enumerate(doc[page - 1].get_image_info(xrefs=True)):
             b = info.get("bbox")
-            out.append({
-                "index": i,
-                "xref": info.get("xref"),
-                "bbox": [round(v, 1) for v in b] if b else None,
-                "width": info.get("width"),
-                "height": info.get("height"),
-            })
+            out.append(
+                {
+                    "index": i,
+                    "xref": info.get("xref"),
+                    "bbox": [round(v, 1) for v in b] if b else None,
+                    "width": info.get("width"),
+                    "height": info.get("height"),
+                }
+            )
         return out
     finally:
         doc.close()
 
 
-def crop(pdf: str | os.PathLike, page: int, out_path: str | os.PathLike, *,
-         rect: Optional[tuple[float, float, float, float]] = None,
-         frac: bool = False, dpi: int = 300,
-         image_index: Optional[int] = None) -> dict:
+def crop(
+    pdf: str | os.PathLike,
+    page: int,
+    out_path: str | os.PathLike,
+    *,
+    rect: Optional[tuple[float, float, float, float]] = None,
+    frac: bool = False,
+    dpi: int = 300,
+    image_index: Optional[int] = None,
+) -> dict:
     """Render a region of a page to PNG. rect is (x0,y0,x1,y1).
 
     frac=True treats rect as fractions of the page box, which is how a human
@@ -81,15 +90,20 @@ def crop(pdf: str | os.PathLike, page: int, out_path: str | os.PathLike, *,
         if image_index is not None:
             infos = pg.get_image_info(xrefs=True)
             if not (0 <= image_index < len(infos)):
-                raise ValueError(f"image index {image_index} out of range "
-                                 f"({len(infos)} images on page {page})")
+                raise ValueError(
+                    f"image index {image_index} out of range ({len(infos)} images on page {page})"
+                )
             clip = fitz.Rect(infos[image_index]["bbox"])
         elif rect is not None:
             if frac:
                 pr = pg.rect
                 x0, y0, x1, y1 = rect
-                clip = fitz.Rect(pr.x0 + x0 * pr.width, pr.y0 + y0 * pr.height,
-                                 pr.x0 + x1 * pr.width, pr.y0 + y1 * pr.height)
+                clip = fitz.Rect(
+                    pr.x0 + x0 * pr.width,
+                    pr.y0 + y0 * pr.height,
+                    pr.x0 + x1 * pr.width,
+                    pr.y0 + y1 * pr.height,
+                )
             else:
                 clip = fitz.Rect(*rect)
         pix = pg.get_pixmap(matrix=fitz.Matrix(dpi / 72, dpi / 72), clip=clip, alpha=False)

@@ -118,9 +118,7 @@ def test_end_to_end_grounding_from_a_real_visit():
 
     assert res["url"] == url, f"resolved the wrong page: {res['url']} != {url}"
     assert res["doi"], f"no DOI from {url}: {res['evidence']}"
-    assert res["grounded"] is True, (
-        f"exact title match should ground: {res['evidence']}"
-    )
+    assert res["grounded"] is True, f"exact title match should ground: {res['evidence']}"
     assert "CrossRef" in res["evidence"]
 
 
@@ -139,13 +137,9 @@ def test_unknown_title_is_not_grounded_and_says_why():
 @pytest.mark.live
 def test_citation_doi_meta_tag_path():
     """The third resolution path: the page declaring its own DOI."""
-    doi = doi_from_page_meta(
-        "https://academic.oup.com/plphys/article/194/1/258/7273633"
-    )
+    doi = doi_from_page_meta("https://academic.oup.com/plphys/article/194/1/258/7273633")
     if doi is None:
-        pytest.skip(
-            "publisher blocked the fetch (paywall/bot wall) -- path untestable here"
-        )
+        pytest.skip("publisher blocked the fetch (paywall/bot wall) -- path untestable here")
     assert doi.startswith("10."), doi
 
 
@@ -181,9 +175,7 @@ def test_lookup_failure_is_reported_not_swallowed(monkeypatch):
 
     doi, evidence = B.url_to_doi(url, allow_fetch=False)
     assert doi is None
-    assert "LOOKUP FAILED" in evidence, (
-        f"failure was disguised as absence: {evidence!r}"
-    )
+    assert "LOOKUP FAILED" in evidence, f"failure was disguised as absence: {evidence!r}"
     assert "retry" in evidence.lower()
 
     # positive control: with the lookup WORKING, the same url resolves --
@@ -228,10 +220,7 @@ def test_real_identifier_paths_resolve_and_discriminate():
         )
         == "10.1016/j.molp.2018.04.006"
     )
-    assert (
-        doi_from_ncbi_id("https://pubmed.ncbi.nlm.nih.gov/16107481/")
-        == "10.1242/dev.01955"
-    )
+    assert doi_from_ncbi_id("https://pubmed.ncbi.nlm.nih.gov/16107481/") == "10.1242/dev.01955"
     assert (
         doi_from_ncbi_id("https://pmc.ncbi.nlm.nih.gov/articles/PMC7140940/")
         == "10.1104/pp.19.01474"
@@ -261,12 +250,8 @@ def test_nearest_visit_match_is_never_grounded(monkeypatch):
     import figcite.browser as B
 
     real_url = "https://nph.onlinelibrary.wiley.com/doi/10.1111/nph.71477"
-    monkeypatch.setattr(
-        B, "firefox_profiles", lambda: [__import__("pathlib").Path("/tmp")]
-    )
-    monkeypatch.setattr(
-        B, "snapshot_history", lambda p: __import__("pathlib").Path("/tmp/x")
-    )
+    monkeypatch.setattr(B, "firefox_profiles", lambda: [__import__("pathlib").Path("/tmp")])
+    monkeypatch.setattr(B, "snapshot_history", lambda p: __import__("pathlib").Path("/tmp/x"))
     monkeypatch.setattr(B, "lookup_by_title", lambda db, t: None)
     monkeypatch.setattr(
         B,

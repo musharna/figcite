@@ -126,6 +126,4 @@ def test_whereis_describes_the_figure_it_matched(two_figures_one_paper):
     assert any("FIRST" in t for t in titles), (
         f"whereis matched Figure 1 and described a different figure: {titles}"
     )
-    assert not any("SECOND" in t for t in titles), (
-        f"the caption came off the wrong row: {titles}"
-    )
+    assert not any("SECOND" in t for t in titles), f"the caption came off the wrong row: {titles}"

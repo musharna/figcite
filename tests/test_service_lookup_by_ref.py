@@ -81,8 +81,7 @@ def test_the_fixture_gives_the_scan_something_to_stop_early_on(two_of_each):
     refs = [i.ref for i in service.pending_items()]
     assert len(refs) == 3, refs
     assert refs[0] != two_of_each["last_staged"], (
-        "the ref these tests look up is already first; the scan cannot be "
-        "observed to stop early"
+        "the ref these tests look up is already first; the scan cannot be observed to stop early"
     )
     assert two_of_each["filed"] < two_of_each["last_staged"], refs
 
@@ -108,9 +107,7 @@ def test_item_for_misses_a_ref_that_is_not_there(two_of_each, missing, where):
     """Both directions, because `==` narrowed to `<=` and to `>=` each fail on
     only one side. A ref below everything is caught by `>=`; a ref above
     everything is caught by `<=`."""
-    assert service._item_for(missing) is None, (
-        f"a ref {where} was matched to a real item"
-    )
+    assert service._item_for(missing) is None, f"a ref {where} was matched to a real item"
 
 
 def test_raw_staged_returns_the_capture_that_was_asked_for(two_of_each):

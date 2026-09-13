@@ -3,6 +3,7 @@ from figcite import cli
 
 def test_ui_verb_passes_the_port_through(monkeypatch):
     seen = {}
+
     def fake_serve(port=8765, open_browser=False):
         seen.update(port=port, open_browser=open_browser)
         # serve() returns an exit code now, and cmd_ui propagates it -- a

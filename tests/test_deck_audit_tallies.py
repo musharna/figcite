@@ -161,8 +161,7 @@ def test_an_unconfirmed_record_is_counted_as_unconfirmed(tmp_path):
 
     assert rep["tagged"] == 3, f"all three should match the manifest: {rep}"
     assert rep["unconfirmed"] == 2, (
-        f"expected the two un-confirmed ones; 1 would mean the filter is "
-        f"inverted: {rep}"
+        f"expected the two un-confirmed ones; 1 would mean the filter is inverted: {rep}"
     )
 
 

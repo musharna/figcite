@@ -20,9 +20,7 @@ import requests
 
 from .provenance import Record, now_stamps
 
-CACHE = Path(
-    os.environ.get("FIGCITE_CACHE", Path.home() / ".cache" / "figcite" / "crossref")
-)
+CACHE = Path(os.environ.get("FIGCITE_CACHE", Path.home() / ".cache" / "figcite" / "crossref"))
 MAILTO = os.environ.get("FIGCITE_MAILTO", "advertisingemailhaha@gmail.com")
 UA = f"figcite/0.1 (https://github.com/; mailto:{MAILTO})"
 TIMEOUT = 25

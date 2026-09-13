@@ -50,9 +50,7 @@ def test_an_ungrounded_zotero_hit_is_not_folded_in(monkeypatch):
 
     clipboard._zotero_try("Some Paper Title", out)
 
-    assert out.get("grounded") is not True, (
-        f"an ungrounded Zotero guess was marked grounded: {out}"
-    )
+    assert out.get("grounded") is not True, f"an ungrounded Zotero guess was marked grounded: {out}"
     assert out.get("doi") != "10.1/guess", (
         f"an ungrounded Zotero DOI was adopted as the capture's DOI: {out}"
     )

@@ -77,15 +77,12 @@ def test_the_out_file_you_asked_for_still_exists(tmp_path, pdf):
 
     assert rc == 0, "grab did not succeed, so the assertion below proves nothing"
     assert out.exists(), (
-        "figcite grab reported success and then deleted the --out file it was "
-        "asked to produce"
+        "figcite grab reported success and then deleted the --out file it was asked to produce"
     )
     assert out.stat().st_size > 0, f"the output file is empty: {out}"
 
 
-def test_the_scratch_crop_is_cleaned_up_when_no_out_is_given(
-    tmp_path, pdf, monkeypatch
-):
+def test_the_scratch_crop_is_cleaned_up_when_no_out_is_given(tmp_path, pdf, monkeypatch):
     """The other half, and the reason the guard exists at all.
 
     Without this, 'never unlink anything' would pass the test above while
@@ -95,9 +92,7 @@ def test_the_scratch_crop_is_cleaned_up_when_no_out_is_given(
     home.mkdir()
     monkeypatch.setattr(cli.store, "DATA_DIR", home)
 
-    rc = cli.main(
-        ["grab", str(pdf), "--page", "1", "--rect", "0.1,0.3,0.9,0.9", "--frac"]
-    )
+    rc = cli.main(["grab", str(pdf), "--page", "1", "--rect", "0.1,0.3,0.9,0.9", "--frac"])
 
     assert rc == 0
     assert not (home / "tmp-crop.png").exists(), (
