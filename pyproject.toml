@@ -69,3 +69,9 @@ ignore = ["E501"]
 include = ["figcite"]
 pythonVersion = "3.10"
 typeCheckingMode = "standard"
+
+[tool.mutmut]
+source_paths = ["figcite"]
+also_copy = [".githooks", ".github", ".gitignore", ".pre-commit-config.yaml", "CHANGELOG.md", "CLAUDE.md", "LICENSE", "README.md", "demo", "docs", "pytest.ini", "scripts"]
+# runs the package as a subprocess: imports ~10k trampolines, exceeds its 60 s budget
+pytest_add_cli_args = ["--deselect", "tests/test_cli_command_output.py::test_the_package_is_runnable_with_python_m"]
