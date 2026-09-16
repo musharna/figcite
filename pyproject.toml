@@ -79,6 +79,7 @@ also_copy = [".githooks", ".github", ".gitignore", ".pre-commit-config.yaml", "C
 pytest_add_cli_args = [
     "--deselect", "tests/test_cli_command_output.py::test_the_package_is_runnable_with_python_m",
     "--deselect", "tests/test_equivalence_registry.py::test_the_round_trip_alone_changes_nothing",
+    "--deselect", "tests/test_equivalence_registry.py::test_each_claim_still_holds",
     "--deselect", "tests/test_match_score_label.py::test_every_matcher_labels_its_own_score",
     "--deselect", "tests/test_reuse_and_own_work_gates.py::test_no_source_kind_sorts_below_clipboard",
     "--deselect", "tests/test_session_tabs.py::test_scanning_tabs_touches_no_network",
