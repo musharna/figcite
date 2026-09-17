@@ -720,6 +720,11 @@ def test_a_slow_crossref_lookup_does_not_stall_other_clients(tmp_path, monkeypat
         return _SlowCrossRefResponse()
 
     monkeypatch.setattr(crossref, "throttled_get", _slow_get)
+    # The CrossRef disk cache is per PROCESS (conftest), not per session, and
+    # mutmut runs two pytest sessions in one process (forced-fail, then stats).
+    # A hit here would serve the work before `throttled_get` and the `>= STALL`
+    # control below would fail with "never reached the stubbed CrossRef call".
+    crossref._cache_file("10.1234/slow-service").unlink(missing_ok=True)
 
     srv = web.make_server(0)
     port = srv.server_address[1]
