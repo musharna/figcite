@@ -493,8 +493,12 @@ def watch(
                 if resolve:
                     try:
                         # The watcher's dedupe hash is the md5 of exactly these
-                        # bytes; read before filing deletes the staged copy.
-                        captured = hashlib.md5(Path(png).read_bytes()).hexdigest()
+                        # bytes; read before filing deletes the staged copy. A
+                        # content fingerprint matched against the watcher's, not
+                        # a security hash, so it must stay md5.
+                        captured = hashlib.md5(
+                            Path(png).read_bytes(), usedforsecurity=False
+                        ).hexdigest()
                         pending = enrich(png)
                         if auto_confirm:
                             dest = auto_finalize(png, pending)

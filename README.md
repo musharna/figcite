@@ -93,6 +93,11 @@ PDF, is grounded and filed automatically — no step. Everything else, including
 a browser tab the history cannot place, lands in `figcite pending` (next
 section).
 
+Once a copy is filed, the watcher puts the tagged file back on the clipboard,
+so a plain Ctrl+V pastes the tagged copy rather than bare pixels. PowerPoint gets the picture
+plus a caption with a clickable DOI link, for confirmed sources only. Other apps, such as Affinity, get the
+tagged file itself. Details and caveats: [Known limits](#known-limits).
+
 ### 2. A figure inside a paper PDF
 
 The DOI is read from the PDF itself.
@@ -247,7 +252,9 @@ Resolution paths, tried in order, each verified against CrossRef:
    `alternative-id` filter. ScienceDirect, OUP and Wiley return **403** to an
    automated page fetch; the CrossRef route works anyway. Cell Press punctuates
    the PII (`S1674-2052(18)30156-4`) and Elsevier does not; both normalise to
-   the same identifier.
+   the same identifier. A high-resolution figure link
+   (`ars.els-cdn.com/…/1-s2.0-<PII>-gr1_lrg.jpg`) carries the PII in its
+   filename and resolves the same way.
 4. **PubMed/PMC identifiers**, via NCBI (`esummary` for a PMID, the ID
    converter for a PMCID).
 5. Failing all of those, the page's own `<meta name="citation_doi">` — which
