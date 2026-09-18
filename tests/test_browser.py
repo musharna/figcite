@@ -202,6 +202,67 @@ def test_lookup_failure_is_reported_not_swallowed(monkeypatch):
     assert B.doi_from_alternative_id(url) == "10.1016/j.ympev.2025.108410"
 
 
+def _crossref_knowing(monkeypatch, known: dict):
+    """Fake CrossRef alternative-id lookup: `known` maps PII -> DOI; any other
+    PII has no hit. Returns the list of PIIs that were asked about."""
+    import figcite.browser as B
+
+    asked = []
+
+    class _Resp:
+        def __init__(self, items):
+            self._items = items
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"message": {"items": self._items}}
+
+    def fake_get(url, params=None, **kw):
+        pii = params["filter"].split(":", 1)[1]
+        asked.append(pii)
+        return _Resp([{"DOI": known[pii]}] if pii in known else [])
+
+    monkeypatch.setattr(B, "throttled_get", fake_get)
+    return asked
+
+
+def test_a_high_res_figure_link_resolves_to_its_article(monkeypatch):
+    """Clicking a publisher's "high-resolution image" link opens the figure on
+    Elsevier's CDN, named after the article's PII: 1-s2.0-<PII>-gr1_lrg.jpg.
+    Only /pii/ and /fulltext/ were recognised, so a snip of the SHARPER copy
+    lost the DOI that the article page's own snip had. Measured on a real
+    capture, 2026-09-17."""
+    import figcite.browser as B
+
+    asked = _crossref_knowing(monkeypatch, {"S2211124726006339": "10.1016/j.celrep.2026.117555"})
+    url = "https://ars.els-cdn.com/content/image/1-s2.0-S2211124726006339-gr1_lrg.jpg"
+    assert B.doi_from_alternative_id(url) == "10.1016/j.celrep.2026.117555"
+    # the figure suffix is not part of the identifier
+    assert asked == ["S2211124726006339"], asked
+
+
+def test_every_article_id_in_the_url_is_tried_not_just_the_first(monkeypatch):
+    """Elsevier asset paths can carry an ISSUE PII ahead of the article's. The
+    issue has no work of its own in CrossRef, so stopping at the first match
+    would report "no DOI" for a URL that names the article outright."""
+    import figcite.browser as B
+
+    asked = _crossref_knowing(monkeypatch, {"S2211124726006339": "10.1016/j.celrep.2026.117555"})
+    url = (
+        "https://pdf.sciencedirectassets.com/272284/1-s2.0-S2211124726X00059/"
+        "1-s2.0-S2211124726006339/main.pdf"
+    )
+    assert B.doi_from_alternative_id(url) == "10.1016/j.celrep.2026.117555"
+    assert asked == ["S2211124726X00059", "S2211124726006339"], asked
+
+    # negative: an asset name that is not a PII is not looked up at all
+    asked.clear()
+    assert B.doi_from_alternative_id("https://ars.els-cdn.com/content/image/logo-gr1.jpg") is None
+    assert asked == []
+
+
 @pytest.mark.live
 def test_real_identifier_paths_resolve_and_discriminate():
     from figcite.browser import doi_from_alternative_id, doi_from_ncbi_id
@@ -219,6 +280,13 @@ def test_real_identifier_paths_resolve_and_discriminate():
             "https://www.cell.com/molecular-plant/fulltext/S1674-2052(18)30156-4"
         )
         == "10.1016/j.molp.2018.04.006"
+    )
+    # the high-resolution figure link on Elsevier's CDN (a real capture)
+    assert (
+        doi_from_alternative_id(
+            "https://ars.els-cdn.com/content/image/1-s2.0-S2211124726006339-gr1_lrg.jpg"
+        )
+        == "10.1016/j.celrep.2026.117555"
     )
     assert doi_from_ncbi_id("https://pubmed.ncbi.nlm.nih.gov/16107481/") == "10.1242/dev.01955"
     assert (

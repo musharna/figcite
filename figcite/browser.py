@@ -208,6 +208,11 @@ def doi_from_publisher_pattern(url: str) -> Optional[str]:
 
 
 PII_IN_URL = re.compile(r"/(?:pii|fulltext)/(S[0-9A-Z()\-]{10,30})", re.I)
+# Elsevier's own assets -- the high-resolution figure behind "Download
+# high-res image", the PDF -- are named after the PII: 1-s2.0-<PII>-gr1_lrg.jpg.
+# An unpunctuated PII is exactly 17 characters, S plus digits with an optional
+# X check character; fixing the length keeps "-gr1" out of the identifier.
+PII_IN_ASSET = re.compile(r"/1-s2\.0-(S[0-9X]{16})(?![0-9A-Z])", re.I)
 NCBI_PMID = re.compile(r"pubmed\.ncbi\.nlm\.nih\.gov/(\d{4,10})")
 NCBI_PMC = re.compile(r"(?:pmc\.ncbi\.nlm\.nih\.gov/articles|/pmc/articles)/(PMC\d+)", re.I)
 
@@ -282,29 +287,34 @@ def doi_from_alternative_id(url: str, timeout: int = FETCH_TIMEOUT) -> Optional[
     the address IS this work. Anything other than exactly one hit is refused --
     an ambiguous identifier is not evidence.
     """
-    m = PII_IN_URL.search(url or "")
-    if not m:
-        return None
-    pii = _normalize_pii(m.group(1))
-    try:
-        r = throttled_get(
-            "https://api.crossref.org/works",
-            params={
-                "filter": f"alternative-id:{pii}",
-                "rows": 3,
-                "select": "DOI,alternative-id",
-            },
-            headers={"User-Agent": UA},
-            timeout=timeout,
-        )
-        r.raise_for_status()
-        items = r.json()["message"]["items"]
-    except Exception as e:
-        # A throttled or failed lookup is NOT the same as "this URL has no DOI".
-        raise LookupUnavailable(f"CrossRef alternative-id lookup failed for {pii}: {e}") from e
-    if len(items) != 1:
-        return None
-    return normalize_doi(items[0].get("DOI", ""))
+    piis: list[str] = []
+    for pat in (PII_IN_URL, PII_IN_ASSET):
+        for m in pat.finditer(url or ""):
+            pii = _normalize_pii(m.group(1))
+            if pii not in piis:
+                piis.append(pii)
+    # Every identifier is tried, in order: an asset path can name the ISSUE
+    # ahead of the article, and the issue has no work of its own to resolve to.
+    for pii in piis:
+        try:
+            r = throttled_get(
+                "https://api.crossref.org/works",
+                params={
+                    "filter": f"alternative-id:{pii}",
+                    "rows": 3,
+                    "select": "DOI,alternative-id",
+                },
+                headers={"User-Agent": UA},
+                timeout=timeout,
+            )
+            r.raise_for_status()
+            items = r.json()["message"]["items"]
+        except Exception as e:
+            # A throttled or failed lookup is NOT the same as "this URL has no DOI".
+            raise LookupUnavailable(f"CrossRef alternative-id lookup failed for {pii}: {e}") from e
+        if len(items) == 1:
+            return normalize_doi(items[0].get("DOI", ""))
+    return None
 
 
 def doi_from_page_meta(url: str, timeout: int = FETCH_TIMEOUT) -> Optional[str]:
