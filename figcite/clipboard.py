@@ -8,11 +8,13 @@ a visible gap.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 import re
 import subprocess
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Iterable, Optional
 
 from . import session_tabs, zotero
@@ -388,6 +390,7 @@ def watch(
     max_hours: float = 8.0,
     resolve: bool = True,
     auto_confirm: bool = True,
+    handback: bool = True,
 ) -> int:
     """Run the watcher until it hits its own wall-clock deadline."""
     if not Path(PS_EXE).exists():
@@ -411,8 +414,15 @@ def watch(
         f"watching clipboard -> {wsl_dir}  (deadline {max_hours}h; Ctrl-C to stop)",
         flush=True,
     )
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
     failed = False
+    captions: dict[str, str] = {}
     try:
         for line in proc.stdout:  # type: ignore[union-attr]
             line = line.strip()
@@ -435,6 +445,32 @@ def watch(
                     flush=True,
                 )
                 continue
+            if line.startswith("HANDBACK_OK "):
+                win_path = line.split(" ", 1)[1]
+                print(
+                    f"    clipboard now carries the tagged file: {PureWindowsPath(win_path).name}",
+                    flush=True,
+                )
+                if captions.get(win_path):
+                    print(f"      pasting into PowerPoint adds: {captions[win_path]}", flush=True)
+                continue
+            if line.startswith(("HANDBACK_SKIPPED ", "HANDBACK_FAILED ")):
+                kind, _, rest = line.partition(" ")
+                why = rest.split(" :: ", 1)[-1]
+                verb = "left alone" if kind == "HANDBACK_SKIPPED" else "NOT updated"
+                print(f"    clipboard {verb}: {why}", flush=True)
+                continue
+            if line.startswith("RECOPIED "):
+                # The same image as the last one seen was copied again: filing
+                # it twice would duplicate the library, but the fresh copy has
+                # replaced the handed-back file with a bare bitmap.
+                parts = line.split()
+                if handback and len(parts) == 4:
+                    filed = _filed_copy_of(parts[1], parts[2], parts[3])
+                    if filed is not None:
+                        print(f"  copied again: {filed.name}", flush=True)
+                        _handback(proc, parts[1], filed, captions)
+                continue
             if line.startswith("CAPTURED "):
                 png_win = line.split(" ", 1)[1]
                 png = win_to_wsl(png_win)
@@ -456,9 +492,14 @@ def watch(
                 print(f"  captured {Path(png).name}", flush=True)
                 if resolve:
                     try:
+                        # The watcher's dedupe hash is the md5 of exactly these
+                        # bytes; read before filing deletes the staged copy.
+                        captured = hashlib.md5(Path(png).read_bytes()).hexdigest()
                         pending = enrich(png)
                         if auto_confirm:
-                            auto_finalize(png, pending)
+                            dest = auto_finalize(png, pending)
+                            if handback and dest is not None:
+                                _handback(proc, captured, dest, captions)
                     except Exception as e:
                         print(f"    (inference failed: {e})", flush=True)
             else:
@@ -466,8 +507,102 @@ def watch(
     except KeyboardInterrupt:
         print("stopping watcher", flush=True)
     finally:
-        proc.terminate()
+        _stop(proc)
     return 1 if failed else 0
+
+
+def _stop(proc) -> None:
+    """Let the watcher exit on its own before resorting to killing it.
+
+    While a handback is on the clipboard the watcher OWNS it, serving each app
+    on demand. Closing its stdin tells it the consumer is gone; it then writes
+    the file variant into the clipboard for good and exits. Killed outright, it
+    would leave a clipboard that pastes nothing.
+    """
+    stdin = getattr(proc, "stdin", None)
+    if stdin is not None:
+        try:
+            stdin.close()
+        except OSError:
+            pass
+    try:
+        proc.wait(timeout=15)
+        return
+    except (AttributeError, subprocess.TimeoutExpired):
+        pass
+    proc.terminate()
+
+
+def _filed_copy_of(md5: str, width: str, height: str) -> Optional[Path]:
+    """The library file filed from a capture with these bytes, if there is one.
+
+    Staged captures are named clip-<stamp>-<md5[0..7]>, and filing records that
+    name and the image's size in the sidecar next to the library file. The
+    prefix narrows the search; the size has to agree as well.
+    """
+    from . import store
+
+    tag = f"-{md5[:8].upper()}."
+    hits = []
+    for side in store.LIBRARY.glob("*.figcite.json"):
+        try:
+            cap = json.loads(side.read_text(encoding="utf-8"))["source_detail"]["clipboard_capture"]
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if tag not in PureWindowsPath(str(cap.get("png", ""))).name.upper():
+            continue
+        if (str(cap.get("width")), str(cap.get("height"))) != (width, height):
+            continue
+        img = side.with_name(side.name[: -len(".figcite.json")])
+        if img.exists():
+            hits.append(img)
+    return max(hits, key=lambda p: p.stat().st_mtime) if hits else None
+
+
+def _paste_caption(dest: Path) -> Optional[str]:
+    """What PowerPoint shows under a pasted figure -- or None.
+
+    Read from the manifest, the same source `figcite apply` captions from, so a
+    capture confirmed later (`figcite confirm`) is captioned on its next copy.
+    Only a CONFIRMED record is captioned: a guessed citation never reaches a
+    slide, and a paste is a slide.
+    """
+    from . import store
+    from .provenance import sha256_file
+
+    try:
+        rec = store.get(sha256_file(dest))
+    except OSError:
+        return None
+    if rec is None or not rec.confirmed:
+        return None
+    text = rec.short_cite or (rec.citation or "")[:60]
+    if rec.doi_url:
+        text = f"{text} · {rec.doi_url}" if text else rec.doi_url
+    return text or None
+
+
+def _handback(proc, captured_md5: str, dest: Path, captions: Optional[dict] = None) -> None:
+    """Ask the watcher to put the filed figure back on the clipboard as a file.
+
+    The watcher does the write, not a separate process: it owns the dedupe hash,
+    so it can mark its own write as seen instead of capturing it again and
+    stamping it with whatever window is in front. It also re-checks that the
+    clipboard still holds this capture, so a later copy is never overwritten.
+    """
+    stdin = getattr(proc, "stdin", None)
+    if stdin is None:
+        return
+    caption = _paste_caption(dest)
+    b64 = base64.b64encode(caption.encode("utf-8")).decode("ascii") if caption else "-"
+    win_path = wsl_to_win(dest)
+    if captions is not None and caption:
+        captions[win_path] = caption
+    try:
+        stdin.write(f"HANDBACK {captured_md5} {b64} {win_path}\n")
+        stdin.flush()
+    except (BrokenPipeError, OSError, ValueError) as e:
+        print(f"    clipboard NOT updated: the watcher stopped listening ({e})", flush=True)
 
 
 def enrich(png: str | os.PathLike) -> dict:

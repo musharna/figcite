@@ -50,11 +50,11 @@ flowchart LR
 
 Provenance rides along in three places, and they fail differently:
 
-| Layer | Survives | Dies when |
-| --- | --- | --- |
-| **1. Embedded in the image bytes** (PNG `tEXt`/XMP, JPEG EXIF) | _Insert → Picture_ | clipboard paste, "Compress Pictures" — anything that re-encodes |
-| **2. Shape alt-text in the `.pptx`** | edits, save/reopen, export to tagged PDF | someone deletes and re-inserts the picture |
-| **3. Central manifest** keyed by sha256 **and** perceptual dhash | everything above failing | the image is heavily cropped or redrawn |
+| Layer                                                            | Survives                                 | Dies when                                                       |
+| ---------------------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------- |
+| **1. Embedded in the image bytes** (PNG `tEXt`/XMP, JPEG EXIF)   | _Insert → Picture_                       | clipboard paste, "Compress Pictures" — anything that re-encodes |
+| **2. Shape alt-text in the `.pptx`**                             | edits, save/reopen, export to tagged PDF | someone deletes and re-inserts the picture                      |
+| **3. Central manifest** keyed by sha256 **and** perceptual dhash | everything above failing                 | the image is heavily cropped or redrawn                         |
 
 `figcite` writes all three. Matching a slide image back to its source tries
 them in that order; a dhash match is reported as fuzzy and treated as
@@ -171,15 +171,15 @@ than reading paths. Loopback only (127.0.0.1), no auth, single user.
 
 <img src="https://raw.githubusercontent.com/musharna/figcite/master/docs/img/ui-pending.png" alt="The Pending tab: each capture shows its thumbnail, the app and window title it was snipped from, CrossRef candidates with radio buttons, a DOI field, and Confirm / This is my own work / Skip buttons" width="900">
 
-*The pending queue in `figcite ui`. Top: a Firefox snip whose title produced two
+_The pending queue in `figcite ui`. Top: a Firefox snip whose title produced two
 CrossRef candidates, neither accepted for you. Bottom: a snip out of a
-PowerPoint window, which no rule can ground.*
+PowerPoint window, which no rule can ground._
 
 > **On WSL, open the printed `http://127.0.0.1:<port>` literally — not
 > `localhost`.** Windows resolves `localhost` to the IPv6 `::1` first, and WSL2
 > mirrored networking does not forward the host's IPv6 loopback into the VM,
 > so `localhost:<port>` hangs until it times out with nothing logged. `figcite
-> ui` already prints and opens the address that works.
+ui` already prints and opens the address that works.
 
 ---
 
@@ -287,9 +287,9 @@ rather than stacking a second copy.
 
 <img src="https://raw.githubusercontent.com/musharna/figcite/master/docs/img/ui-deck.png" alt="The Deck tab: an audit table with a thumbnail per picture, its status and how it was matched (embedded-metadata, manifest-dhash), the citation, and a licence badge" width="900">
 
-*The same audit in the browser. Slide 1 matched by the metadata embedded in the
+_The same audit in the browser. Slide 1 matched by the metadata embedded in the
 tagged file; slide 2 matched perceptually to a capture that is still pending,
-so it is reported* unconfirmed *and gets no credit line.*
+so it is reported_ unconfirmed _and gets no credit line._
 
 ### What `apply` writes
 
@@ -328,12 +328,12 @@ metadata and sidecars, and provenance never depends on hashing at all.
 
 <img src="https://raw.githubusercontent.com/musharna/figcite/master/docs/img/pdf-caption-zoom.png" alt="The bottom of a figure on an exported PDF page, with the small grey caption figcite wrote underneath: [1] Shiragaki et al. 2020 · doi:10.3390/horticulturae6040087" width="700">
 
-*The caption `apply` wrote under a figure on a PDF exported from Affinity.*
+_The caption `apply` wrote under a figure on a PDF exported from Affinity._
 
 <img src="https://raw.githubusercontent.com/musharna/figcite/master/docs/img/pdf-credits.png" alt="The appended Image credits page: a numbered full citation with DOI and licence URL, and a red line reporting that one image on page 1 has no recorded source" width="900">
 
-*The appended credits page. The unsourced image on the same board is named,
-not dropped.*
+_The appended credits page. The unsourced image on the same board is named,
+not dropped._
 
 <details>
 <summary><strong>How much export mangling survives</strong> — measured on 14 real figures × 14 export conditions</summary>
@@ -342,13 +342,13 @@ not dropped.*
 Affinity's most aggressive preset ("PDF for web") downsamples anything above
 108 DPI to 72.
 
-| Transform | Recovered | False matches |
-| --- | --- | --- |
-| Any downsample tested, down to 64px wide | 14/14 | 0 |
-| JPEG quality down to 10 | 14/14 | 0 |
-| CMYK roundtrip (print export) | 14/14 | 0 |
-| Crop 10% off each edge | **0/14** | 0 |
-| Rotate 90° / horizontal flip | **0/14** | 0 |
+| Transform                                | Recovered | False matches |
+| ---------------------------------------- | --------- | ------------- |
+| Any downsample tested, down to 64px wide | 14/14     | 0             |
+| JPEG quality down to 10                  | 14/14     | 0             |
+| CMYK roundtrip (print export)            | 14/14     | 0             |
+| Crop 10% off each edge                   | **0/14**  | 0             |
+| Rotate 90° / horizontal flip             | **0/14**  | 0             |
 
 Worst self-distance under any encoding transform was 5; the nearest pair of
 _different_ figures sat 15 apart (median 26). The threshold of 6 therefore has
@@ -416,12 +416,12 @@ ran it".
 **Only open-access papers can be indexed at all.** Measured against this
 author's 535-DOI library:
 
-| | |
-| --: | :-- |
-| 226 (42%) | open access — indexable |
-| 143 (27%) | in Europe PMC, no PMC copy |
-| 115 (22%) | not in Europe PMC |
-| 51 (10%) | PMC copy, but not open access |
+|           |                               |
+| --------: | :---------------------------- |
+| 226 (42%) | open access — indexable       |
+| 143 (27%) | in Europe PMC, no PMC copy    |
+| 115 (22%) | not in Europe PMC             |
+|  51 (10%) | PMC copy, but not open access |
 
 So expect to reverse-source a bit under half your library, and expect the
 misses to be the paywalled half. A figure that is not found is very often a
@@ -435,9 +435,9 @@ _why_ it could not answer rather than a bare "no".
 </tr>
 </table>
 
-*Left: the query, a crop of the middle of a figure, downscaled, carrying no
+_Left: the query, a crop of the middle of a figure, downscaled, carrying no
 metadata. Right: identified by ORB keypoints. The open browser tab underneath is
-listed as a lead, deliberately apart from the pixel match.*
+listed as a lead, deliberately apart from the pixel match._
 
 ### It answers in three ways, never two
 
@@ -533,31 +533,31 @@ from an earlier paper — the PDF's own DOI cannot tell you that.
 
 ## Command reference
 
-| Command | What it does |
-| --- | --- |
-| **Capture** | |
-| `watch` | watch the Windows clipboard for snipped images |
-| `autostart` | keep the clipboard watcher running across logons |
-| `images <pdf> --page N` | list embedded images on a PDF page with bboxes |
-| `grab <pdf>` | crop a figure out of a PDF, DOI attached |
-| `tag <image>` | attach provenance to an existing image file |
-| `register <image>` | record provenance for an existing image **without** modifying it |
-| **Resolve** | |
-| `pending` | list captured-but-unconfirmed clipboard images |
-| `confirm <ref>` | attach a DOI to a pending capture (`--doi`, `--pick`, `--own-work`) |
-| `dismiss <ref> --reason` | resolve a capture as **not** attributable; `--undo` restores |
-| `ui` | browser UI for pending captures, decks, and reverse lookup |
-| **Sources** | |
-| `zotero configure / sync / status / resolve` | resolve against your Zotero library first |
-| `resolve <doi>` | show the citation + license for a DOI |
-| `search "<title>"` | find a DOI by title — candidates only, never an answer |
-| **Reverse lookup** | |
-| `corpus build / status` | the local figure index `whereis` searches |
-| `whereis <image>` | find which paper a figure came from |
-| **Decks** | |
-| `audit <deck>` | report provenance coverage of a `.pptx` or `.pdf` |
-| `apply <deck> -o out` | write alt-text, captions, credits slide, manifest |
-| `bib <deck> -o out.bib` | emit BibTeX for the works a deck's figures came from |
+| Command                                      | What it does                                                        |
+| -------------------------------------------- | ------------------------------------------------------------------- |
+| **Capture**                                  |                                                                     |
+| `watch`                                      | watch the Windows clipboard for snipped images                      |
+| `autostart`                                  | keep the clipboard watcher running across logons                    |
+| `images <pdf> --page N`                      | list embedded images on a PDF page with bboxes                      |
+| `grab <pdf>`                                 | crop a figure out of a PDF, DOI attached                            |
+| `tag <image>`                                | attach provenance to an existing image file                         |
+| `register <image>`                           | record provenance for an existing image **without** modifying it    |
+| **Resolve**                                  |                                                                     |
+| `pending`                                    | list captured-but-unconfirmed clipboard images                      |
+| `confirm <ref>`                              | attach a DOI to a pending capture (`--doi`, `--pick`, `--own-work`) |
+| `dismiss <ref> --reason`                     | resolve a capture as **not** attributable; `--undo` restores        |
+| `ui`                                         | browser UI for pending captures, decks, and reverse lookup          |
+| **Sources**                                  |                                                                     |
+| `zotero configure / sync / status / resolve` | resolve against your Zotero library first                           |
+| `resolve <doi>`                              | show the citation + license for a DOI                               |
+| `search "<title>"`                           | find a DOI by title — candidates only, never an answer              |
+| **Reverse lookup**                           |                                                                     |
+| `corpus build / status`                      | the local figure index `whereis` searches                           |
+| `whereis <image>`                            | find which paper a figure came from                                 |
+| **Decks**                                    |                                                                     |
+| `audit <deck>`                               | report provenance coverage of a `.pptx` or `.pdf`                   |
+| `apply <deck> -o out`                        | write alt-text, captions, credits slide, manifest                   |
+| `bib <deck> -o out.bib`                      | emit BibTeX for the works a deck's figures came from                |
 
 `figcite <command> --help` for the full options of any of them.
 
@@ -611,8 +611,8 @@ push if anything fails; `git push --no-verify` overrides it when you mean to.
 ## Image credits for this README
 
 The figure that appears in the screenshots, crops and PDF renders above is
-Figure 1 of Shiragaki, K. et al. (2020), *Phylogenetic Analysis and Molecular
-Diversity of Capsicum Based on rDNA-ITS Region*, Horticulturae 6(4): 87,
+Figure 1 of Shiragaki, K. et al. (2020), _Phylogenetic Analysis and Molecular
+Diversity of Capsicum Based on rDNA-ITS Region_, Horticulturae 6(4): 87,
 <https://doi.org/10.3390/horticulturae6040087>, licensed
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). It is reproduced,
 cropped and downscaled here as demo material; no changes were made to its
@@ -623,9 +623,26 @@ to write.
 
 ## Known limits
 
-- **Clipboard paste strips layer 1.** If you paste rather than insert, the
-  image bytes are re-encoded and only the dhash fallback can recover the
-  source. Insert the tagged file from disk when you can.
+- **A bitmap paste strips layer 1; the watcher's handback avoids it.** Pasting
+  raw pixels re-encodes the image, leaving only the dhash fallback. So once
+  `figcite watch` has filed a snip, it puts the tagged library PNG back on the
+  clipboard, offered to suit the app in front:
+  - **PowerPoint** gets the picture plus a caption text box
+    (`Harris et al. 2020 · https://doi.org/…`, link clickable), and the picture
+    is the tagged file byte-identical (verified). Only a _confirmed_ source is
+    captioned, never a guess.
+  - **Everything else** gets the file (CF_HDROP) alongside the bitmap.
+    Affinity places the file itself (verified via the `\\wsl.localhost` path).
+
+  Windows fixes a clipboard's format list when it is set, so the offer is
+  re-made when you switch apps, not at paste time. Ctrl+V within a split second
+  of switching to PowerPoint can still get the file offer: a picture, no
+  caption. Handback happens only if the clipboard still holds that snip, and
+  only after filing (seconds, not instantly). Copying an already-filed figure
+  again hands its file back too. `figcite apply` adds its own caption, so it
+  captions a figure that was pasted with one a second time. `--no-handback`
+  turns it all off.
+
 - **JPEG can't hold the structured record** — only the human-readable citation
   goes into EXIF; the rest lives in the sidecar and manifest.
 - **PowerPoint's "Compress Pictures" is unverified** — it is a UI dialog with

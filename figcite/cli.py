@@ -148,7 +148,11 @@ def cmd_images(a) -> int:
 def cmd_watch(a) -> int:
     from .clipboard import watch
 
-    return watch(max_hours=a.hours, auto_confirm=not a.no_auto_confirm)
+    return watch(
+        max_hours=a.hours,
+        auto_confirm=not a.no_auto_confirm,
+        handback=not a.no_handback,
+    )
 
 
 def _corpus_dois() -> list[str]:
@@ -885,6 +889,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-auto-confirm",
         action="store_true",
         help="leave even GROUNDED captures pending instead of filing them",
+    )
+    w.add_argument(
+        "--no-handback",
+        action="store_true",
+        help="do not put the filed, tagged file back on the clipboard",
     )
     w.set_defaults(func=cmd_watch)
 

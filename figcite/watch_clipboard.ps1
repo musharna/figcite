@@ -24,7 +24,7 @@ param(
 Add-Type -AssemblyName System.Windows.Forms,System.Drawing
 Add-Type -ReferencedAssemblies System.Windows.Forms,System.Drawing -TypeDefinition @'
 using System; using System.Runtime.InteropServices; using System.Text;
-using System.Threading; using System.Windows.Forms;
+using System.Threading; using System.Windows.Forms; using System.Drawing;
 
 public class FgWin {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
@@ -117,6 +117,188 @@ public class ClipListener {
     if (pump != null) pump.Join(2000);
   }
 }
+
+// Commands from the Python side, one per line on stdin.
+//
+// The main thread sleeps on WaitAny over this and the clipboard event, so a
+// command wakes it the same way a clipboard change does. Console.In is read on
+// its own thread because its "async" read is synchronous on .NET Framework and
+// would block the loop. EOF (the consumer went away) just stops the reader.
+public class StdinLines {
+  public AutoResetEvent Ready = new AutoResetEvent(false);
+  // Set once the consumer has gone away. The watcher then exits cleanly rather
+  // than being killed, because a killed owner leaves a live clipboard empty.
+  public volatile bool Closed;
+  public System.Collections.Concurrent.ConcurrentQueue<string> Lines =
+    new System.Collections.Concurrent.ConcurrentQueue<string>();
+  public void Start() {
+    Thread t = new Thread(() => {
+      try {
+        string line;
+        while ((line = Console.In.ReadLine()) != null) { Lines.Enqueue(line); Ready.Set(); }
+      } catch { }
+      Closed = true; Ready.Set();
+    });
+    t.IsBackground = true;
+    t.Start();
+  }
+}
+
+// The handback's clipboard offer, tailored to the app in front.
+//
+// One offer cannot suit every app. Offered the tagged file (CF_HDROP), Affinity
+// places the file and PowerPoint stores it byte-identical -- but PowerPoint then
+// shows a bare picture. Offered HTML (an <img> of the same file plus a caption),
+// PowerPoint pastes the picture AND a caption text box -- but Affinity takes only
+// the bitmap and loses the file. Measured 2026-09-16/17.
+//
+// Answering each paste request on the fly does NOT work: Windows fixes the list
+// of formats on offer when the clipboard is set, and PowerPoint reads that list,
+// asks for the file it sees there, and gives up when refused -- measured
+// 2026-09-17. So the offer is re-made when the app in front changes, while the
+// clipboard is still ours: PowerPoint in front means picture + caption, anything
+// else means the file. Each offer is an ordinary rendered copy, so it outlives
+// this process, and none of them is added to clipboard history.
+public class LiveClip {
+  [DllImport("user32.dll")] static extern IntPtr GetClipboardOwner();
+  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] static extern int GetWindowThreadProcessId(IntPtr h, out uint pid);
+  delegate void WinEventProc(IntPtr hook, uint ev, IntPtr hwnd, int obj, int child, uint thread, uint time);
+  [DllImport("user32.dll")] static extern IntPtr SetWinEventHook(uint min, uint max, IntPtr mod,
+    WinEventProc proc, uint pid, uint thread, uint flags);
+  [DllImport("user32.dll")] static extern bool UnhookWinEvent(IntPtr hook);
+  const uint EVENT_SYSTEM_FOREGROUND = 3, WINEVENT_OUTOFCONTEXT = 0;
+
+  static uint PidOf(IntPtr h) { uint p; GetWindowThreadProcessId(h, out p); return p; }
+  static readonly uint Self = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
+
+  // Our own write, recognised by who owns the clipboard, not by its content.
+  public static bool OwnedByUs() {
+    IntPtr o = GetClipboardOwner();
+    return o != IntPtr.Zero && PidOf(o) == Self;
+  }
+
+  static bool IsPowerPoint(IntPtr hwnd) {
+    try {
+      var name = System.Diagnostics.Process.GetProcessById((int)PidOf(hwnd)).ProcessName;
+      return string.Equals(name, "POWERPNT", StringComparison.OrdinalIgnoreCase);
+    } catch { return false; }
+  }
+
+  Control ctl;
+  WinEventProc hookProc;     // held so the GC cannot collect the callback
+  IntPtr hook;
+  DataObject forPpt, forOthers, applied;
+  public string StartupError;
+  public volatile string LastError;
+
+  public bool Start(int timeoutMs) {
+    var ready = new ManualResetEventSlim(false);
+    var t = new Thread(() => {
+      try {
+        ctl = new Control(); IntPtr h = ctl.Handle;
+        hookProc = OnForeground;
+        hook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero,
+                               hookProc, 0, 0, WINEVENT_OUTOFCONTEXT);
+        if (hook == IntPtr.Zero) StartupError = "SetWinEventHook failed";
+      } catch (Exception e) { StartupError = e.GetType().Name + ": " + e.Message; }
+      ready.Set();
+      if (StartupError == null) { Application.Run(); UnhookWinEvent(hook); }
+    });
+    t.IsBackground = true;
+    t.SetApartmentState(ApartmentState.STA);
+    t.Start();
+    if (!ready.Wait(timeoutMs)) { StartupError = "handback thread did not start within " + timeoutMs + "ms"; return false; }
+    return StartupError == null;
+  }
+
+  // The window the event names, not GetForegroundWindow() at callback time:
+  // by then focus may have moved again (measured 2026-09-17 -- the event named
+  // PowerPoint while a re-query already returned the terminal).
+  void OnForeground(IntPtr hk, uint ev, IntPtr hwnd, int obj, int child, uint thread, uint time) {
+    if (forOthers == null) return;
+    // Someone else has copied since: the clipboard is theirs, not ours to change.
+    if (!OwnedByUs()) { forPpt = forOthers = applied = null; return; }
+    try { Apply(IsPowerPoint(hwnd)); } catch (Exception e) { LastError = e.GetType().Name + ": " + e.Message; }
+  }
+
+  void Apply(bool pptInFront) {
+    DataObject want = (forPpt != null && pptInFront) ? forPpt : forOthers;
+    if (want == applied) return;
+    Clipboard.SetDataObject(want, true, 10, 150);
+    applied = want;
+  }
+
+  // Everything outside ASCII as a numeric character reference. Sent as raw
+  // UTF-8, an en dash in an author list vanished from PowerPoint's caption
+  // while the entity-encoded u-umlaut survived (measured 2026-09-17); pure ASCII
+  // leaves no charset for a reader to guess, and no byte/char offset drift.
+  static string AsciiHtml(string s) {
+    var sb = new StringBuilder();
+    for (int i = 0; i < s.Length; i++) {
+      int cp = char.ConvertToUtf32(s, i);
+      if (char.IsHighSurrogate(s[i])) i++;
+      if (cp < 128) sb.Append((char)cp); else sb.Append("&#").Append(cp).Append(';');
+    }
+    return sb.ToString();
+  }
+
+  // CF_HTML's offsets count BYTES; the document is ASCII, so bytes = chars.
+  public static string CfHtml(string file, string caption, int w, int h) {
+    int dw = Math.Min(w, 640), dh = (int)Math.Round(h * (dw / (double)w));
+    string cap = AsciiHtml(System.Net.WebUtility.HtmlEncode(caption));
+    cap = System.Text.RegularExpressions.Regex.Replace(cap, @"https://doi\.org/\S+",
+      m => "<a href=\"" + m.Value + "\">" + m.Value + "</a>");
+    string frag = "<div><img src=\"" + AsciiHtml(new Uri(file).AbsoluteUri) + "\" width=\"" + dw
+                + "\" height=\"" + dh + "\"><p>" + cap + "</p></div>";
+    string pre = "<html><body><!--StartFragment-->", post = "<!--EndFragment--></body></html>";
+    string hdr = "Version:0.9\r\nStartHTML:{0:D10}\r\nEndHTML:{1:D10}\r\nStartFragment:{2:D10}\r\nEndFragment:{3:D10}\r\n";
+    var u = Encoding.UTF8;
+    int hl = u.GetByteCount(string.Format(hdr, 0, 0, 0, 0));
+    int sF = hl + u.GetByteCount(pre), eF = sF + u.GetByteCount(frag), eH = eF + u.GetByteCount(post);
+    return string.Format(hdr, hl, eH, sF, eF) + pre + frag + post;
+  }
+
+  static void KeepOutOfHistory(DataObject d) {
+    // Windows' documented opt-outs; each takes a DWORD 0.
+    d.SetData("CanIncludeInClipboardHistory", new System.IO.MemoryStream(BitConverter.GetBytes(0)));
+    d.SetData("CanUploadToCloudClipboard", new System.IO.MemoryStream(BitConverter.GetBytes(0)));
+  }
+
+  // caption null/empty = no PowerPoint offer: an unconfirmed source gets no
+  // caption, so every app is offered the file.
+  public void Publish(string file, string caption) {
+    Exception err = null;
+    ctl.Invoke((MethodInvoker)delegate {
+      try {
+        Bitmap bmp;
+        using (Image src = Image.FromFile(file)) bmp = new Bitmap(src);   // file not held open
+        var others = new DataObject();
+        others.SetImage(bmp);
+        var files = new System.Collections.Specialized.StringCollection();
+        files.Add(file);
+        others.SetFileDropList(files);
+        KeepOutOfHistory(others);
+        DataObject ppt = null;
+        if (!string.IsNullOrEmpty(caption)) {
+          ppt = new DataObject();
+          ppt.SetImage(bmp);
+          ppt.SetData(DataFormats.Html, CfHtml(file, caption, bmp.Width, bmp.Height));
+          ppt.SetText(caption);
+          KeepOutOfHistory(ppt);
+        }
+        forPpt = ppt; forOthers = others; applied = null;
+        Apply(IsPowerPoint(GetForegroundWindow()));
+      } catch (Exception e) { err = e; }
+    });
+    if (err != null) throw new InvalidOperationException(err.Message, err);
+  }
+
+  public void Stop() {
+    if (ctl == null) return;
+    try { ctl.Invoke((MethodInvoker)delegate { Application.ExitThread(); }); } catch { }
+  }
+}
 '@
 New-Item -ItemType Directory -Force -Path $StagingDir | Out-Null
 
@@ -179,6 +361,58 @@ function Read-ClipboardImage {
   return @{ state = "Unreadable"; error = $err }
 }
 
+function Get-ImageHash($img) {
+  $ms = New-Object System.IO.MemoryStream
+  $img.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+  $h = [System.BitConverter]::ToString($md5.ComputeHash($ms.ToArray())).Replace("-","")
+  $ms.Dispose()
+  return $h
+}
+
+function Invoke-Handback([string]$capturedHash, [string]$captionB64, [string]$file) {
+  <#
+    Put the FILED figure back on the clipboard: to PowerPoint as picture plus
+    caption, to everything else as the tagged file (see LiveClip).
+
+    Only when the clipboard still holds the image that was captured: enrichment
+    takes seconds, and anything copied in the meantime is the user's, not ours.
+    #>
+  if (-not $live) {
+    Write-Output ("HANDBACK_FAILED " + $file + " :: the handback thread is not running"); return
+  }
+  if (-not [System.IO.File]::Exists($file)) {
+    Write-Output ("HANDBACK_FAILED " + $file + " :: file not found"); return
+  }
+  $caption = $null
+  if ($captionB64 -ne "-") {
+    try { $caption = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($captionB64)) }
+    catch { Write-Output ("HANDBACK_FAILED " + $file + " :: caption was not valid base64"); return }
+  }
+  $cur = Read-ClipboardImage
+  if ($cur.state -ne "Image") {
+    Write-Output ("HANDBACK_SKIPPED " + $file + " :: clipboard no longer holds the captured image ($($cur.state))"); return
+  }
+  $curHash = Get-ImageHash $cur.image
+  $cur.image.Dispose()
+  if ($curHash -ne $capturedHash) {
+    Write-Output ("HANDBACK_SKIPPED " + $file + " :: a different image was copied since the capture"); return
+  }
+  try {
+    $live.Publish($file, $caption)
+  } catch {
+    Write-Output ("HANDBACK_FAILED " + $file + " :: " + $_.Exception.Message); return
+  }
+  Write-Output ("HANDBACK_OK " + $file)
+}
+
+$stdin = New-Object StdinLines
+$stdin.Start()
+$live = New-Object LiveClip
+if (-not $live.Start(10000)) {
+  # Capture still works without it; say so rather than fail every handback silently.
+  Write-Output ("HANDBACK_UNAVAILABLE " + $live.StartupError)
+  $live = $null
+}
 $listener = New-Object ClipListener
 if (-not $listener.Start(10000)) {
   # Loud and fatal. Falling back to polling here would restore the very cost
@@ -218,7 +452,28 @@ try {
     # Capped so the deadline is still honoured promptly; between wakeups this
     # thread is genuinely asleep and the process uses no CPU at all.
     $waitMs = [int][Math]::Min($remainingMs, 60000)
-    if (-not $listener.Changed.WaitOne($waitMs)) { continue }
+    $woke = [System.Threading.WaitHandle]::WaitAny(
+      [System.Threading.WaitHandle[]]@($listener.Changed, $stdin.Ready), $waitMs)
+    if ($live -and $live.LastError) {
+      Write-Output ("HANDBACK_SWITCH_FAILED " + $live.LastError); $live.LastError = $null
+    }
+    if ($woke -eq [System.Threading.WaitHandle]::WaitTimeout) { continue }
+    if ($woke -eq 1) {
+      $cmd = $null
+      while ($stdin.Lines.TryDequeue([ref]$cmd)) {
+        $parts = $cmd.Trim().Split(" ", 4)
+        if ($parts.Length -eq 4 -and $parts[0] -eq "HANDBACK") {
+          Invoke-Handback $parts[1].ToUpper() $parts[2] $parts[3]
+        } elseif ($cmd.Trim()) {
+          Write-Output ("UNKNOWN_COMMAND " + $cmd)
+        }
+      }
+      if ($stdin.Closed) { Write-Output "WATCH_CONSUMER_GONE"; break }
+      continue
+    }
+    # Our own handback -- first offered, or re-offered for the app now in
+    # front -- is what woke us. Not a snip, and not a re-copy.
+    if ($live -and [LiveClip]::OwnedByUs()) { continue }
 
     $read = Read-ClipboardImage
     if ($read.state -eq "Unreadable") {
@@ -269,10 +524,21 @@ try {
         $last = ""   # not captured, so let the same image be retried
       }
       if ($ok) { Write-Output ("CAPTURED " + $base + ".png") }
+    } elseif (-not [System.Windows.Forms.Clipboard]::ContainsFileDropList()) {
+      # Copied AGAIN -- by another app, since our own handback is skipped by
+      # sequence number above. Already filed, so not captured twice; but the
+      # new copy is a bare bitmap, so the consumer may hand the file back. When
+      # a file is already on the clipboard there is nothing to restore, which
+      # also keeps a clipboard manager that re-sets our data from ping-ponging.
+      Write-Output ("RECOPIED " + $hash + " " + $img.Width + " " + $img.Height)
     }
     $img.Dispose()
   }
 } finally {
+  if ($live) {
+    if ($live.LastError) { Write-Output ("HANDBACK_SWITCH_FAILED " + $live.LastError) }
+    $live.Stop()
+  }
   $listener.Stop()
 }
 Write-Output "WATCH_END"

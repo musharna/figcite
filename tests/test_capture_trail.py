@@ -4,6 +4,7 @@
 app was in front, what the window said, and when.
 """
 
+import hashlib
 import json
 
 from PIL import Image
@@ -220,7 +221,11 @@ def test_the_watcher_subscribes_and_then_sleeps_on_the_event():
     assert "AddClipboardFormatListener(sink.Handle)" in src, (
         "nothing subscribes to clipboard changes"
     )
-    assert "$listener.Changed.WaitOne(" in src, "the main loop does not wait on the change event"
+    # WaitAny, not WaitOne, since 2026-09-17: the loop also wakes for a HANDBACK
+    # command on stdin. It must still block on the change event, not a timer.
+    assert "[System.Threading.WaitHandle]::WaitAny(" in src and "@($listener.Changed," in src, (
+        "the main loop does not wait on the change event"
+    )
 
 
 def test_an_unreadable_clipboard_is_not_reported_as_an_empty_one():
@@ -244,3 +249,238 @@ def test_failing_to_subscribe_is_fatal_rather_than_falling_back_to_polling():
     assert src.index("WATCH_FAILED") < src.index("WATCH_START"), (
         "the failure check must come before the watcher claims to be started"
     )
+
+
+# ------------------------------------------- handback, 2026-09-17
+
+
+def _run_watch_once(monkeypatch, tmp_path, *, finalized, handback=True, stdout_extra=()):
+    import subprocess
+    import sys
+
+    real = tmp_path / "clip-20260101-000000-AAAABBBB.png"
+    Image.new("RGB", (40, 30), (200, 10, 10)).save(real)
+
+    class FakeStdin:
+        def __init__(self):
+            self.sent = []
+
+        def write(self, s):
+            self.sent.append(s)
+
+        def flush(self):
+            pass
+
+        def close(self):
+            pass
+
+    class FakeProc:
+        stdin = FakeStdin()
+        stdout = iter(["WATCH_START x", f"CAPTURED {real}", *stdout_extra])
+
+        def terminate(self):
+            pass
+
+    proc = FakeProc()
+    monkeypatch.setattr(C, "win_to_wsl", lambda p: str(p))
+    monkeypatch.setattr(C, "wsl_to_win", lambda p: "WIN:" + str(p))
+    monkeypatch.setattr(C, "staging_dirs", lambda: (str(tmp_path), tmp_path))
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: proc)
+    monkeypatch.setattr(C, "PS_EXE", sys.executable)
+    monkeypatch.setattr(C, "enrich", lambda p: {})
+    monkeypatch.setattr(C, "auto_finalize", lambda p, pending: finalized)
+    expected_md5 = hashlib.md5(real.read_bytes()).hexdigest()
+    C.watch(max_hours=0.001, resolve=True, auto_confirm=True, handback=handback)
+    return proc.stdin.sent, expected_md5
+
+
+def test_a_filed_capture_is_handed_back_keyed_to_the_captured_bytes(monkeypatch, tmp_path):
+    """The watcher compares the md5 it is sent against the image still on the
+    clipboard, so it must be the md5 of the staged bytes -- the same bytes the
+    watcher hashed -- and the path must be the Windows view of the FILED copy,
+    not the staged one that filing deletes."""
+    dest = tmp_path / "library" / "10.1-x--20260101T000000.png"
+    sent, md5 = _run_watch_once(monkeypatch, tmp_path, finalized=dest)
+    # "-": nothing in the manifest for this file, so no caption
+    assert sent == [f"HANDBACK {md5} - WIN:{dest}\n"], sent
+
+
+def test_no_handback_when_disabled_or_nothing_was_filed(monkeypatch, tmp_path):
+    dest = tmp_path / "library" / "x.png"
+    sent, _ = _run_watch_once(monkeypatch, tmp_path, finalized=dest, handback=False)
+    assert sent == [], "--no-handback still touched the clipboard"
+    sent, _ = _run_watch_once(monkeypatch, tmp_path, finalized=None)
+    assert sent == [], "a capture that was never filed has no file to hand back"
+
+
+def test_handback_outcomes_are_explained_not_echoed(monkeypatch, tmp_path, capsys):
+    _run_watch_once(
+        monkeypatch,
+        tmp_path,
+        finalized=None,
+        stdout_extra=[
+            r"HANDBACK_OK \\wsl.localhost\U\lib\fig.png",
+            r"HANDBACK_SKIPPED \\wsl.localhost\U\lib\fig.png :: a different image was copied since the capture",
+            r"HANDBACK_FAILED \\wsl.localhost\U\lib\fig.png :: file not found",
+        ],
+    )
+    out = capsys.readouterr().out
+    assert "clipboard now carries the tagged file: fig.png" in out, out
+    assert "clipboard left alone: a different image was copied" in out, out
+    assert "clipboard NOT updated: file not found" in out, out
+    assert "HANDBACK_" not in out, f"a raw protocol line reached the user: {out!r}"
+
+
+def _filed_capture(library, name, md5_8, w=40, h=30):
+    """A library file plus the sidecar the watcher's filing writes for it."""
+    library.mkdir(parents=True, exist_ok=True)
+    img = library / name
+    Image.new("RGB", (w, h), (1, 2, 3)).save(img)
+    rec = {
+        "source_detail": {
+            "clipboard_capture": {
+                "png": rf"C:\st\clip-20260917-210754-{md5_8}.png",
+                "width": w,
+                "height": h,
+            }
+        }
+    }
+    (library / (name + ".figcite.json")).write_text(json.dumps(rec))
+    return img
+
+
+def _watch_lines(monkeypatch, tmp_path, lines):
+    import subprocess
+    import sys
+
+    class FakeStdin:
+        def __init__(self):
+            self.sent = []
+
+        def write(self, s):
+            self.sent.append(s)
+
+        def flush(self):
+            pass
+
+        def close(self):
+            pass
+
+    class FakeProc:
+        stdin = FakeStdin()
+        stdout = iter(lines)
+
+        def terminate(self):
+            pass
+
+    proc = FakeProc()
+    monkeypatch.setattr(C, "wsl_to_win", lambda p: "WIN:" + str(p))
+    monkeypatch.setattr(C, "staging_dirs", lambda: (str(tmp_path), tmp_path))
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: proc)
+    monkeypatch.setattr(C, "PS_EXE", sys.executable)
+    C.watch(max_hours=0.001)
+    return proc.stdin.sent
+
+
+def test_copying_an_already_filed_figure_again_hands_its_file_back(monkeypatch, tmp_path):
+    """Measured 2026-09-17: the user copied the high-res figure again from
+    Firefox. Its pixels matched the image the watcher had last seen, so dedupe
+    rightly did not file it twice -- but nothing handed the file back either, and
+    the paste was a bare bitmap. Already filed must mean "hand back the filed
+    copy", not "do nothing"."""
+    md5 = "3142010B5699303E1DF75FDF4E27CCCB"
+    library = tmp_path / "library"
+    _filed_capture(library, "other--1.png", "AAAABBBB")
+    filed = _filed_capture(library, "10.1016-x--2.png", md5[:8], 2239, 2098)
+    monkeypatch.setattr(store, "LIBRARY", library)
+
+    sent = _watch_lines(monkeypatch, tmp_path, ["WATCH_START x", f"RECOPIED {md5} 2239 2098"])
+    assert sent == [f"HANDBACK {md5} - WIN:{filed}\n"], sent
+
+
+def test_a_recopy_is_not_matched_to_a_different_sized_image(monkeypatch, tmp_path, capsys):
+    """Eight hex characters of md5 in a filename are a strong hint, not proof;
+    the dimensions the watcher reports have to agree too."""
+    md5 = "3142010B5699303E1DF75FDF4E27CCCB"
+    library = tmp_path / "library"
+    _filed_capture(library, "x--1.png", md5[:8], 100, 100)
+    monkeypatch.setattr(store, "LIBRARY", library)
+
+    sent = _watch_lines(monkeypatch, tmp_path, [f"RECOPIED {md5} 2239 2098"])
+    assert sent == []
+    assert "RECOPIED" not in capsys.readouterr().out, "raw protocol line reached the user"
+
+
+# ------------------------------------------- paste-time caption, 2026-09-17
+
+
+def _store_in(tmp_path, monkeypatch):
+    monkeypatch.setattr(store, "MANIFEST", tmp_path / "m.jsonl")
+    monkeypatch.setattr(store, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(store, "LIBRARY", tmp_path / "library")
+
+
+def _registered(tmp_path, *, confirmed):
+    from figcite.provenance import Record
+
+    img = tmp_path / "library" / "fig.png"
+    img.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (40, 30), (9, 9, 9)).save(img)
+    rec = Record(
+        doi="10.1016/j.celrep.2026.117555",
+        short_cite="Ghafouri et al. 2026",
+        confirmed=confirmed,
+    )
+    store.register_existing(img, rec)
+    return img
+
+
+def _sent_caption(line):
+    import base64
+
+    b64 = line.split(" ")[2]
+    return None if b64 == "-" else base64.b64decode(b64).decode("utf-8")
+
+
+def test_a_confirmed_figure_is_handed_back_with_its_caption(monkeypatch, tmp_path):
+    """PowerPoint is offered the figure plus this caption at paste time, so the
+    DOI shows up with no command run. It comes from the manifest -- the same
+    source `figcite apply` captions from."""
+    _store_in(tmp_path, monkeypatch)
+    dest = _registered(tmp_path, confirmed=True)
+    sent, _ = _run_watch_once(monkeypatch, tmp_path, finalized=dest)
+    assert len(sent) == 1, sent
+    assert _sent_caption(sent[0]) == (
+        "Ghafouri et al. 2026 · https://doi.org/10.1016/j.celrep.2026.117555"
+    )
+
+
+def test_an_unconfirmed_figure_is_handed_back_without_a_caption(monkeypatch, tmp_path):
+    """A guessed citation never reaches a slide -- and a paste is a slide. The
+    file still goes back (its record says unconfirmed); the caption does not."""
+    _store_in(tmp_path, monkeypatch)
+    dest = _registered(tmp_path, confirmed=False)
+    sent, _ = _run_watch_once(monkeypatch, tmp_path, finalized=dest)
+    assert len(sent) == 1 and _sent_caption(sent[0]) is None, sent
+
+
+def test_the_watcher_is_asked_to_exit_before_it_is_killed():
+    """While a handback is on the clipboard the watcher owns it and serves each
+    paste on demand; killed outright, it leaves a clipboard that pastes nothing.
+    Closing stdin lets it write the file variant in for good and exit."""
+    events = []
+
+    class P:
+        class stdin:
+            @staticmethod
+            def close():
+                events.append("close")
+
+        def wait(self, timeout):
+            events.append("wait")
+
+        def terminate(self):
+            events.append("terminate")
+
+    C._stop(P())
+    assert events == ["close", "wait"], events
