@@ -1,18 +1,8 @@
 version: 2
 updates:
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    # Template-owned (repo-template): pins are bumped there and arrive by resync.
-    exclude-paths:
-      - ".github/workflows/guardrails.yml"
-      - ".github/workflows/nightly-guardrails.yml"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
-    groups:
-      github-actions-minor-patch:
-        update-types: ["minor", "patch"]
-
+  # No github-actions entry: this repo's only workflows are template-owned
+  # (repo-template); their pins are bumped there and arrive by resync. Excluding
+  # both leaves Dependabot nothing to read, and it fails the run.
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
