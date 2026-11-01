@@ -4,6 +4,15 @@ Notable changes to figcite. Sections are dated by the commit that closed the
 milestone. `v0.1.0` was tagged after the three milestones below had already
 landed, so 0.2.0 is the first tag whose notes match its contents.
 
+## Unreleased
+
+### Packaging
+
+- Python 3.11+ (`requires-python = ">=3.11"`). Pillow 13, the release that
+  fixes the open Pillow advisories, needs 3.11, so the lock now pins it for
+  every install instead of leaving 3.10 on 12.3.0. On 3.10, pip keeps
+  resolving to 0.2.2.
+
 ## 0.2.2 (2026-09-11)
 
 First release on PyPI; the repository goes public with it.

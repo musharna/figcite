@@ -3,7 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/figcite.svg)](https://pypi.org/project/figcite/)
 [![guardrails](https://github.com/musharna/figcite/actions/workflows/guardrails.yml/badge.svg)](https://github.com/musharna/figcite/actions/workflows/guardrails.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 
 Keep the DOI and citation attached to an image from the moment you capture it
 through to the slide it lands on — and out the other side as a credits slide,
@@ -583,7 +583,7 @@ pip install 'figcite[match]'     # + opencv, for cropped-figure identification
 figcite --version
 ```
 
-Python 3.10+. The clipboard watcher needs Windows: it is a PowerShell
+Python 3.11+. The clipboard watcher needs Windows: it is a PowerShell
 listener that figcite starts from WSL through `powershell.exe`. Everything
 else runs anywhere.
 
